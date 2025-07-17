@@ -65,7 +65,7 @@ class TitleBar(QWidget):
         Determines whether to close a single widget or a whole container.
         """
         # Local import to avoid circular dependency at module level
-        from dock_container import DockContainer
+        from .dock_container import DockContainer
 
         manager = getattr(self._top_level_widget, 'manager', None)
         if not manager:
@@ -295,7 +295,7 @@ class DockableWidget(QWidget):
 
     def mousePressEvent(self, event):
         # Local import to prevent circular dependency
-        from dock_container import DockContainer
+        from .dock_container import DockContainer
 
         content_rect = self.rect().adjusted(
             self._blur_radius, self._blur_radius,
@@ -470,6 +470,13 @@ class DockableWidget(QWidget):
             # Install the filter on the actual content widget.
             self.content_widget.installEventFilter(self)
         self.update()
+
+    def getContent(self) -> QWidget | None:
+        """
+        Returns the content widget that is displayed inside this dockable widget.
+        This provides a consistent API with Qt's QDockWidget.
+        """
+        return getattr(self, 'content_widget', None)
 
     def get_edge(self, pos):
         # Adjust position to be relative to the visible content area, not the whole window
