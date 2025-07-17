@@ -6,37 +6,40 @@ JCDock allows you to create complex user interfaces where widgets can be docked 
 
 ## Features
 
-*   **Advanced Docking**: Dock widgets to the top, bottom, left, right, or center of other widgets and containers.
-*   **Floating Windows**: Undock any widget or group of widgets into its own floating window with a native-like look and feel (including shadows and rounded corners).
-*   **Tearable Tabs**: Users can tear individual tabs away from a tab group to instantly create a new floating window.
-*   **Persistent Layouts**: Save the entire state of your application's layout to a file or byte array and restore it later.
-*   **Nested Splitters**: Automatically create and manage nested horizontal and vertical splitters.
-*   **Customizable Appearance**: Easily change colors and styles of widgets and title bars.
-*   **Floating Dock Roots**: Create multiple, independent floating "main windows" that can act as primary docking targets.
+* **Advanced Docking**: Dock widgets to the top, bottom, left, right, or center of other widgets and containers.
+* **Floating Windows**: Undock any widget or group of widgets into its own floating window with a native-like look and feel (including shadows and rounded corners).
+* **Tearable Tabs**: Users can tear individual tabs away from a tab group to instantly create a new floating window.
+* **Persistent Layouts**: Save the entire state of your application's layout to a file or byte array and restore it later.
+* **Nested Splitters**: Automatically create and manage nested horizontal and vertical splitters.
+* **Customizable Appearance**: Easily change colors and styles of widgets and title bars.
+* **Floating Dock Roots**: Create multiple, independent floating "main windows" that can act as primary docking targets.
 
+***
 ## Installation
 
-To install the library for development, clone the repository and install it in "editable" mode using pip:
+**Note:** This library is currently under active development and has not been published to a package repository like PyPI. The only way to install it is directly from GitHub.
 
+To use JCDock in your project, you'll need to clone the source code and install it locally using pip.
 
 ```bash
-git clone <your-repo-url>
+# 1. Clone the repository from GitHub
+git clone https://github.com/jcook5376/JCDock.git
+
+# 2. Navigate into the cloned directory
 cd JCDock
+
+# 3. Install in "editable" mode
 pip install -e .
 ```
 
-This will install the package and its dependencies (PySide6==6.9.0) into your environment.
+Using the `-e` or `--editable` flag is recommended. It installs the package by creating a link to the source code, so any future updates you pull from the git repository will be immediately reflected in your environment.
 
-If you just want to use the existing library in your project the recommended way to install JCDock is from PyPI using pip. This will ensure you get a stable, tested version of the library.
-```
-pip install JCDock
-```
-
-# Basic Usage
+***
+## Basic Usage
 
 Here is a simple example of how to set up a main window and a few dockable widgets.
 
-```
+```python
 import sys
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, QTextEdit
 from PySide6.QtCore import Qt
@@ -61,8 +64,9 @@ class MainDockWindow(QMainWindow):
 
 ```
 
-# Main Application Setup 
-```
+***
+## Main Application Setup
+```python
 if __name__ == "__main__":
     app = QApplication(sys.argv)
 
@@ -106,6 +110,8 @@ if __name__ == "__main__":
 
     sys.exit(app.exec())
 ```
-License
+
+***
+## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
