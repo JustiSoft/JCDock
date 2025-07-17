@@ -1,36 +1,7 @@
-JCDock
-A flexible and customizable docking framework for PySide6 applications, inspired by modern IDEs.
-
-JCDock allows you to create complex user interfaces where widgets can be docked into containers, undocked into floating windows, and rearranged dynamically by the user.
-
-Features
-Advanced Docking: Dock widgets to the top, bottom, left, right, or center of other widgets and containers.
-
-Floating Windows: Undock any widget or group of widgets into its own floating window with a native-like look and feel (including shadows and rounded corners).
-
-Tearable Tabs: Users can tear individual tabs away from a tab group to instantly create a new floating window.
-
-Persistent Layouts: Save the entire state of your application's layout to a file or byte array and restore it later.
-
-Nested Splitters: Automatically create and manage nested horizontal and vertical splitters.
-
-Customizable Appearance: Easily change colors and styles of widgets and title bars.
-
-Floating Dock Roots: Create multiple, independent floating "main windows" that can act as primary docking targets.
-
-Installation
-To install the library for development, clone the repository and install it in "editable" mode using pip:
-
-git clone <your-repo-url>
+JCDockA flexible and customizable docking framework for PySide6 applications, inspired by modern IDEs.JCDock allows you to create complex user interfaces where widgets can be docked into containers, undocked into floating windows, and rearranged dynamically by the user.FeaturesAdvanced Docking: Dock widgets to the top, bottom, left, right, or center of other widgets and containers.Floating Windows: Undock any widget or group of widgets into its own floating window with a native-like look and feel (including shadows and rounded corners).Tearable Tabs: Users can tear individual tabs away from a tab group to instantly create a new floating window.Persistent Layouts: Save the entire state of your application's layout to a file or byte array and restore it later.Nested Splitters: Automatically create and manage nested horizontal and vertical splitters.Customizable Appearance: Easily change colors and styles of widgets and title bars.Floating Dock Roots: Create multiple, independent floating "main windows" that can act as primary docking targets.InstallationTo install the library for development, clone the repository and install it in "editable" mode using pip:git clone <your-repo-url>
 cd JCDock
 pip install -e .
-
-This will install the package and its dependencies (PySide6==6.9.0) into your environment.
-
-Basic Usage
-Here is a simple example of how to set up a main window and a few dockable widgets.
-
-import sys
+This will install the package and its dependencies (PySide6==6.9.0) into your environment.Basic UsageHere is a simple example of how to set up a main window and a few dockable widgets.import sys
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, QTextEdit
 from PySide6.QtCore import Qt
 
@@ -95,6 +66,4 @@ if __name__ == "__main__":
     main_window.show()
 
     sys.exit(app.exec())
-
-License
-This project is licensed under the MIT License - see the LICENSE file for details.
+LicenseThis project is licensed under the MIT License - see the LICENSE file for details.
