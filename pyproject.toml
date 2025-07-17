@@ -1,0 +1,55 @@
+# pyproject.toml
+
+[build-system]
+# These are the modern tools needed to build your package.
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+# The name of your package as it will appear on PyPI or when installed with pip.
+name = "JCDock"
+
+# Start with an initial version. Increment this as you make changes.
+version = "0.1.0"
+
+authors = [
+  # Replace with your name and email.
+  { name="Justin Cook", email="jcook5376@gmail.com" },
+]
+
+description = "A flexible and customizable docking framework for PySide6 applications."
+
+# A longer description that can be read from a file (optional but good practice).
+readme = "README.md"
+
+# Specify the license for your project.
+license = { file="LICENSE" }
+
+# Your project's main dependency. Pip will automatically install this
+# when someone installs your package.
+dependencies = [
+    "PySide6==6.9.0",
+]
+
+# Keywords to help others find your package.
+keywords = ["pyside", "qt", "docking", "gui", "widget"]
+
+# Classifiers help users find your project by browsing categories on PyPI.
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License", # Choose the license you prefer
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: User Interfaces",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[tool.setuptools.packages.find]
+# This tells the build system to find all packages under the 'src' directory.
+where = ["src"]
