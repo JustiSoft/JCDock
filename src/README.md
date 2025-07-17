@@ -18,19 +18,25 @@ JCDock allows you to create complex user interfaces where widgets can be docked 
 
 To install the library for development, clone the repository and install it in "editable" mode using pip:
 
+
 ```bash
 git clone <your-repo-url>
 cd JCDock
 pip install -e .
-
+```
 
 This will install the package and its dependencies (PySide6==6.9.0) into your environment.
 
-Basic Usage
+If you just want to use the existing library in your project the recommended way to install JCDock is from PyPI using pip. This will ensure you get a stable, tested version of the library.
+```
+pip install JCDock
+```
+
+# Basic Usage
 
 Here is a simple example of how to set up a main window and a few dockable widgets.
 
-Generated python
+```
 import sys
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, QTextEdit
 from PySide6.QtCore import Qt
@@ -55,7 +61,7 @@ class MainDockWindow(QMainWindow):
 
 ```
 
-# --- Main Application Setup ---
+# Main Application Setup 
 ```
 if __name__ == "__main__":
     app = QApplication(sys.argv)
