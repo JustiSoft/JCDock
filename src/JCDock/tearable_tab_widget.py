@@ -109,7 +109,7 @@ class TearableTabWidget(QTabWidget):
         content_to_remove = self.widget(index)
 
         # We need to find the DockContainer that owns this tab widget to look up the widget
-        from dock_container import DockContainer
+        from .dock_container import DockContainer
 
         container = self.parent()
         while container and not isinstance(container, DockContainer):

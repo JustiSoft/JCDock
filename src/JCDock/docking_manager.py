@@ -5,11 +5,11 @@ from PySide6.QtWidgets import QWidget, QSplitter, QVBoxLayout, QTabWidget, QHBox
 from PySide6.QtCore import Qt, QRect, QEvent, QPoint, QRectF, QSize, QTimer, Signal, QObject
 from PySide6.QtGui import QColor
 
-from floating_dock_root import FloatingDockRoot
-from main_dock_window import MainDockWindow
-from dock_model import LayoutModel, AnyNode, SplitterNode, TabGroupNode, WidgetNode
-from dockable_widget import DockableWidget
-from dock_container import DockContainer
+from .floating_dock_root import FloatingDockRoot
+from .main_dock_window import MainDockWindow
+from .dock_model import LayoutModel, AnyNode, SplitterNode, TabGroupNode, WidgetNode
+from .dockable_widget import DockableWidget
+from .dock_container import DockContainer
 
 class DockingSignals(QObject):
     """
@@ -1197,7 +1197,7 @@ class DockingManager:
         self.active_overlays.clear()
 
         # Also ensure all tab bar drop indicators are cleared.
-        from tearable_tab_widget import TearableTabBar
+        from .tearable_tab_widget import TearableTabBar
         for container in self.containers:
             # findChildren is the most reliable way to get all tab bars.
             for tab_bar in container.findChildren(TearableTabBar):

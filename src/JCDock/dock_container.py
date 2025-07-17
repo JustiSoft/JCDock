@@ -5,9 +5,9 @@ from PySide6.QtCore import Qt, QRect, QEvent, QPoint, QRectF, QSize, QTimer, QPo
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QBrush, QRegion, QPixmap, QPen, QIcon, QPolygonF, \
     QPalette
 
-from tearable_tab_widget import TearableTabWidget
-from dockable_widget import TitleBar, DockableWidget
-from docking_overlay import DockingOverlay
+from .tearable_tab_widget import TearableTabWidget
+from .dockable_widget import TitleBar, DockableWidget
+from .docking_overlay import DockingOverlay
 
 
 class DockContainer(QWidget):
@@ -162,7 +162,7 @@ class DockContainer(QWidget):
         painter.drawPath(full_path)
 
     def mousePressEvent(self, event):
-        from dockable_widget import DockableWidget
+        from .dockable_widget import DockableWidget
 
         pos = event.position().toPoint()
         content_rect = self.rect().adjusted(

@@ -7,13 +7,11 @@ from PySide6.QtCore import QEvent, QTimer, Signal
 from PySide6.QtWidgets import QMainWindow, QMenuBar, QApplication
 from PySide6.QtGui import QAction
 
-from dock_container import DockContainer
+from .dock_container import DockContainer
 
 # This block is only processed by type checkers, not at runtime.
 if TYPE_CHECKING:
-    from docking_manager import DockingManager
-    from dock_test import DockingTestApp
-
+    from .docking_manager import DockingManager
 
 class MainDockWindow(QMainWindow):
     """

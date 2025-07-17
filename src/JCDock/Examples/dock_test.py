@@ -5,9 +5,9 @@ from PySide6.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, Q
 from PySide6.QtCore import Qt, QObject, QEvent, Slot
 from PySide6.QtGui import QColor
 
-from docking_manager import DockingManager
-from dockable_widget import DockableWidget
-from main_dock_window import MainDockWindow
+from JCDock.docking_manager import DockingManager
+from JCDock.dockable_widget import DockableWidget
+from JCDock.main_dock_window import MainDockWindow
 
 
 class EventListener(QObject):

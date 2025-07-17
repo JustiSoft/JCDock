@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Union
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QWidget
-from dockable_widget import DockableWidget
+from .dockable_widget import DockableWidget
 
 # Define a type hint for any possible node
 AnyNode = Union['SplitterNode', 'TabGroupNode', 'WidgetNode']

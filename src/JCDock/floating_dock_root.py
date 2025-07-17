@@ -1,5 +1,5 @@
 from PySide6.QtCore import QTimer, QEvent
-from dock_container import DockContainer
+from .dock_container import DockContainer
 
 class FloatingDockRoot(DockContainer):
     """
