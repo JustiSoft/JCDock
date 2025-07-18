@@ -189,6 +189,14 @@ class DockableWidget(QWidget):
     def __init__(self, title, parent=None, manager=None, persistent_id=None, title_bar_color=None):
         super().__init__(parent)
 
+        # --- FIX: Initialize key attributes at the top ---
+        # These attributes are accessed by event handlers that can be triggered
+        # during initialization, so they must be defined first.
+        self.content_widget = None
+        self.parent_container = None
+        self.resizing = False
+        # --- END FIX ---
+
         self.persistent_id = persistent_id
         self._blur_radius = 25
         self._shadow_color_unfocused = QColor(0, 0, 0, 40)
@@ -196,17 +204,17 @@ class DockableWidget(QWidget):
         self._feather_power = 3.0
         self._shadow_color = self._shadow_color_focused
 
-        # Set the color based on whether the parameter was provided.
         if title_bar_color is not None:
             self._title_bar_color = title_bar_color
         else:
-            self._title_bar_color = QColor("#E0E1E2")  # Default title bar color
+            self._title_bar_color = QColor("#E0E1E2")
 
         self.setObjectName(f"DockableWidget_{title.replace(' ', '_')}")
         self.setWindowTitle(title)
         self.manager = manager
 
         self.setAttribute(Qt.WA_TranslucentBackground)
+        # This call is now safe because the attributes above exist.
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
 
         self.setFocusPolicy(Qt.StrongFocus)
@@ -224,20 +232,16 @@ class DockableWidget(QWidget):
         self.main_layout.addWidget(self.content_container)
 
         self.content_layout = QVBoxLayout(self.content_container)
-        self.content_widget = None
         self.overlay = None
-        self.parent_container = None
 
         self.setMinimumSize(300 + 2 * self._blur_radius, 200 + 2 * self._blur_radius)
         self.resize(300 + 2 * self._blur_radius, 200 + 2 * self._blur_radius)
 
         self.resize_margin = 8
-        self.resizing = False
         self.resize_edge = None
         self.resize_start_pos = None
         self.resize_start_geom = None
 
-        # State for maximize/restore functionality
         self._is_maximized = False
         self._normal_geometry = None
 
@@ -336,9 +340,22 @@ class DockableWidget(QWidget):
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        # Only process resize logic if the widget is floating and not maximized.
+
+        def set_viewport_transparency(is_transparent):
+            if self.content_widget and hasattr(self.content_widget, 'viewport'):
+                viewport = self.content_widget.viewport()
+                if viewport and viewport.testAttribute(Qt.WA_TransparentForMouseEvents) != is_transparent:
+                    viewport.setAttribute(Qt.WA_TransparentForMouseEvents, is_transparent)
+
+        def reset_content_cursor():
+            if self.content_widget:
+                self.content_widget.unsetCursor()
+                if hasattr(self.content_widget, 'viewport') and self.content_widget.viewport():
+                    self.content_widget.viewport().unsetCursor()
+
         if not self.parent_container and not self._is_maximized:
             if self.resizing:
+                set_viewport_transparency(True)
                 delta = event.globalPosition().toPoint() - self.resize_start_pos
                 new_geom = QRect(self.resize_start_geom)
                 if "right" in self.resize_edge: new_geom.setWidth(self.resize_start_geom.width() + delta.x())
@@ -357,31 +374,43 @@ class DockableWidget(QWidget):
                 if new_geom.height() < self.minimumHeight(): new_geom.setHeight(self.minimumHeight())
                 self.setGeometry(new_geom)
             else:
-                # Set resize cursors if not dragging/resizing.
                 edge = self.get_edge(event.position().toPoint())
                 if edge:
-                    if edge in ["top", "bottom"]:
-                        self.setCursor(Qt.SizeVerCursor)
-                    elif edge in ["left", "right"]:
-                        self.setCursor(Qt.SizeHorCursor)
-                    elif edge in ["top_left", "bottom_right"]:
-                        self.setCursor(Qt.SizeFDiagCursor)
-                    elif edge in ["top_right", "bottom_left"]:
-                        self.setCursor(Qt.SizeBDiagCursor)
+                    if edge in ["top", "bottom"]: self.setCursor(Qt.SizeVerCursor)
+                    elif edge in ["left", "right"]: self.setCursor(Qt.SizeHorCursor)
+                    elif edge in ["top_left", "bottom_right"]: self.setCursor(Qt.SizeFDiagCursor)
+                    elif edge in ["top_right", "bottom_left"]: self.setCursor(Qt.SizeBDiagCursor)
+                    set_viewport_transparency(False)
                 else:
+                    set_viewport_transparency(False)
                     self.unsetCursor()
+                    reset_content_cursor()
         else:
-            # If docked or maximized, ensure no resize cursor is ever shown.
+            set_viewport_transparency(False)
             self.unsetCursor()
+            reset_content_cursor()
 
-        # In all cases, pass the event to the superclass for the title bar drag to work.
         super().mouseMoveEvent(event)
+
+    def _reinstall_content_filters(self):
+
+        if self.content_widget:
+            self.content_widget.installEventFilter(self)
+            if hasattr(self.content_widget, 'viewport'):
+                viewport = self.content_widget.viewport()
+                if viewport:
+                    viewport.installEventFilter(self)
+
+    def changeEvent(self, event):
+
+        if event.type() == QEvent.Type.ParentChange:
+            self._reinstall_content_filters()
+        super().changeEvent(event)
 
     def eventFilter(self, watched, event):
         """
         Filters events from self and child widgets to handle focus and resizing.
         """
-        # Handle focus changes to update the shadow color.
         if watched is self:
             if event.type() == QEvent.Type.WindowActivate:
                 self._shadow_color = self._shadow_color_focused
@@ -392,14 +421,34 @@ class DockableWidget(QWidget):
                 self.update()
                 return True
 
-        # Watch for events coming from the actual content_widget.
-        if watched is self.content_widget and event.type() == QEvent.Type.MouseMove:
-            if not self.resizing and not self.title_bar.moving:
-                # Map the event's position from the child to this widget's coordinates
-                mapped_event = QMouseEvent(event.type(), self.mapFrom(watched, event.pos()), event.button(),
-                                           event.buttons(), event.modifiers())
-                self.mouseMoveEvent(mapped_event)
-                return True  # Event is handled
+        if not self.parent_container:
+            is_content_source = (watched is self.content_widget)
+            if not is_content_source and self.content_widget and hasattr(self.content_widget, 'viewport'):
+                if watched is self.content_widget.viewport():
+                    is_content_source = True
+
+            if is_content_source:
+                if event.type() == QEvent.Type.MouseMove:
+                    if not self.resizing and not self.title_bar.moving:
+                        mapped_event = QMouseEvent(
+                            event.type(), self.mapFrom(watched, event.pos()),
+                            event.globalPosition(), event.button(),
+                            event.buttons(), event.modifiers()
+                        )
+                        self.mouseMoveEvent(mapped_event)
+                        # --- THE FIX ---
+                        # By returning True, we consume the mouse move event, preventing
+                        # it from propagating further and causing a feedback loop.
+                        return True
+                elif event.type() == QEvent.Type.Enter:
+                    if not self.resizing and not self.title_bar.moving:
+                        edge = self.get_edge(self.mapFrom(watched, event.pos()) if hasattr(event, 'pos') else QPoint(0, 0))
+                        if not edge:
+                            self.unsetCursor()
+                            if self.content_widget:
+                                self.content_widget.unsetCursor()
+                                if hasattr(self.content_widget, 'viewport') and self.content_widget.viewport():
+                                    self.content_widget.viewport().unsetCursor()
 
         return super().eventFilter(watched, event)
 
@@ -466,9 +515,15 @@ class DockableWidget(QWidget):
         self.content_layout.setContentsMargins(margin_size, margin_size, margin_size, margin_size)
         self.content_layout.addWidget(widget)
         if self.content_widget:
+            # Enable mouse tracking on the content widget itself.
             self.content_widget.setMouseTracking(True)
-            # Install the filter on the actual content widget.
             self.content_widget.installEventFilter(self)
+            # CRITICAL: If the content has a viewport, enable tracking and install the filter there too.
+            if hasattr(widget, 'viewport'):
+                viewport = widget.viewport()
+                if viewport:
+                    viewport.setMouseTracking(True)
+                    viewport.installEventFilter(self)
         self.update()
 
     def getContent(self) -> QWidget | None:
@@ -506,6 +561,16 @@ class DockableWidget(QWidget):
         if on_right: return "right"
         return None
 
+    def showEvent(self, event):
+        """
+        On show, reinstall the event filters on the content widget. This is
+        critical for when this widget becomes a floating window after being
+        simplified from a container, as its event handling needs to be refreshed.
+        """
+        self._reinstall_content_filters()
+        # The existing show() method in the provided code handles auto-positioning.
+        # We call the superclass's showEvent to ensure default Qt behavior.
+        super().showEvent(event)
 
     def show_overlay(self):
         overlay_parent = self.parent_container if self.parent_container else self

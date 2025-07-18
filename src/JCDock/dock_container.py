@@ -1,9 +1,10 @@
 import re
 from PySide6.QtWidgets import QWidget, QSplitter, QVBoxLayout, QTabWidget, QHBoxLayout, QPushButton, QStyle, \
     QApplication
-from PySide6.QtCore import Qt, QRect, QEvent, QPoint, QRectF, QSize, QTimer, QPointF, QLineF
+from PySide6.QtCore import Qt, QRect, QEvent, QPoint, QRectF, QSize, QTimer, QPointF, QLineF, QObject
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QBrush, QRegion, QPixmap, QPen, QIcon, QPolygonF, \
     QPalette
+from PySide6.QtWidgets import QTableWidget, QTreeWidget, QListWidget, QTextEdit, QPlainTextEdit, QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QSlider, QScrollBar
 
 from .tearable_tab_widget import TearableTabWidget
 from .dockable_widget import TitleBar, DockableWidget
@@ -77,6 +78,9 @@ class DockContainer(QWidget):
         self.setFocusPolicy(Qt.StrongFocus)
 
         self.installEventFilter(self)
+        self.content_area.installEventFilter(self)
+
+        self._filters_installed = False
 
     def toggle_maximize(self):
         """Toggles the window between a maximized and normal state."""
@@ -201,44 +205,53 @@ class DockContainer(QWidget):
         # If we are not resizing, pass the event to children (title bar or content).
         super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event):
+    def mouseMoveEvent(self, event: QMouseEvent):
+        """
+        Handles mouse movement for resizing operations and all cursor logic.
+        """
+        # --- RESIZING LOGIC (omitted for brevity, keep your existing code here) ---
         if self.resizing and not self._is_maximized:
+            # (Your existing resizing code that calculates new_geom and calls self.setGeometry)
             delta = event.globalPosition().toPoint() - self.resize_start_pos
             new_geom = QRect(self.resize_start_geom)
-            if "right" in self.resize_edge: new_geom.setWidth(self.resize_start_geom.width() + delta.x())
+
+            if "right" in self.resize_edge:
+                new_geom.setWidth(self.resize_start_geom.width() + delta.x())
             if "left" in self.resize_edge:
                 new_width = self.resize_start_geom.width() - delta.x()
                 if new_width < self.minimumWidth(): new_width = self.minimumWidth()
                 new_geom.setX(self.resize_start_geom.right() - new_width)
                 new_geom.setWidth(new_width)
-            if "bottom" in self.resize_edge: new_geom.setHeight(self.resize_start_geom.height() + delta.y())
+            if "bottom" in self.resize_edge:
+                new_geom.setHeight(self.resize_start_geom.height() + delta.y())
             if "top" in self.resize_edge:
                 new_height = self.resize_start_geom.height() - delta.y()
                 if new_height < self.minimumHeight(): new_height = self.minimumHeight()
                 new_geom.setY(self.resize_start_geom.bottom() - new_height)
                 new_geom.setHeight(new_height)
+
             if new_geom.width() < self.minimumWidth(): new_geom.setWidth(self.minimumWidth())
             if new_geom.height() < self.minimumHeight(): new_geom.setHeight(self.minimumHeight())
+
             self.setGeometry(new_geom)
-        else:
-            # This is the fix: Only show resize cursors for floating containers (those with title bars)
-            # and only if not maximized.
-            if self.title_bar and not self._is_maximized:
-                edge = self.get_edge(event.position().toPoint())
-                if edge:
-                    if edge in ["top", "bottom"]:
-                        self.setCursor(Qt.SizeVerCursor)
-                    elif edge in ["left", "right"]:
-                        self.setCursor(Qt.SizeHorCursor)
-                    elif edge in ["top_left", "bottom_right"]:
-                        self.setCursor(Qt.SizeFDiagCursor)
-                    elif edge in ["top_right", "bottom_left"]:
-                        self.setCursor(Qt.SizeBDiagCursor)
-                else:
-                    self.unsetCursor()
+            return
+
+        # --- CURSOR LOGIC ---
+        if self.title_bar and not self._is_maximized:
+            edge = self.get_edge(event.position().toPoint())
+            if edge:
+                if edge in ["top", "bottom"]:
+                    self.setCursor(Qt.SizeVerCursor)
+                elif edge in ["left", "right"]:
+                    self.setCursor(Qt.SizeHorCursor)
+                elif edge in ["top_left", "bottom_right"]:
+                    self.setCursor(Qt.SizeFDiagCursor)
+                elif edge in ["top_right", "bottom_left"]:
+                    self.setCursor(Qt.SizeBDiagCursor)
             else:
-                # Main dock area or maximized windows should never show resize cursors.
                 self.unsetCursor()
+        else:
+            self.unsetCursor()
 
         super().mouseMoveEvent(event)
 
@@ -253,19 +266,116 @@ class DockContainer(QWidget):
 
         super().mouseReleaseEvent(event)
 
-    def eventFilter(self, watched, event):
-        # This filter is now only used to detect focus changes for the shadow color.
-        if event.type() == QEvent.Type.WindowActivate:
-            self._shadow_color = self._shadow_color_focused
-            self.update()
+    def update_content_event_filters(self):
+        """
+        Scans the entire widget hierarchy within this container and ensures the
+        event filter is correctly installed on all interactive content widgets
+        and their viewports.
+        """
+        # Define the types of widgets whose viewports are the true source of mouse events.
+        viewport_widgets = (QTableWidget, QTreeWidget, QListWidget, QTextEdit, QPlainTextEdit)
 
-        elif event.type() == QEvent.Type.WindowDeactivate:
-            self._shadow_color = self._shadow_color_unfocused
-            self.update()
+        # findChildren is a reliable way to get every single QWidget descendant.
+        all_descendants = self.findChildren(QWidget)
 
+        for widget in all_descendants:
+            # Install the filter on the widget itself to catch general mouse movement.
+            widget.installEventFilter(self)
 
-        # The logic for forwarding mouse events from children has been removed.
+            # Perform the critical check for viewport-based widgets.
+            if isinstance(widget, viewport_widgets):
+                # This logic is taken directly from the working DockableWidget.setContent method.
+                widget.setMouseTracking(True)
+                if hasattr(widget, 'viewport'):
+                    viewport = widget.viewport()
+                    if viewport:
+                        viewport.setMouseTracking(True)
+                        viewport.installEventFilter(self)
+
+        # Finally, ensure the container itself is monitored.
+        self.installEventFilter(self)
+
+    def showEvent(self, event):
+        """
+        Overrides QWidget.showEvent to re-scan for widgets and ensure all
+        event filters are correctly installed every time the container becomes visible.
+        """
+        self.update_content_event_filters()
+        super().showEvent(event)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        """
+        Filters events from descendants. It uses a just-in-time check to ensure
+        filters are installed before processing the first mouse move event.
+        """
+        if watched is self:
+            # ... (keep the existing WindowActivate/Deactivate logic here) ...
+            if event.type() == QEvent.Type.WindowActivate:
+                self._shadow_color = self._shadow_color_focused
+                self.update()
+            elif event.type() == QEvent.Type.WindowDeactivate:
+                self._shadow_color = self._shadow_color_unfocused
+                self.update()
+            return False
+
+        if event.type() == QEvent.Type.MouseMove:
+            # --- NEW JUST-IN-TIME LOGIC ---
+            # If filters haven't been installed for this container yet, run the
+            # installation now. This catches content added after the initial show.
+            if not self._filters_installed:
+                self.update_content_event_filters()
+                self._filters_installed = True
+            # --- END NEW LOGIC ---
+
+            is_moving = self.title_bar.moving if self.title_bar else False
+            if self.resizing or is_moving:
+                return super().eventFilter(watched, event)
+
+            mapped_event = QMouseEvent(
+                event.type(), self.mapFromGlobal(watched.mapToGlobal(event.pos())),
+                event.globalPosition(), event.button(),
+                event.buttons(), event.modifiers()
+            )
+            self.mouseMoveEvent(mapped_event)
+
         return super().eventFilter(watched, event)
+
+    def childEvent(self, event):
+        """
+        Overrides QWidget.childEvent to automatically install the event filter
+        on any new child widget and all of its descendants using a recursive helper.
+        """
+        if event.type() == QEvent.Type.ChildAdded:
+            child = event.child()
+            # Ensure the child is a valid widget before proceeding
+            if child and child.isWidgetType():
+                self._install_event_filter_recursive(child)
+
+        super().childEvent(event)
+
+    def _install_event_filter_recursive(self, widget):
+        """
+        Recursively installs this container's event filter on a widget and all its
+        descendants, with special handling for viewports in scroll areas.
+        """
+        if not widget:
+            return
+
+        # Install on the widget itself and print for debugging.
+        widget.installEventFilter(self)
+
+        # CRITICAL: For widgets with a viewport (like QTableView), the viewport is
+        # the actual source of mouse events. We must install the filter there too.
+        if hasattr(widget, 'viewport'):
+            viewport = widget.viewport()
+            if viewport:
+                viewport.installEventFilter(self)
+
+        # Recurse through all children to catch widgets added to layouts.
+        for child in widget.children():
+            if isinstance(child, QWidget):
+                # We recurse to handle nested children (e.g., a widget inside a layout).
+                self._install_event_filter_recursive(child)
 
     def on_activation_request(self):
         """
@@ -278,11 +388,25 @@ class DockContainer(QWidget):
             self.manager.bring_to_front(self)
 
     def get_edge(self, pos):
-        adj_pos = pos - QPoint(self._blur_radius, self._blur_radius)
-        content_rect = self.rect().adjusted(self._blur_radius, self._blur_radius, -self._blur_radius,
-                                            -self._blur_radius)
+        """
+        Determines which edge (if any) the given position is on for resize operations.
+        """
+        # Only allow resize on floating containers that are not maximized
+        if not self.title_bar or self._is_maximized:
+            return None
+
+        # Get the content rect (inset by shadow if present)
+        content_rect = self.rect().adjusted(
+            self._blur_radius, self._blur_radius,
+            -self._blur_radius, -self._blur_radius
+        )
+
+        # Check if position is within the content rect
         if not content_rect.contains(pos):
             return None
+
+        # Adjust position relative to content rect
+        adj_pos = pos - QPoint(self._blur_radius, self._blur_radius)
 
         margin = self.resize_margin
         on_left = 0 <= adj_pos.x() < margin
@@ -449,6 +573,11 @@ class DockContainer(QWidget):
         return tab_widget
 
     def _reconnect_tab_signals(self, current_item):
+        # This method is reliably called by the DockingManager after this container's
+        # layout has been fully rendered. This is the perfect moment to ensure
+        # our event filters are installed on all content widgets and their viewports.
+        self.update_content_event_filters()
+
         if not current_item: return
         if isinstance(current_item, QTabWidget):
             # Reconnect the tabMoved signal

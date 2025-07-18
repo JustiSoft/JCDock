@@ -16,7 +16,7 @@ class EventListener(QObject):
         container_name = container.windowTitle()
         if container.objectName() == "MainDockArea":
             container_name = "Main Dock Area"
-        print(f"--- SIGNAL[widget_docked]: '{widget.windowTitle()}' was docked into '{container_name}' ---")
+
 
     @Slot(object)
     def on_widget_undocked(self, widget):
@@ -62,20 +62,51 @@ class DockingTestApp:
         self.main_window.activate_widget_requested.connect(self.run_activate_widget_test)
 
     def _create_test_content(self, name: str) -> QWidget:
-        """Creates a simple colored widget with a label for demonstration."""
+        """Creates a simple table with test data for demonstration."""
         content_widget = QWidget()
-        bg_color = QColor(random.randint(50, 220), random.randint(50, 220), random.randint(50, 220))
-
-        p = content_widget.palette()
-        p.setColor(content_widget.backgroundRole(), bg_color)
-        content_widget.setPalette(p)
-        content_widget.setAutoFillBackground(True)
-
         content_layout = QVBoxLayout(content_widget)
-        label = QLabel(name)
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setStyleSheet("font-size: 24px; background: transparent;")
-        content_layout.addWidget(label)
+        content_layout.setContentsMargins(0, 0, 0, 0)  # Use the full space
+
+        # Create and configure the table
+        table_widget = QTableWidget()
+
+        # This stylesheet adds a border to the table body and carefully styles
+        # the header sections to create a complete, solid black frame.
+        stylesheet = """
+            QTableView {
+                border: 1px solid black;
+                gridline-color: black;
+            }
+            QTableCornerButton::section {
+                background-color: #f0f0f0;
+                border-right: 1px solid black;
+                border-bottom: 1px solid black;
+            }
+        """
+        table_widget.setStyleSheet(stylesheet)
+
+        table_widget.setRowCount(5)
+        table_widget.setColumnCount(3)
+        table_widget.setHorizontalHeaderLabels(["Item ID", "Description", "Value"])
+
+        # Populate the table with sample data
+        for row in range(5):
+            item_id = QTableWidgetItem(f"{name}-I{row+1}")
+            item_desc = QTableWidgetItem(f"Sample data item for row {row+1}")
+            item_value = QTableWidgetItem(str(random.randint(100, 999)))
+
+            item_id.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            item_value.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            table_widget.setItem(row, 0, item_id)
+            table_widget.setItem(row, 1, item_desc)
+            table_widget.setItem(row, 2, item_value)
+
+        # Adjust column sizes to fit the content
+        table_widget.resizeColumnsToContents()
+
+        # Add the table to the layout
+        content_layout.addWidget(table_widget)
 
         return content_widget
 
@@ -92,9 +123,6 @@ class DockingTestApp:
 
     def _create_and_configure_widget(self, name: str, persistent_id: str) -> DockableWidget:
         """Helper method that creates and a single dockable widget."""
-
-        # The color is now passed directly to the constructor.
-        # The two-step process of creating then setting is no longer needed.
         new_dockable_widget = DockableWidget(
             name,
             parent=None,
@@ -113,10 +141,6 @@ class DockingTestApp:
         during a 'load' operation to recreate a widget from its saved ID.
         """
         print(f"Factory called to create widget with ID: {persistent_id}")
-        # In a real app, you might parse the ID to determine widget type and initial state.
-        # For example, if persistent_id was "text_editor:/path/to/file.txt"
-
-        # For this test, we'll just extract the count from the ID.
         match = re.search(r'\d+$', persistent_id)
         widget_num = match.group(0) if match else "N/A"
         widget_name = f"Widget {widget_num}"
@@ -134,11 +158,10 @@ class DockingTestApp:
 
         if found_widget:
             print(f"SUCCESS: Found widget: {found_widget.windowTitle()}")
-            # For visual confirmation, let's change its title and title bar color.
             if "(Found!)" not in found_widget.windowTitle():
                 found_widget.set_title(f"{found_widget.windowTitle()} (Found!)")
             found_widget.set_title_bar_color(QColor("#DDA0DD"))  # Plum color
-            found_widget.on_activation_request()  # Bring it to the front
+            found_widget.on_activation_request()
         else:
             print(f"FAILURE: Could not find widget with ID: '{target_id}'")
 
@@ -156,7 +179,6 @@ class DockingTestApp:
         print(f"SUCCESS: Found {len(all_widgets)} widgets:")
         for i, widget in enumerate(all_widgets):
             print(f"  {i + 1}: {widget.windowTitle()} (ID: {widget.persistent_id})")
-            # Add a prefix to show the test worked visually
             if "(Listed)" not in widget.windowTitle():
                 widget.set_title(f"(Listed) {widget.windowTitle()}")
         print("--------------------------------------")
@@ -174,7 +196,6 @@ class DockingTestApp:
             print(f"SUCCESS: Found {len(floating_widgets)} floating widgets:")
             for i, widget in enumerate(floating_widgets):
                 print(f"  {i + 1}: {widget.windowTitle()}")
-                # Visually confirm by changing the title bar color
                 widget.set_title_bar_color(QColor("#90EE90"))  # Light Green
 
         print("--------------------------------------------")
@@ -230,12 +251,10 @@ class DockingTestApp:
             print(f"FAILURE: Cannot find source widget '{source_id}'.")
             return
 
-        # First, ensure the widget is docked so we can test undocking it.
         if not self.docking_manager.is_widget_docked(source_widget):
             print("INFO: Docking widget into main window first to prepare for test...")
             self.docking_manager.dock_widget(source_widget, target_container, "center")
 
-        # Now, perform the actual test
         print(f"SUCCESS: Found and docked widget. Attempting to undock...")
         self.docking_manager.undock_widget(source_widget)
         print("-------------------------------------------------------------------")
@@ -253,7 +272,6 @@ class DockingTestApp:
             print(f"FAILURE: Cannot find source widget '{source_id}'.")
             return
 
-        # To make the test obvious, undock it first if it's already docked.
         if self.docking_manager.is_widget_docked(source_widget):
             self.docking_manager.undock_widget(source_widget)
 
@@ -276,16 +294,13 @@ class DockingTestApp:
             print(f"FAILURE: Could not find necessary widgets for test.")
             return
 
-        # 1. Setup: Ensure the widgets are tabbed together in the main window.
         if not self.docking_manager.is_widget_docked(widget_to_dock_with):
             self.docking_manager.move_widget_to_container(widget_to_dock_with, self.main_window.dock_area)
         if not self.docking_manager.is_widget_docked(widget_to_activate):
             self.docking_manager.move_widget_to_container(widget_to_activate, self.main_window.dock_area)
 
-        # 2. Setup: Ensure the *other* widget is the active one to start.
         self.docking_manager.activate_widget(widget_to_dock_with)
 
-        # 3. Run Test: Now, activate the target widget.
         print(f"INFO: State is set up. Activating '{widget_to_activate.windowTitle()}'...")
         self.docking_manager.activate_widget(widget_to_activate)
         print(f"SUCCESS: activate_widget called for '{widget_to_activate.windowTitle()}'.")
