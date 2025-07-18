@@ -89,9 +89,6 @@ class DockingManager:
         return pickle.dumps(layout_data)
 
     def _serialize_node(self, node: AnyNode) -> dict:
-        """
-        Recursively converts a model node into a serializable dictionary.
-        """
         if isinstance(node, SplitterNode):
             return {
                 'type': 'SplitterNode',
@@ -105,17 +102,14 @@ class DockingManager:
                 'children': [self._serialize_node(child) for child in node.children]
             }
         elif isinstance(node, WidgetNode):
-            # Instead of the live widget, we store its persistent ID. This is the key.
             return {
                 'type': 'WidgetNode',
-                'id': node.widget.persistent_id
+                'id': node.widget.persistent_id,
+                'margin': getattr(node.widget, '_content_margin_size', 5)
             }
         return {}
 
     def load_layout_from_bytearray(self, data: bytearray):
-        """
-        Clears the current layout and rebuilds a new one from the serialized data.
-        """
         if not self.widget_factory:
             print("ERROR: Cannot load layout without a widget factory. Please set one using set_widget_factory().")
             return
@@ -128,11 +122,9 @@ class DockingManager:
             print(f"Error deserializing layout data: {e}")
             return
 
-        # Process the layout data.
         for window_state in layout_data:
             window_class = window_state['class']
 
-            # If we find the main window state, apply it to the existing main window.
             if window_class == 'MainDockWindow':
                 container = self.main_window.dock_area
                 geom_tuple = window_state['geometry']
@@ -145,11 +137,10 @@ class DockingManager:
                 self._render_layout(container)
                 continue
 
-            # For all other windows, create them from scratch.
             new_window = None
             if window_class == 'DockableWidget':
-                widget_id = window_state['content']['children'][0]['id']
-                new_window = self.widget_factory(widget_id)
+                widget_data = window_state['content']['children'][0]
+                new_window = self.widget_factory(widget_data)
                 self.model.roots[new_window] = self._deserialize_node(window_state['content'])
                 self.register_widget(new_window)
 
@@ -161,13 +152,9 @@ class DockingManager:
                 self.bring_to_front(new_window)
                 self._render_layout(new_window)
 
-            # This is the new, required case for restoring floating root windows.
             elif window_class == 'FloatingDockRoot':
                 new_window = FloatingDockRoot(manager=self)
-                # We must use register_dock_area for these special containers.
-                # This correctly adds it to all necessary internal lists.
                 self.register_dock_area(new_window)
-                # Now that it's registered, we can populate its model and render it.
                 self.model.roots[new_window] = self._deserialize_node(window_state['content'])
                 self._render_layout(new_window)
 
@@ -223,9 +210,6 @@ class DockingManager:
             self.window_stack.append(self.main_window)
 
     def _deserialize_node(self, node_data: dict) -> AnyNode:
-        """
-        Recursively converts a dictionary back into a model node.
-        """
         node_type = node_data.get('type')
 
         if node_type == 'SplitterNode':
@@ -239,13 +223,10 @@ class DockingManager:
                 children=[self._deserialize_node(child_data) for child_data in node_data['children']]
             )
         elif node_type == 'WidgetNode':
-            widget_id = node_data['id']
-            # This is where the magic happens. We ask the application's factory to build the widget.
-            new_widget = self.widget_factory(widget_id)
+            new_widget = self.widget_factory(node_data)
             if new_widget:
                 return WidgetNode(widget=new_widget)
 
-        # Return a default empty node if something goes wrong
         return TabGroupNode()
 
     def _find_first_tab_group_node(self, node: AnyNode) -> TabGroupNode | None:

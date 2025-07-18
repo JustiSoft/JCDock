@@ -189,13 +189,10 @@ class DockableWidget(QWidget):
     def __init__(self, title, parent=None, manager=None, persistent_id=None, title_bar_color=None):
         super().__init__(parent)
 
-        # --- FIX: Initialize key attributes at the top ---
-        # These attributes are accessed by event handlers that can be triggered
-        # during initialization, so they must be defined first.
         self.content_widget = None
         self.parent_container = None
         self.resizing = False
-        # --- END FIX ---
+        self._content_margin_size = 5
 
         self.persistent_id = persistent_id
         self._blur_radius = 25
@@ -279,12 +276,7 @@ class DockableWidget(QWidget):
             self.title_bar.maximize_button.setIcon(self.title_bar._create_control_icon("restore"))
 
     def on_activation_request(self):
-        """
-        Handles a request to activate this widget, bringing it to the front
-        of the stacking order.
-        """
         self.raise_()
-        self.setFocus()
         if self.manager:
             self.manager.bring_to_front(self)
 
@@ -506,6 +498,7 @@ class DockableWidget(QWidget):
         painter.drawPath(full_path)
 
     def setContent(self, widget, margin_size=5):
+        self._content_margin_size = margin_size
         self.content_widget = widget
         self.content_widget.setObjectName(f"ActualContent_{self.windowTitle().replace(' ', '_')}")
         self.original_bg_color = widget.palette().color(widget.backgroundRole())
@@ -515,10 +508,8 @@ class DockableWidget(QWidget):
         self.content_layout.setContentsMargins(margin_size, margin_size, margin_size, margin_size)
         self.content_layout.addWidget(widget)
         if self.content_widget:
-            # Enable mouse tracking on the content widget itself.
             self.content_widget.setMouseTracking(True)
             self.content_widget.installEventFilter(self)
-            # CRITICAL: If the content has a viewport, enable tracking and install the filter there too.
             if hasattr(widget, 'viewport'):
                 viewport = widget.viewport()
                 if viewport:
