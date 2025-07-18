@@ -421,11 +421,11 @@ class DockingManager:
             qt_splitter.setObjectName("ContainerSplitter")
             qt_splitter.setStyleSheet("""
                 QSplitter::handle {
-                    background-color: #C4C4C3; /* Match the tab/pane border color */
-                    border: none;             /* Remove the 3D beveled look */
+                    background-color: #C4C4C3;
+                    border: none;
                 }
                 QSplitter::handle:hover {
-                    background-color: #A9A9A9; /* A slightly darker color for hover feedback */
+                    background-color: #A9A9A9;
                 }
             """)
             qt_splitter.setHandleWidth(2)
@@ -440,22 +440,19 @@ class DockingManager:
                 qt_splitter.setSizes([100] * qt_splitter.count())
             return qt_splitter
         elif isinstance(node, TabGroupNode):
-            # This is the fix for the crash. We create the tab widget locally
-            # and avoid the complex stylesheet that was causing memory issues.
             qt_tab_widget = container._create_tab_widget_with_controls()
             for widget_node in node.children:
                 widget = widget_node.widget
                 qt_tab_widget.addTab(widget.content_container, widget.windowTitle())
                 if widget.original_bg_color:
                     bg_color_name = widget.original_bg_color.name()
-                    widget.content_container.setStyleSheet(f"background-color: {bg_color_name}; border-radius: 0px;")
+                    widget.content_container.setStyleSheet(
+                        f"#ContentContainer {{ background-color: {bg_color_name}; border-radius: 0px; }}")
                 widget.parent_container = container
                 if widget not in container.contained_widgets:
                     container.contained_widgets.append(widget)
             return qt_tab_widget
         elif isinstance(node, WidgetNode):
-            # This is a defensive fix. This path shouldn't be taken with a correct
-            # model, but if it is, we now correctly return the widget's content.
             return node.widget.content_container
 
     def add_widget_handlers(self, widget):
