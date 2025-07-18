@@ -45,32 +45,33 @@ class DockingManager:
         self.signals = DockingSignals()
 
     def save_layout_to_bytearray(self) -> bytearray:
-        """
-        Gathers the state of all managed windows and serializes it into a bytearray.
-        """
         layout_data = []
 
-        # Handle the main window as a special, top-level case.
         if self.main_window and self.main_window.dock_area in self.model.roots:
+            main_dock_area = self.main_window.dock_area
+            main_root_node = self.model.roots[main_dock_area]
+
+            if hasattr(main_dock_area, 'splitter'):
+                self._save_splitter_sizes_to_model(main_dock_area.splitter, main_root_node)
+
             main_window_state = {
-                'class': self.main_window.__class__.__name__,  # This will be 'MainDockWindow'
+                'class': self.main_window.__class__.__name__,
                 'geometry': self.main_window.geometry().getRect(),
-                # Maximized state is usually handled by the OS for the main window,
-                # but we can save it for completeness if needed. For now, False.
                 'is_maximized': self.main_window.isMaximized(),
                 'normal_geometry': None,
-                # The content is the layout of its internal dock_area.
-                'content': self._serialize_node(self.model.roots[self.main_window.dock_area])
+                'content': self._serialize_node(main_root_node)
             }
             layout_data.append(main_window_state)
 
-        # Now, process all other floating windows.
         for window, root_node in self.model.roots.items():
-            # Skip the main window's dock area since we already processed it.
-            if window is self.main_window.dock_area:
+            if window is (self.main_window.dock_area if self.main_window else None):
                 continue
+
             if self.is_deleted(window):
                 continue
+
+            if hasattr(window, 'splitter'):
+                self._save_splitter_sizes_to_model(window.splitter, root_node)
 
             window_state = {
                 'class': window.__class__.__name__,
