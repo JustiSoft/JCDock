@@ -17,7 +17,6 @@ class EventListener(QObject):
         if container.objectName() == "MainDockArea":
             container_name = "Main Dock Area"
 
-
     @Slot(object)
     def on_widget_undocked(self, widget):
         print(f"--- SIGNAL[widget_undocked]: '{widget.windowTitle()}' became a floating window ---")
