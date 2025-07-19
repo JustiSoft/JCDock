@@ -428,10 +428,7 @@ class DockableWidget(QWidget):
                             event.buttons(), event.modifiers()
                         )
                         self.mouseMoveEvent(mapped_event)
-                        # --- THE FIX ---
-                        # By returning True, we consume the mouse move event, preventing
-                        # it from propagating further and causing a feedback loop.
-                        return True
+                        return False
                 elif event.type() == QEvent.Type.Enter:
                     if not self.resizing and not self.title_bar.moving:
                         edge = self.get_edge(self.mapFrom(watched, event.pos()) if hasattr(event, 'pos') else QPoint(0, 0))

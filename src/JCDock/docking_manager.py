@@ -30,8 +30,9 @@ class DockingSignals(QObject):
     # A general signal emitted whenever the layout model has been finalized after a change.
     layout_changed = Signal()
 
-class DockingManager:
+class DockingManager(QObject):
     def __init__(self):
+        super().__init__()
         self.widgets = []
         self.containers = []
         self.last_dock_target = None
@@ -123,6 +124,8 @@ class DockingManager:
             print(f"Error deserializing layout data: {e}")
             return
 
+        loaded_widgets_cache = {}
+
         for window_state in layout_data:
             window_class = window_state['class']
 
@@ -134,20 +137,29 @@ class DockingManager:
                 if window_state.get('is_maximized', False):
                     self.main_window.showMaximized()
 
-                self.model.roots[container] = self._deserialize_node(window_state['content'])
+                self.model.roots[container] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
                 self._render_layout(container)
                 continue
 
             new_window = None
             if window_class == 'DockableWidget':
                 widget_data = window_state['content']['children'][0]
-                new_window = self.widget_factory(widget_data)
-                self.model.roots[new_window] = self._deserialize_node(window_state['content'])
-                self.register_widget(new_window)
+                persistent_id = widget_data.get('id')
+
+                if persistent_id in loaded_widgets_cache:
+                    new_window = loaded_widgets_cache[persistent_id]
+                else:
+                    new_window = self.widget_factory(widget_data)
+                    if new_window:
+                        loaded_widgets_cache[persistent_id] = new_window
+
+                if new_window:
+                    self.model.roots[new_window] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
+                    self.register_widget(new_window)
 
             elif window_class == 'DockContainer':
                 new_window = DockContainer(manager=self, parent=None)
-                self.model.roots[new_window] = self._deserialize_node(window_state['content'])
+                self.model.roots[new_window] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
                 self.containers.append(new_window)
                 self.add_widget_handlers(new_window)
                 self.bring_to_front(new_window)
@@ -156,7 +168,7 @@ class DockingManager:
             elif window_class == 'FloatingDockRoot':
                 new_window = FloatingDockRoot(manager=self)
                 self.register_dock_area(new_window)
-                self.model.roots[new_window] = self._deserialize_node(window_state['content'])
+                self.model.roots[new_window] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
                 self._render_layout(new_window)
 
             if new_window:
@@ -173,6 +185,9 @@ class DockingManager:
                     new_window.title_bar.maximize_button.setIcon(new_window.title_bar._create_control_icon("restore"))
 
                 new_window.show()
+                new_window.raise_()
+                new_window.activateWindow()
+                self.bring_to_front(new_window)
 
     def _clear_layout(self):
         """
@@ -210,21 +225,33 @@ class DockingManager:
             self.containers.append(self.main_window.dock_area)
             self.window_stack.append(self.main_window)
 
-    def _deserialize_node(self, node_data: dict) -> AnyNode:
+    def _deserialize_node(self, node_data: dict, loaded_widgets_cache: dict) -> AnyNode:
         node_type = node_data.get('type')
 
         if node_type == 'SplitterNode':
             return SplitterNode(
                 orientation=node_data['orientation'],
                 sizes=node_data['sizes'],
-                children=[self._deserialize_node(child_data) for child_data in node_data['children']]
+                children=[self._deserialize_node(child_data, loaded_widgets_cache) for child_data in
+                          node_data['children']]
             )
         elif node_type == 'TabGroupNode':
             return TabGroupNode(
-                children=[self._deserialize_node(child_data) for child_data in node_data['children']]
+                children=[self._deserialize_node(child_data, loaded_widgets_cache) for child_data in
+                          node_data['children']]
             )
         elif node_type == 'WidgetNode':
-            new_widget = self.widget_factory(node_data)
+            persistent_id = node_data.get('id')
+            if not persistent_id:
+                return TabGroupNode()
+
+            if persistent_id in loaded_widgets_cache:
+                new_widget = loaded_widgets_cache[persistent_id]
+            else:
+                new_widget = self.widget_factory(node_data)
+                if new_widget:
+                    loaded_widgets_cache[persistent_id] = new_widget
+
             if new_widget:
                 return WidgetNode(widget=new_widget)
 
@@ -347,8 +374,14 @@ class DockingManager:
         widget.manager = self
         self.model.register_widget(widget)
         self.widgets.append(widget)
-        self.add_widget_handlers(widget)
+        self.add_widget_handlers(widget)  # Sets up title bar handlers
         self.bring_to_front(widget)
+
+        # --- ADDED: Install DockingManager's event filter on the DockableWidget ---
+        if not self.is_deleted(widget):
+            widget.installEventFilter(self)  # Install manager on the DockableWidget itself
+            widget.setMouseTracking(True)  # Ensure it generates mouse move events
+            widget.setAttribute(Qt.WA_Hover, True)  # Potentially useful for consistent event generation
 
         if not widget.parent_container:
             self.floating_widget_count += 1
@@ -365,6 +398,12 @@ class DockingManager:
             self.window_stack.append(dock_area)
 
         self.add_widget_handlers(dock_area)
+
+        # --- ADDED: Install DockingManager's event filter on the DockContainer ---
+        if not self.is_deleted(dock_area):
+            dock_area.installEventFilter(self)  # Install manager on the DockContainer
+            dock_area.setMouseTracking(True)  # Ensure it generates mouse move events
+            dock_area.setAttribute(Qt.WA_Hover, True)  # Potentially useful for consistent event generation
 
         if self.debug_mode:
             self.model.pretty_print()
@@ -1322,3 +1361,25 @@ class DockingManager:
 
         # Now, activate the top-level window (which could be the widget itself or its container)
         root_window.on_activation_request()
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        """
+        Intercepts events for managed widgets to handle global drag-and-drop.
+        This is the main entry point for the manager to receive mouse events
+        from its filtered widgets.
+        """
+        if event.type() == QEvent.Type.MouseMove:
+
+            dragging_widget = None
+            for widget in self.widgets + self.containers:
+                if self.is_deleted(widget):
+                    continue
+                if hasattr(widget, 'title_bar') and widget.title_bar and widget.title_bar.moving:
+                    dragging_widget = widget
+                    break
+
+            if dragging_widget:
+                self.handle_drag_move(dragging_widget, event)
+                return True
+
+        return super().eventFilter(obj, event)
