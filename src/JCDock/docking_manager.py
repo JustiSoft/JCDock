@@ -508,25 +508,15 @@ class DockingManager(QObject):
             widget.title_bar.mouseReleaseEvent = self.create_release_handler(widget)
 
     def handle_drag_move(self, widget, event):
-        """
-        This function is called directly from a TitleBar's mouseMoveEvent.
-        It contains all the logic for finding dock targets and showing overlays.
-        """
         if widget.resizing or not widget.title_bar.moving:
             return
 
-        # This is the architectural rule: A FloatingDockRoot cannot be docked into anything.
         if isinstance(widget, FloatingDockRoot):
-            # If the widget being dragged is a root, it can only be moved around its
-            # own space; it cannot be a docking source. We ensure all docking UI is
-            # hidden and exit the function early. The TitleBar's mouseMoveEvent, which
-            # called this function, will still handle the actual window movement.
             self.destroy_all_overlays()
             self.last_dock_target = None
             return
 
         global_mouse_pos = event.globalPosition().toPoint()
-        self.last_dock_target = None
 
         target_widget = None
         top_level_target = None
@@ -546,15 +536,8 @@ class DockingManager(QObject):
         else:
             target_widget = top_level_target
 
-        target_title = target_widget.windowTitle() if target_widget else "None"
-        target_type = type(target_widget).__name__ if target_widget else "None"
-
         tab_bar_target_found = False
-
-        # Check for tab insertion
-        is_dockable_target = isinstance(target_widget, DockableWidget)
-
-        if is_dockable_target and target_widget.parent_container:
+        if isinstance(target_widget, DockableWidget) and target_widget.parent_container:
             all_tabs = target_widget.parent_container.findChildren(QTabWidget)
             for tab_widget in all_tabs:
                 if tab_widget.isAncestorOf(target_widget.content_container):
@@ -572,56 +555,68 @@ class DockingManager(QObject):
                         tab_bar.set_drop_indicator_index(-1)
                     break
 
-        # Standard docking logic
-        if not tab_bar_target_found:
-            widget.setWindowOpacity(1.0)
-            self.destroy_all_overlays()
+        if tab_bar_target_found:
+            return
 
-            required_overlays = []
-            if target_widget:
-                required_overlays.append(target_widget)
-                if getattr(target_widget, 'parent_container', None):
-                    required_overlays.append(target_widget.parent_container)
+        widget.setWindowOpacity(1.0)
 
-            for required_widget in required_overlays:
-                try:
-                    if required_widget not in self.active_overlays:
-                        if isinstance(required_widget, DockContainer):
-                            root_node = self.model.roots.get(required_widget)
-                            is_empty = not (root_node and root_node.children)
-                            is_main_dock_area = (required_widget is self.main_window.dock_area)
-                            is_floating_root = isinstance(required_widget, FloatingDockRoot)
-                            if is_empty and (is_main_dock_area or is_floating_root):
-                                required_widget.show_overlay(preset='main_empty')
-                            else:
-                                required_widget.show_overlay(preset='standard')
+        required_overlays = set()
+        if target_widget:
+            required_overlays.add(target_widget)
+            if getattr(target_widget, 'parent_container', None):
+                required_overlays.add(target_widget.parent_container)
+
+        current_overlays = set(self.active_overlays)
+
+        for w in (current_overlays - required_overlays):
+            if not self.is_deleted(w):
+                w.hide_overlay()
+            self.active_overlays.remove(w)
+
+        for w in (required_overlays - current_overlays):
+            try:
+                if not self.is_deleted(w):
+                    if isinstance(w, DockContainer):
+                        root_node = self.model.roots.get(w)
+                        is_empty = not (root_node and root_node.children)
+                        is_main_dock_area = (w is (self.main_window.dock_area if self.main_window else None))
+                        is_floating_root = isinstance(w, FloatingDockRoot)
+                        if is_empty and (is_main_dock_area or is_floating_root):
+                            w.show_overlay(preset='main_empty')
                         else:
-                            required_widget.show_overlay()
-                        self.active_overlays.append(required_widget)
-                except RuntimeError:
-                    if required_widget in self.active_overlays:
-                        self.active_overlays.remove(required_widget)
+                            w.show_overlay(preset='standard')
+                    else:
+                        w.show_overlay()
+                    self.active_overlays.append(w)
+            except RuntimeError:
+                if w in self.active_overlays:
+                    self.active_overlays.remove(w)
 
-            # First, hide all previous previews to reset the state.
-            for overlay_widget in self.active_overlays:
-                if hasattr(overlay_widget, 'hide_preview'):
-                    overlay_widget.hide_preview()
-
-            # Now, find the current target and show its preview.
-            if target_widget:
-                location = target_widget.get_dock_location(global_mouse_pos)
+        final_target = None
+        final_location = None
+        if target_widget:
+            location = target_widget.get_dock_location(global_mouse_pos)
+            if location:
+                final_target = target_widget
+                final_location = location
+            else:
                 parent_container = getattr(target_widget, 'parent_container', None)
-                # This line has been corrected to use global_mouse_pos
-                parent_location = parent_container.get_dock_location(global_mouse_pos) if parent_container else None
+                if parent_container:
+                    parent_location = parent_container.get_dock_location(global_mouse_pos)
+                    if parent_location:
+                        final_target = parent_container
+                        final_location = parent_location
 
-                # Prefer the deepest widget's location first.
-                if location:
-                    self.last_dock_target = (target_widget, location)
-                    target_widget.show_preview(location)
-                # Fall back to the parent container's location.
-                elif parent_location:
-                    self.last_dock_target = (parent_container, parent_location)
-                    parent_container.show_preview(parent_location)
+        for overlay_widget in self.active_overlays:
+            if overlay_widget is final_target:
+                overlay_widget.show_preview(final_location)
+            else:
+                overlay_widget.show_preview(None)
+
+        if final_target and final_location:
+            self.last_dock_target = (final_target, final_location)
+        else:
+            self.last_dock_target = None
 
     def raise_all_floating_widgets(self):
         """Brings all true 'floating layer' widgets to the top of the stacking order..."""

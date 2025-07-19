@@ -21,9 +21,8 @@ class DockingOverlay(QWidget):
             icons = ["top", "left", "bottom", "right", "center"]
 
         self.icon_size = 40
-        self.dock_icons = {}  # Start with an empty dictionary.
+        self.dock_icons = {}
 
-        # Define the properties for each possible icon type.
         icon_properties = {
             "top": {"text": "▲", "font-size": "20px"},
             "left": {"text": "◀", "font-size": "24px"},
@@ -32,22 +31,20 @@ class DockingOverlay(QWidget):
             "center": {"text": "⧉", "font-size": "20px"},
         }
 
-        # This is the fix: Dynamically create ONLY the labels for the requested icons.
         for key in icons:
             if key in icon_properties:
                 props = icon_properties[key]
-                # Create the QLabel for the icon.
                 icon = QLabel(props["text"], self)
                 icon.setAlignment(Qt.AlignCenter)
                 icon.setStyleSheet(
                     f"background-color: {color}; border: 1px solid black; font-size: {props['font-size']};")
                 icon.setFixedSize(self.icon_size, self.icon_size)
                 icon.setAttribute(Qt.WA_TranslucentBackground, False)
-                # Add the newly created icon to our dictionary.
                 self.dock_icons[key] = icon
 
         self.preview_overlay = QWidget(self)
         self.preview_overlay.setStyleSheet("background-color: rgba(0, 0, 255, 128);")
+        self.preview_overlay.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.preview_overlay.hide()
 
     def destroy_overlay(self):
@@ -110,23 +107,33 @@ class DockingOverlay(QWidget):
         return None
 
     def show_preview(self, location):
-        overlay_rect = self.rect()
-        if location == "top":
-            self.preview_overlay.setGeometry(0, 0, overlay_rect.width(), overlay_rect.height() / 2)
-        elif location == "left":
-            self.preview_overlay.setGeometry(0, 0, overlay_rect.width() / 2, overlay_rect.height())
-        elif location == "bottom":
-            self.preview_overlay.setGeometry(0, overlay_rect.height() / 2, overlay_rect.width(),
-                                             overlay_rect.height() / 2)
-        elif location == "right":
-            self.preview_overlay.setGeometry(overlay_rect.width() / 2, 0, overlay_rect.width() / 2,
-                                             overlay_rect.height())
-        elif location == "center":
-            self.preview_overlay.setGeometry(overlay_rect)
-        else:
+        if location is None:
             self.preview_overlay.hide()
             return
-        self.preview_overlay.show()
+
+        overlay_rect = self.rect()
+        new_geom = None
+
+        if location == "top":
+            new_geom = QRect(0, 0, overlay_rect.width(), overlay_rect.height() // 2)
+        elif location == "left":
+            new_geom = QRect(0, 0, overlay_rect.width() // 2, overlay_rect.height())
+        elif location == "bottom":
+            new_geom = QRect(0, overlay_rect.height() // 2, overlay_rect.width(), overlay_rect.height() // 2)
+        elif location == "right":
+            new_geom = QRect(overlay_rect.width() // 2, 0, overlay_rect.width() // 2, overlay_rect.height())
+        elif location == "center":
+            new_geom = QRect(overlay_rect)
+
+        if new_geom:
+            self.preview_overlay.setGeometry(new_geom)
+            self.preview_overlay.show()
+        else:
+            self.preview_overlay.hide()
 
     def hide_preview(self):
-        self.preview_overlay.hide()
+        if self.preview_overlay.isVisible():
+            self.preview_overlay.hide()
+            parent = self.parentWidget()
+            if parent:
+                parent.update()
