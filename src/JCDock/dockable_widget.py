@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt, QPoint, QRect, QEvent, QRectF
 from PySide6.QtGui import QColor, QPainter, QBrush, QMouseEvent, QPainterPath, QPalette, QRegion, QPen, QIcon, QPixmap
 
 from .docking_overlay import DockingOverlay
+from .icon_cache import IconCache
 
 
 class TitleBar(QWidget):
@@ -152,38 +153,10 @@ class TitleBar(QWidget):
                 self._top_level_widget.resize_edge = None
 
     def _create_control_icon(self, icon_type: str, color=QColor("#303030")):
-        """Draws custom thin icons for window controls."""
-        pixmap = QPixmap(24, 24)
-        pixmap.fill(Qt.transparent)
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.Antialiasing)
-        pen = QPen(color, 1.2)
-        painter.setPen(pen)
-
-        # Center the drawing in a 10x10 area inside the 24x24 pixmap
-        rect = QRect(7, 7, 10, 10)
-
-        if icon_type == "minimize":
-            painter.drawLine(rect.left(), rect.center().y() + 1, rect.right(), rect.center().y() + 1)
-        elif icon_type == "maximize":
-            painter.drawRect(rect)
-        elif icon_type == "restore":
-            # Draw back window
-            painter.drawRect(rect.adjusted(0, 2, -2, 0))
-            # Draw front window by erasing the intersection and then drawing the new rect
-            front_rect = rect.adjusted(2, 0, 0, -2)
-            erase_path = QPainterPath()
-            erase_path.addRect(QRectF(front_rect))
-            painter.setCompositionMode(QPainter.CompositionMode_Clear)
-            painter.fillPath(erase_path, Qt.transparent)
-            painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
-            painter.drawRect(front_rect)
-        elif icon_type == "close":
-            painter.drawLine(rect.topLeft().x(), rect.topLeft().y(), rect.bottomRight().x(), rect.bottomRight().y())
-            painter.drawLine(rect.topRight().x(), rect.topRight().y(), rect.bottomLeft().x(), rect.bottomLeft().y())
-
-        painter.end()
-        return QIcon(pixmap)
+        """
+        Creates cached window control icons for improved performance.
+        """
+        return IconCache.get_control_icon(icon_type, color.name(), 24)
 
 class DockableWidget(QWidget):
     def __init__(self, title, parent=None, manager=None, persistent_id=None, title_bar_color=None):

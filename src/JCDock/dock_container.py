@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QTableWidget, QTreeWidget, QListWidget, QTextEdit,
 from .tearable_tab_widget import TearableTabWidget
 from .dockable_widget import TitleBar, DockableWidget
 from .docking_overlay import DockingOverlay
+from .icon_cache import IconCache
 
 
 class DockContainer(QWidget):
@@ -482,50 +483,10 @@ class DockContainer(QWidget):
             self.manager.close_tab_group(tab_widget)
 
     def _create_corner_button_icon(self, icon_type: str, color=QColor("#303030")):
-        """Draws custom thin icons for the tab corner buttons."""
-        pixmap = QPixmap(18, 18)
-        pixmap.fill(Qt.transparent)
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.Antialiasing)
-
-        if icon_type == "restore":
-            pen = QPen(color, 1.0)
-            painter.setPen(pen)
-            # A standard "restore" icon (two overlapping squares).
-            # Centered in a 10x10 area, shifted up by 1px for vertical alignment.
-            rect = QRect(4, 3, 10, 10)
-
-            # Draw back window
-            painter.drawRect(rect.adjusted(0, 2, -2, 0))
-
-            # Draw front window by erasing the intersection and then drawing the new rect
-            front_rect = rect.adjusted(2, 0, 0, -2)
-            erase_path = QPainterPath()
-            erase_path.addRect(QRectF(front_rect))
-
-            # Use CompositionMode_Clear to "erase" the area under the front window
-            painter.setCompositionMode(QPainter.CompositionMode_Clear)
-            painter.fillPath(erase_path, Qt.transparent)
-
-            # Switch back to normal drawing mode and draw the front window's outline
-            painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
-            painter.drawRect(front_rect)
-
-        elif icon_type == "close":
-            # Replicate the exact parameters of the working TitleBar icon.
-            # A 1.2px pen gives the anti-aliaser enough information to create a smooth line.
-            pen = QPen(color, 1.2)
-            painter.setPen(pen)
-
-            # A 10x10 drawing rect, perfectly centered on the 18x18 canvas.
-            rect = QRect(4, 4, 10, 10)
-
-            # Draw the two diagonal lines using the integer corners of the rectangle.
-            painter.drawLine(rect.topLeft(), rect.bottomRight())
-            painter.drawLine(rect.topRight(), rect.bottomLeft())
-
-        painter.end()
-        return QIcon(pixmap)
+        """
+        Creates cached corner button icons for improved performance.
+        """
+        return IconCache.get_corner_button_icon(icon_type, color.name(), 18)
 
     def _create_tab_widget_with_controls(self):
         # Use the TearableTabWidget instead of the standard QTabWidget
