@@ -1,6 +1,6 @@
 # dockable_widget.py
 
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QPushButton, QHBoxLayout, QStyle, QApplication
+from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QPushButton, QHBoxLayout, QStyle, QApplication, QGraphicsDropShadowEffect
 from PySide6.QtCore import Qt, QPoint, QRect, QEvent, QRectF
 from PySide6.QtGui import QColor, QPainter, QBrush, QMouseEvent, QPainterPath, QPalette, QRegion, QPen, QIcon, QPixmap
 
@@ -195,11 +195,8 @@ class DockableWidget(QWidget):
         self._content_margin_size = 5
 
         self.persistent_id = persistent_id
-        self._blur_radius = 25
-        self._shadow_color_unfocused = QColor(0, 0, 0, 40)
-        self._shadow_color_focused = QColor(0, 0, 0, 75)
-        self._feather_power = 3.0
-        self._shadow_color = self._shadow_color_focused
+        self._shadow_effect = None
+        self._shadow_padding = 25
 
         if title_bar_color is not None:
             self._title_bar_color = title_bar_color
@@ -217,7 +214,7 @@ class DockableWidget(QWidget):
         self.setFocusPolicy(Qt.StrongFocus)
 
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(self._blur_radius, self._blur_radius, self._blur_radius, self._blur_radius)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
 
         self.title_bar = TitleBar(title, self, top_level_widget=self)
@@ -231,8 +228,8 @@ class DockableWidget(QWidget):
         self.content_layout = QVBoxLayout(self.content_container)
         self.overlay = None
 
-        self.setMinimumSize(300 + 2 * self._blur_radius, 200 + 2 * self._blur_radius)
-        self.resize(300 + 2 * self._blur_radius, 200 + 2 * self._blur_radius)
+        self.setMinimumSize(300, 200)
+        self.resize(300, 200)
 
         self.resize_margin = 8
         self.resize_edge = None
@@ -252,20 +249,61 @@ class DockableWidget(QWidget):
         """
         self._title_bar_color = new_color
         self.update()  # Trigger a repaint to show the new color
+        
+    def _setup_shadow_effect(self):
+        """
+        Sets up the QGraphicsDropShadowEffect for floating windows.
+        """
+        if not self._shadow_effect:
+            # Add margins to make space for the shadow
+            self.main_layout.setContentsMargins(self._shadow_padding, self._shadow_padding, self._shadow_padding, self._shadow_padding)
+            # Apply shadow effect to the main widget (keep translucent background like containers)
+            self._shadow_effect = QGraphicsDropShadowEffect()
+            self._shadow_effect.setBlurRadius(25)
+            self._shadow_effect.setColor(QColor(0, 0, 0, 75))
+            self._shadow_effect.setOffset(0, 0)
+            self.setGraphicsEffect(self._shadow_effect)
+            # Force a repaint to ensure proper rendering
+            self.update()
+            
+    def _remove_shadow_effect(self):
+        """
+        Removes the shadow effect (for docked widgets).
+        """
+        if self._shadow_effect:
+            # Remove margins when shadow is removed
+            self.main_layout.setContentsMargins(0, 0, 0, 0)
+            self.setGraphicsEffect(None)
+            self._shadow_effect = None
+            # Force a repaint to ensure proper rendering
+            self.update()
+            
+    def _update_shadow_focus(self, is_focused):
+        """
+        Updates shadow color based on focus state.
+        """
+        if self._shadow_effect:
+            color = QColor(0, 0, 0, 75) if is_focused else QColor(0, 0, 0, 40)
+            self._shadow_effect.setColor(color)
 
     def toggle_maximize(self):
         """Toggles the window between a maximized and normal state."""
         if self._is_maximized:
             # Restore to the previous geometry
-            self.main_layout.setContentsMargins(self._blur_radius, self._blur_radius, self._blur_radius,
-                                                self._blur_radius)
             self.setGeometry(self._normal_geometry)
+            # Re-enable shadow when restored and restore margins
+            if self._shadow_effect:
+                self._shadow_effect.setEnabled(True)
+                self.main_layout.setContentsMargins(self._shadow_padding, self._shadow_padding, self._shadow_padding, self._shadow_padding)
             self._is_maximized = False
             # Change icon back to 'maximize'
             self.title_bar.maximize_button.setIcon(self.title_bar._create_control_icon("maximize"))
         else:
             # Maximize the window
             self._normal_geometry = self.geometry()  # Save current geometry
+            # Disable shadow when maximized and remove margins
+            if self._shadow_effect:
+                self._shadow_effect.setEnabled(False)
             self.main_layout.setContentsMargins(0, 0, 0, 0)
             screen = QApplication.screenAt(self.pos())
             if not screen:
@@ -293,26 +331,9 @@ class DockableWidget(QWidget):
         # Local import to prevent circular dependency
         from .dock_container import DockContainer
 
-        content_rect = self.rect().adjusted(
-            self._blur_radius, self._blur_radius,
-            -self._blur_radius, -self._blur_radius
-        )
+        content_rect = self.rect()
         pos = event.position().toPoint()
 
-        # Handle click-through for shadows.
-        if not content_rect.contains(pos):
-            self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-            underlying = QApplication.widgetAt(event.globalPosition().toPoint())
-            if underlying and underlying.window() is not self:
-                target_window = underlying.window()
-                if target_window:
-                    target_window.raise_()
-                    target_window.activateWindow()
-                    if self.manager and isinstance(target_window, (DockableWidget, DockContainer)):
-                        self.manager.bring_to_front(target_window)
-                    QApplication.sendEvent(underlying, event)
-            self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
-            return
 
         # On any standard press, trigger the activation logic.
         self.on_activation_request()
@@ -405,14 +426,12 @@ class DockableWidget(QWidget):
         """
         if watched is self:
             if event.type() == QEvent.Type.WindowActivate:
-                self._shadow_color = self._shadow_color_focused
-                self.update()
-                return True
+                self._update_shadow_focus(True)
+                return False
             elif event.type() == QEvent.Type.WindowDeactivate:
-                self._shadow_color = self._shadow_color_unfocused
-                self.update()
-                return True
-
+                self._update_shadow_focus(False)
+                return False
+                
         if not self.parent_container:
             is_content_source = (watched is self.content_widget)
             if not is_content_source and self.content_widget and hasattr(self.content_widget, 'viewport'):
@@ -447,31 +466,14 @@ class DockableWidget(QWidget):
 
         painter.fillRect(self.rect(), Qt.transparent)
 
-        # When maximized, content rect is the full widget. Otherwise, it's inset for the shadow.
-        content_rect = self.rect() if self._is_maximized else self.rect().adjusted(
-            self._blur_radius, self._blur_radius,
-            -self._blur_radius, -self._blur_radius
-        )
-
-        # Do not draw shadow if maximized
-        if not self._is_maximized:
-            painter.setBrush(Qt.NoBrush)
-            for i in range(self._blur_radius):
-                falloff = 1.0 - (i / self._blur_radius)
-                alpha_factor = falloff ** self._feather_power
-                alpha = int(self._shadow_color.alpha() * alpha_factor)
-                pen_color = QColor(self._shadow_color.red(), self._shadow_color.green(), self._shadow_color.blue(),
-                                   alpha)
-
-                pen = painter.pen()
-                pen.setColor(pen_color)
-                pen.setWidth(1)
-                painter.setPen(pen)
-
-                base_corner_radius = 8.0
-                current_corner_radius = base_corner_radius + i
-                painter.drawRoundedRect(content_rect.adjusted(-i, -i, i, i), current_corner_radius,
-                                        current_corner_radius)
+        # Calculate inner content rectangle, respecting shadow margins when active
+        if self._shadow_effect and not self._is_maximized:
+            content_rect = self.rect().adjusted(
+                self._shadow_padding, self._shadow_padding,
+                -self._shadow_padding, -self._shadow_padding
+            )
+        else:
+            content_rect = self.rect()
 
         border_color = QColor("#A9A9A9")
         # Use the instance attribute for the title bar background color
@@ -487,7 +489,18 @@ class DockableWidget(QWidget):
         # Use clipping to restore the rounded corner appearance
         painter.setClipPath(full_path)
         painter.fillRect(content_rect, content_bg_color)
-        painter.fillRect(self.title_bar.geometry(), title_bg_color)
+        
+        # Adjust title bar geometry to use content_rect coordinates
+        if self._shadow_effect and not self._is_maximized:
+            title_bar_rect = QRect(
+                content_rect.x(),
+                content_rect.y(),
+                content_rect.width(),
+                self.title_bar.height()
+            )
+        else:
+            title_bar_rect = self.title_bar.geometry()
+        painter.fillRect(title_bar_rect, title_bg_color)
 
         painter.setClipping(False)
         painter.setPen(border_color)
@@ -522,14 +535,24 @@ class DockableWidget(QWidget):
         return getattr(self, 'content_widget', None)
 
     def get_edge(self, pos):
-        # Adjust position to be relative to the visible content area, not the whole window
-        adj_pos = pos - QPoint(self._blur_radius, self._blur_radius)
-        content_rect = self.rect().adjusted(self._blur_radius, self._blur_radius, -self._blur_radius,
-                                            -self._blur_radius)
+        # Calculate the content rectangle, respecting shadow margins when active
+        if self._shadow_effect and not self._is_maximized:
+            content_rect = self.rect().adjusted(
+                self._shadow_padding, self._shadow_padding,
+                -self._shadow_padding, -self._shadow_padding
+            )
+        else:
+            content_rect = self.rect()
 
         # Check only if cursor is within the visible content rect
         if not content_rect.contains(pos):
             return None
+
+        # Adjust position relative to content rect when shadow is active
+        if self._shadow_effect and not self._is_maximized:
+            adj_pos = pos - QPoint(self._shadow_padding, self._shadow_padding)
+        else:
+            adj_pos = pos
 
         margin = self.resize_margin
         on_left = 0 <= adj_pos.x() < margin
@@ -598,6 +621,10 @@ class DockableWidget(QWidget):
                 new_global_x = main_window_pos.x() + 150 + (count % 7) * 40
                 new_global_y = main_window_pos.y() + 150 + (count % 7) * 40
                 self.move(new_global_x, new_global_y)
+
+        # Set up shadow effect if this is a floating widget (not docked)
+        if not self.parent_container and not self._is_maximized:
+            self._setup_shadow_effect()
 
         # Call the original QWidget.show() to make the widget visible.
         super().show()

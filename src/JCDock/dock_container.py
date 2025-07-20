@@ -1,6 +1,6 @@
 import re
 from PySide6.QtWidgets import QWidget, QSplitter, QVBoxLayout, QTabWidget, QHBoxLayout, QPushButton, QStyle, \
-    QApplication
+    QApplication, QGraphicsDropShadowEffect
 from PySide6.QtCore import Qt, QRect, QEvent, QPoint, QRectF, QSize, QTimer, QPointF, QLineF, QObject
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QBrush, QRegion, QPixmap, QPen, QIcon, QPolygonF, \
     QPalette
@@ -17,6 +17,8 @@ class DockContainer(QWidget):
         super().__init__(parent)
 
         self._should_draw_shadow = create_shadow
+        self._shadow_effect = None
+        self._shadow_padding = 25
         self._blur_radius = 25 if self._should_draw_shadow else 0
         self._shadow_color_unfocused = QColor(0, 0, 0, 40)
         self._shadow_color_focused = QColor(0, 0, 0, 75)
@@ -81,21 +83,76 @@ class DockContainer(QWidget):
         self.content_area.installEventFilter(self)
 
         self._filters_installed = False
+        
+        # Set up shadow effect if needed
+        if self._should_draw_shadow:
+            self._setup_shadow_effect()
+        
+    def eventFilter(self, watched, event):
+        """
+        Handles focus changes for shadow color updates.
+        """
+        if watched is self:
+            if event.type() == QEvent.Type.WindowActivate:
+                self._update_shadow_focus(True)
+                return False
+            elif event.type() == QEvent.Type.WindowDeactivate:
+                self._update_shadow_focus(False)
+                return False
+        return super().eventFilter(watched, event)
+            
+    def _setup_shadow_effect(self):
+        """
+        Sets up the QGraphicsDropShadowEffect for floating containers.
+        """
+        if not self._shadow_effect:
+            # Apply shadow effect to the main widget
+            self._shadow_effect = QGraphicsDropShadowEffect()
+            self._shadow_effect.setBlurRadius(25)
+            self._shadow_effect.setColor(QColor(0, 0, 0, 75))
+            self._shadow_effect.setOffset(0, 0)
+            self.setGraphicsEffect(self._shadow_effect)
+            # Force a repaint to ensure proper rendering
+            self.update()
+            
+    def _remove_shadow_effect(self):
+        """
+        Removes the shadow effect (for docked containers).
+        """
+        if self._shadow_effect:
+            self.setGraphicsEffect(None)
+            self._shadow_effect = None
+            # Force a repaint to ensure proper rendering
+            self.update()
+            
+    def _update_shadow_focus(self, is_focused):
+        """
+        Updates shadow color based on focus state.
+        """
+        if self._shadow_effect:
+            color = QColor(0, 0, 0, 75) if is_focused else QColor(0, 0, 0, 40)
+            self._shadow_effect.setColor(color)
 
     def toggle_maximize(self):
         """Toggles the window between a maximized and normal state."""
         if self._is_maximized:
             # Restore to the previous geometry
-            self.main_layout.setContentsMargins(self._blur_radius, self._blur_radius, self._blur_radius,
-                                                self._blur_radius)
+            shadow_margin = 25 if self._should_draw_shadow else 0
+            self.main_layout.setContentsMargins(shadow_margin, shadow_margin, shadow_margin, shadow_margin)
             self.setGeometry(self._normal_geometry)
+            # Re-enable shadow when restored
+            if self._shadow_effect:
+                self._shadow_effect.setEnabled(True)
             self._is_maximized = False
             # Change icon back to 'maximize'
             self.title_bar.maximize_button.setIcon(self.title_bar._create_control_icon("maximize"))
         else:
             # Maximize the window
             self._normal_geometry = self.geometry()  # Save current geometry
-            self.main_layout.setContentsMargins(0, 0, 0, 0)  # No margins when maximized
+            # Disable shadow when maximized
+            if self._shadow_effect:
+                self._shadow_effect.setEnabled(False)
+            self.main_layout.setContentsMargins(0, 0, 0, 0)
             screen = QApplication.screenAt(self.pos())
             if not screen:
                 screen = QApplication.primaryScreen()
@@ -124,27 +181,7 @@ class DockContainer(QWidget):
             -self._blur_radius, -self._blur_radius
         )
 
-        # 1. Draw the shadow (but not if maximized)
-        if self._should_draw_shadow and not self._is_maximized:
-            painter.setBrush(Qt.NoBrush)
-            for i in range(self._blur_radius):
-                falloff = 1.0 - (i / self._blur_radius)
-                alpha_factor = falloff ** self._feather_power
-                alpha = int(self._shadow_color.alpha() * alpha_factor)
-                pen_color = QColor(self._shadow_color.red(), self._shadow_color.green(), self._shadow_color.blue(),
-                                   alpha)
-
-                pen = painter.pen()
-                pen.setColor(pen_color)
-                pen.setWidth(1)
-                painter.setPen(pen)
-
-                base_corner_radius = 8.0
-                current_corner_radius = base_corner_radius + i
-                painter.drawRoundedRect(content_rect.adjusted(-i, -i, i, i), current_corner_radius,
-                                        current_corner_radius)
-
-        # 2. Draw the container's opaque background and border
+        # Draw the container's opaque background and border
         border_color = QColor("#6A8EAE")
         title_bg_color = QColor("#C0D3E8")
         container_bg_color = QColor("#F0F0F0")
@@ -710,17 +747,14 @@ class DockContainer(QWidget):
         self.overlay.style = style
         self.overlay.reposition_icons()
 
-        # If the container has a shadow (like a floating container or widget),
-        # the overlay must be placed within the content area, inset from the shadow.
         if self._should_draw_shadow:
+            shadow_margin = 25
             content_rect = self.rect().adjusted(
-                self._blur_radius, self._blur_radius,
-                -self._blur_radius, -self._blur_radius
+                shadow_margin, shadow_margin,
+                -shadow_margin, -shadow_margin
             )
             self.overlay.setGeometry(content_rect)
         else:
-            # If there's no shadow (only the main window's central dock area),
-            # the overlay can cover the entire widget rectangle.
             self.overlay.setGeometry(self.rect())
 
         self.overlay.show()

@@ -489,6 +489,8 @@ class DockingManager(QObject):
                     widget.content_container.setStyleSheet(
                         f"#ContentContainer {{ background-color: {bg_color_name}; border-radius: 0px; }}")
                 widget.parent_container = container
+                # Remove shadow effect when widget becomes docked
+                widget._remove_shadow_effect()
                 if widget not in container.contained_widgets:
                     container.contained_widgets.append(widget)
             return qt_tab_widget
@@ -704,6 +706,10 @@ class DockingManager(QObject):
         # will now see the _is_maximized flag and correctly skip the auto-positioning logic.
         widget_to_undock.setGeometry(geometry)
 
+        # Set up shadow effect for floating widget
+        if not was_maximized:
+            widget_to_undock._setup_shadow_effect()
+
         # This is the step that was missing from my flawed manual implementation.
         # We must explicitly show both the content and the main window frame.
         cc.show()
@@ -746,10 +752,8 @@ class DockingManager(QObject):
         else:
             new_size = QSize(350, 250)
 
-        blur = widget_to_undock._blur_radius
         title_height = widget_to_undock.title_bar.height()
-        new_size.setWidth(new_size.width() + blur * 2)
-        new_size.setHeight(new_size.height() + title_height + blur * 2)
+        new_size.setHeight(new_size.height() + title_height)
 
         if global_pos:
             new_pos = global_pos
@@ -1289,16 +1293,12 @@ class DockingManager(QObject):
                 # Fallback size if the container wasn't the active tab
                 new_window_size = QSize(300, 200)
 
-                # Add padding for the shadow and title bar
-            blur = widget_to_undock._blur_radius
+                # Add padding for the title bar
             title_height = widget_to_undock.title_bar.height()
-
-            new_window_size.setWidth(new_window_size.width() + blur * 2)
-            new_window_size.setHeight(new_window_size.height() + title_height + blur * 2)
+            new_window_size.setHeight(new_window_size.height() + title_height)
 
             # Calculate the top-left position so the mouse is on the title bar
-            # The offset accounts for the shadow radius and the height of the title bar.
-            offset_y = title_height // 2 + blur
+            offset_y = title_height // 2
             offset_x = 50  # A reasonable horizontal offset for the drag start
 
             new_window_pos = global_mouse_pos - QPoint(offset_x, offset_y)
