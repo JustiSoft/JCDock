@@ -3,11 +3,12 @@ from PySide6.QtWidgets import QWidget, QSplitter, QVBoxLayout, QTabWidget, QHBox
     QApplication, QGraphicsDropShadowEffect
 from PySide6.QtCore import Qt, QRect, QEvent, QPoint, QRectF, QSize, QTimer, QPointF, QLineF, QObject
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QBrush, QRegion, QPixmap, QPen, QIcon, QPolygonF, \
-    QPalette
+    QPalette, QDragEnterEvent, QDragMoveEvent, QDragLeaveEvent, QDropEvent
 from PySide6.QtWidgets import QTableWidget, QTreeWidget, QListWidget, QTextEdit, QPlainTextEdit, QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QSlider, QScrollBar
 
 from .tearable_tab_widget import TearableTabWidget
-from .dockable_widget import TitleBar, DockableWidget
+from .title_bar import TitleBar
+from .dock_panel import DockPanel
 from .docking_overlay import DockingOverlay
 from .icon_cache import IconCache
 
@@ -84,6 +85,9 @@ class DockContainer(QWidget):
         self.content_area.installEventFilter(self)
 
         self._filters_installed = False
+        
+        # Enable drag and drop
+        self.setAcceptDrops(True)
         
         # Set up shadow effect if needed
         if self._should_draw_shadow:
@@ -204,7 +208,7 @@ class DockContainer(QWidget):
         painter.drawPath(full_path)
 
     def mousePressEvent(self, event):
-        from .dockable_widget import DockableWidget
+        from .dock_panel import DockPanel
 
         pos = event.position().toPoint()
         content_rect = self.rect().adjusted(
@@ -221,7 +225,7 @@ class DockContainer(QWidget):
                 if target_window:
                     target_window.raise_()
                     target_window.activateWindow()
-                    if self.manager and isinstance(target_window, (DockableWidget, DockContainer)):
+                    if self.manager and isinstance(target_window, (DockPanel, DockContainer)):
                         self.manager.bring_to_front(target_window)
                     QApplication.sendEvent(underlying, event)
             self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
@@ -322,7 +326,7 @@ class DockContainer(QWidget):
 
             # Perform the critical check for viewport-based widgets.
             if isinstance(widget, viewport_widgets):
-                # This logic is taken directly from the working DockableWidget.setContent method.
+                # This logic is taken directly from the working DockPanel.setContent method.
                 widget.setMouseTracking(True)
                 if hasattr(widget, 'viewport'):
                     viewport = widget.viewport()
@@ -710,6 +714,45 @@ class DockContainer(QWidget):
         self.setWindowTitle(new_title)
         if self.title_bar:
             self.title_bar.title_label.setText(new_title)
+            # Force visual refresh of the title bar
+            self.title_bar.update()
+            self.title_bar.repaint()
+            self.update()
+            QApplication.processEvents()
+
+    def _generate_dynamic_title(self):
+        """
+        Generates a dynamic title based on the contained widgets.
+        """
+        if not self.contained_widgets:
+            return "Empty Container"
+        
+        if len(self.contained_widgets) == 1:
+            # Single widget - use its title
+            widget = self.contained_widgets[0]
+            return widget.windowTitle()
+        
+        # Multiple widgets - create truncated list
+        widget_names = [w.windowTitle() for w in self.contained_widgets]
+        title = ", ".join(widget_names)
+        
+        # Truncate if too long (approximately 50 characters)
+        max_length = 50
+        if len(title) > max_length:
+            title = title[:max_length - 3] + "..."
+        
+        return title
+    
+    def update_dynamic_title(self):
+        """
+        Updates the container title based on current widget contents.
+        Only updates if the container has a title bar (floating containers).
+        """
+        if self.title_bar:
+            new_title = self._generate_dynamic_title()
+            self.set_title(new_title)
+            # Also schedule a delayed update to ensure visual consistency
+            QTimer.singleShot(50, lambda: self.set_title(new_title))
 
     def show_overlay(self, preset='standard'):
         # Based on the preset command from the manager, configure the overlay.
@@ -766,3 +809,119 @@ class DockContainer(QWidget):
 
     def show_preview(self, location):
         if self.overlay: self.overlay.show_preview(location)
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        """
+        Handles drag enter events for Qt-native drag and drop.
+        Accepts the drag if it contains a valid JCDock widget.
+        """
+        print(f"DEBUG: dragEnterEvent on {self.windowTitle()}")
+        if self._is_valid_widget_drag(event):
+            print(f"DEBUG: Valid drag accepted")
+            event.acceptProposedAction()
+        else:
+            print(f"DEBUG: Invalid drag ignored")
+            event.ignore()
+
+    def dragMoveEvent(self, event: QDragMoveEvent):
+        """
+        Handles drag move events for Qt-native drag and drop.
+        This is the only place responsible for showing overlays during a native drag.
+        """
+        if not self._is_valid_widget_drag(event):
+            event.ignore()
+            return
+
+        event.acceptProposedAction()
+        
+        if not self.manager:
+            return
+
+        # Get the event's local position and map to global coordinates
+        local_pos = event.position().toPoint() if hasattr(event, 'position') else event.pos()
+        global_pos = self.mapToGlobal(local_pos)
+        
+        # Call the manager with the correct global position
+        self.manager.handle_qdrag_move(global_pos)
+
+    def dragLeaveEvent(self, event: QDragLeaveEvent):
+        """
+        Handles drag leave events for Qt-native drag and drop.
+        Hides overlays when drag leaves this container.
+        """
+        self.hide_overlay()
+        event.accept()
+
+    def dropEvent(self, event: QDropEvent):
+        """
+        Handles drop events for Qt-native drag and drop.
+        Uses the manager's centralized target information.
+        """
+        print(f"DEBUG: DockContainer.dropEvent called on {self.windowTitle()}")
+        if not self._is_valid_widget_drag(event):
+            print(f"DEBUG: Invalid drag in dropEvent")
+            event.ignore()
+            return
+
+        if not self.manager:
+            print(f"DEBUG: No manager in dropEvent")
+            event.ignore()
+            return
+
+        # Extract the widget persistent ID from MIME data
+        widget_id = self._extract_widget_id(event)
+        print(f"DEBUG: Widget ID extracted: {widget_id}")
+        if not widget_id:
+            print(f"DEBUG: No widget ID found")
+            event.ignore()
+            return
+
+        # Use the manager's last_dock_target from centralized drag handling
+        if self.manager.last_dock_target:
+            target, location = self.manager.last_dock_target
+            print(f"DEBUG: Using manager's dock target: {type(target).__name__}, location: {location}")
+            
+            # Handle tab insertion case
+            if len(self.manager.last_dock_target) == 3:
+                target_tab_widget, action, index = self.manager.last_dock_target
+                print(f"DEBUG: Tab insertion - index: {index}")
+                success = self.manager.dock_widget_from_drag(widget_id, target_tab_widget, "insert")
+            else:
+                print(f"DEBUG: Regular docking")
+                success = self.manager.dock_widget_from_drag(widget_id, target, location)
+                
+            if success:
+                event.setDropAction(Qt.MoveAction)
+                event.accept()
+                print(f"DEBUG: Drop accepted")
+            else:
+                event.ignore()
+                print(f"DEBUG: Drop ignored due to docking failure")
+        else:
+            print(f"DEBUG: No dock target found - creating floating window")
+            # No valid dock target - this should create a floating window
+            event.ignore()
+
+    def _is_valid_widget_drag(self, event):
+        """
+        Checks if the drag event contains a valid JCDock widget.
+        """
+        mime_data = event.mimeData()
+        return (mime_data.hasFormat("application/x-jcdock-widget") or 
+                mime_data.hasText())
+
+    def _extract_widget_id(self, event):
+        """
+        Extracts the widget persistent ID from the drag event's MIME data.
+        """
+        mime_data = event.mimeData()
+        
+        # Try custom format first
+        if mime_data.hasFormat("application/x-jcdock-widget"):
+            return mime_data.data("application/x-jcdock-widget").data().decode('utf-8')
+        
+        # Fall back to text format
+        if mime_data.hasText():
+            return mime_data.text()
+        
+        return None

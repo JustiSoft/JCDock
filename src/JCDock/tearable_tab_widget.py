@@ -80,7 +80,7 @@ class TearableTabBar(QTabBar):
 
                     tab_index = self.tabAt(self.drag_start_pos)
                     if tab_index != -1:
-                        self.parentWidget().start_tab_tear(tab_index, event.globalPosition().toPoint())
+                        self.parentWidget().start_tab_drag(tab_index)
                         self.drag_start_pos = None
                         return
 
@@ -101,11 +101,14 @@ class TearableTabWidget(QTabWidget):
     def set_manager(self, manager):
         self.manager = manager
 
-    def start_tab_tear(self, index, global_pos):
+    def start_tab_drag(self, index):
+        """
+        Starts a Qt-native drag operation for a tab at the specified index.
+        """
         if not self.manager:
             return
 
-        # 1. Identify the DockableWidget associated with this tab index
+        # 1. Identify the DockPanel associated with this tab index
         content_to_remove = self.widget(index)
 
         # We need to find the DockContainer that owns this tab widget to look up the widget
@@ -120,5 +123,5 @@ class TearableTabWidget(QTabWidget):
                                 None)
 
             if owner_widget:
-                # 2. Tell the manager to undock this specific widget and start dragging
-                self.manager.undock_single_widget_by_tear(owner_widget, global_pos)
+                # 2. Tell the manager to start the Qt drag operation
+                self.manager.start_tab_drag_operation(owner_widget.persistent_id)

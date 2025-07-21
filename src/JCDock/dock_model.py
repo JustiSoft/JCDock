@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Union
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QWidget
-from .dockable_widget import DockableWidget
+from .dock_panel import DockPanel
 
 # Define a type hint for any possible node
 AnyNode = Union['SplitterNode', 'TabGroupNode', 'WidgetNode']
@@ -13,8 +13,8 @@ AnyNode = Union['SplitterNode', 'TabGroupNode', 'WidgetNode']
 
 @dataclass
 class WidgetNode:
-    """Represents a single, concrete DockableWidget in the layout."""
-    widget: DockableWidget
+    """Represents a single, concrete DockPanel in the layout."""
+    widget: DockPanel
     id: uuid.UUID = field(default_factory=uuid.uuid4, init=False)
 
 @dataclass
@@ -36,19 +36,19 @@ class SplitterNode:
 class LayoutModel:
     """The complete model for the entire application's dock layout."""
     def __init__(self):
-        # The keys are the top-level floating widgets (DockableWidget or DockContainer).
+        # The keys are the top-level floating widgets (DockPanel or DockContainer).
         # The values are the root nodes of their internal layout trees.
         self.roots: dict[QWidget, AnyNode] = {}
 
-    def register_widget(self, widget: DockableWidget):
-        """Registers a new floating widget, giving it a simple default layout."""
-        if widget in self.roots:
-            return # Already registered
-
-        # A new floating widget is represented as a single tab in a tab group.
-        widget_node = WidgetNode(widget=widget)
-        tab_group_node = TabGroupNode(children=[widget_node])
-        self.roots[widget] = tab_group_node
+    def register_widget(self, widget: DockPanel):
+        """
+        Legacy method - DockPanel instances should NOT be registered as floating windows.
+        Use create_floating_window() in DockingManager instead to create DockContainers.
+        This method is kept for compatibility but should not be used for new DockPanel instances.
+        """
+        # DockPanel instances should never be registered as standalone windows
+        # They should only exist within DockContainers
+        pass
 
     def unregister_widget(self, widget: QWidget):
         """Removes a top-level widget (and its entire layout) from the model."""
@@ -84,7 +84,7 @@ class LayoutModel:
         elif isinstance(node, WidgetNode):
             print(f"{prefix}+- Widget: '{node.widget.windowTitle()}' [id: ...{str(node.id)[-4:]}]")
 
-    def find_host_info(self, widget: DockableWidget) -> tuple[TabGroupNode, AnyNode, QWidget] | tuple[None, None, None]:
+    def find_host_info(self, widget: DockPanel) -> tuple[TabGroupNode, AnyNode, QWidget] | tuple[None, None, None]:
         """
         Finds all context for a given widget.
         Returns: (The TabGroupNode hosting the widget, its parent node, the top-level QWidget window)
@@ -129,3 +129,74 @@ class LayoutModel:
         elif isinstance(node, (TabGroupNode, SplitterNode)):
             for child in node.children:
                 self._recursive_get_widgets(child, widget_list)
+
+    def find_widget_node(self, root_node: AnyNode, target_widget) -> WidgetNode:
+        """
+        Recursively searches through the node tree to find the WidgetNode
+        that contains the specified target widget.
+        """
+        if isinstance(root_node, WidgetNode):
+            if root_node.widget is target_widget:
+                return root_node
+        elif isinstance(root_node, (TabGroupNode, SplitterNode)):
+            for child in root_node.children:
+                result = self.find_widget_node(child, target_widget)
+                if result:
+                    return result
+        return None
+
+    def find_widget_node_with_parent(self, root_node: AnyNode, target_widget) -> tuple[WidgetNode, AnyNode]:
+        """
+        Recursively searches through the node tree to find the WidgetNode
+        that contains the specified target widget, along with its parent node.
+        Returns (widget_node, parent_node) or (None, None) if not found.
+        """
+        return self._find_widget_with_parent_helper(root_node, target_widget, None)
+    
+    def _find_widget_with_parent_helper(self, node: AnyNode, target_widget, parent: AnyNode) -> tuple[WidgetNode, AnyNode]:
+        """Helper method for find_widget_node_with_parent"""
+        if isinstance(node, WidgetNode):
+            if node.widget is target_widget:
+                return node, parent
+        elif isinstance(node, (TabGroupNode, SplitterNode)):
+            for child in node.children:
+                result = self._find_widget_with_parent_helper(child, target_widget, node)
+                if result[0]:  # If widget_node was found
+                    return result
+        return None, None
+
+    def _find_node_with_ancestry(self, root_node: AnyNode, target_node: AnyNode) -> list[AnyNode]:
+        """
+        Finds the target_node and returns the full ancestry path from root to target.
+        Returns list like [root_node, parent_node, target_node] or empty list if not found.
+        """
+        def search_with_path(current_node: AnyNode, path: list[AnyNode]) -> list[AnyNode]:
+            current_path = path + [current_node]
+            
+            if current_node is target_node:
+                return current_path
+                
+            if isinstance(current_node, (TabGroupNode, SplitterNode)):
+                for child in current_node.children:
+                    result = search_with_path(child, current_path)
+                    if result:
+                        return result
+            
+            return []
+        
+        return search_with_path(root_node, [])
+
+    def replace_node_in_tree(self, root_node: AnyNode, old_node: AnyNode, new_node: AnyNode) -> bool:
+        """
+        Recursively searches through the node tree and replaces old_node with new_node.
+        Returns True if the replacement was successful, False otherwise.
+        """
+        if isinstance(root_node, (TabGroupNode, SplitterNode)):
+            for i, child in enumerate(root_node.children):
+                if child is old_node:
+                    root_node.children[i] = new_node
+                    return True
+                elif isinstance(child, (TabGroupNode, SplitterNode)):
+                    if self.replace_node_in_tree(child, old_node, new_node):
+                        return True
+        return False

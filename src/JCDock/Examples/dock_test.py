@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt, QObject, QEvent, Slot, QSize, QPoint, QRect
 from PySide6.QtGui import QColor
 
 from JCDock.docking_manager import DockingManager
-from JCDock.dockable_widget import DockableWidget
+from JCDock.dock_panel import DockPanel
 from JCDock.main_dock_window import MainDockWindow
 from JCDock.dock_container import DockContainer
 
@@ -115,7 +115,7 @@ class DockingTestApp:
 
 
     def _create_test_content(self, name: str) -> QWidget:
-        """Creates a simple table with test data for demonstration."""
+        """Creates a simple ttest_widget_3able with test data for demonstration."""
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
         content_layout.setContentsMargins(0, 0, 0, 0)
@@ -165,12 +165,18 @@ class DockingTestApp:
 
         new_dockable_widget = self._create_and_configure_widget(widget_name, persistent_id)
 
-        self.docking_manager.register_widget(new_dockable_widget)
-        new_dockable_widget.show()
+        # Add widget to manager's widget list (but don't register as floating)
+        new_dockable_widget.manager = self.docking_manager
+        self.docking_manager.widgets.append(new_dockable_widget)
+        self.docking_manager.add_widget_handlers(new_dockable_widget)
+        
+        # Create a floating window using DockContainer
+        geometry = QRect(200 + self.widget_count * 40, 200 + self.widget_count * 40, 400, 300)
+        self.docking_manager.create_floating_window([new_dockable_widget], geometry)
 
-    def _create_and_configure_widget(self, name: str, persistent_id: str) -> DockableWidget:
+    def _create_and_configure_widget(self, name: str, persistent_id: str) -> DockPanel:
         """Helper method that creates and a single dockable widget."""
-        new_dockable_widget = DockableWidget(
+        new_dockable_widget = DockPanel(
             name,
             parent=None,
             manager=self.docking_manager,
@@ -182,7 +188,7 @@ class DockingTestApp:
 
         return new_dockable_widget
 
-    def app_widget_factory(self, node_data: dict) -> DockableWidget:
+    def app_widget_factory(self, node_data: dict) -> DockPanel:
         """
         This is the application's factory. The docking manager will call this
         during a 'load' operation to recreate a widget from its saved ID.
@@ -195,7 +201,7 @@ class DockingTestApp:
         widget_num = match.group(0) if match else "N/A"
         widget_name = f"Widget {widget_num}"
 
-        new_dockable_widget = DockableWidget(
+        new_dockable_widget = DockPanel(
             widget_name,
             parent=None,
             manager=self.docking_manager,
@@ -402,7 +408,12 @@ class DockingTestApp:
         self.create_and_register_new_widget()
         self.create_and_register_new_widget()
         self.create_and_register_new_widget()
-        sys.exit(self.app.exec())
+        print("\n=== APPLICATION READY FOR MANUAL TESTING ===")
+        print("You can now manually drag widgets to test docking behavior.")
+        print("Debug output will appear in this console.")
+        print("Close the application window to exit.")
+        print("=" * 50 + "\n")
+        return self.app.exec()
 
 if __name__ == "__main__":
     test_app = DockingTestApp()

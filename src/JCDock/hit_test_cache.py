@@ -160,12 +160,12 @@ class HitTestCache:
                         break
                 self._cache_container_targets(container, container_z_order)
         
-        # Cache drop targets from floating DockableWidgets in window_stack
+        # Cache drop targets from floating DockPanels in window_stack
         for z_index, window in enumerate(window_stack):
             if window and window.isVisible():
-                # Check if this is a floating DockableWidget (not a container)
-                from .dockable_widget import DockableWidget
-                if isinstance(window, DockableWidget) and not window.parent_container:
+                # Check if this is a floating DockPanel (not a container)
+                from .dock_panel import DockPanel
+                if isinstance(window, DockPanel) and not window.parent_container:
                     # This is a floating widget - cache it as a drop target
                     self._drop_targets.append(CachedDropTarget(
                         widget=window,
@@ -195,7 +195,7 @@ class HitTestCache:
             for i in range(current_widget.count()):
                 tab_content = current_widget.widget(i)
                 if tab_content:
-                    # Use the stored property to get the DockableWidget
+                    # Use the stored property to get the DockPanel
                     dockable_widget = tab_content.property("dockable_widget")
                     if dockable_widget:
                         self._drop_targets.append(CachedDropTarget(
@@ -283,9 +283,14 @@ class HitTestCache:
                 matching_targets.append(target)
                 
         if matching_targets:
-            # Sort by z-order first (highest first), then by specificity (smallest area)
-            best_target = max(matching_targets, 
-                            key=lambda t: (t.z_order, -t.global_rect.width() * t.global_rect.height()))
+            # Sort by widget-level priority first, then z-order, then by specificity (smallest area)
+            # Widget-level targets should be preferred over container-level targets
+            def target_priority(t):
+                # Priority order: widget > tab_widget > container
+                type_priority = {'widget': 2, 'tab_widget': 1, 'container': 0}[t.target_type]
+                return (type_priority, t.z_order, -t.global_rect.width() * t.global_rect.height())
+            
+            best_target = max(matching_targets, key=target_priority)
             
             # Cache the result
             self._last_mouse_pos = global_pos
