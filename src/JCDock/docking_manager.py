@@ -493,6 +493,31 @@ class DockingManager(QObject):
         finally:
             # Always clear the flag, even if an error occurs
             self._rendering_layout = False
+            
+        # Update tab bar visibility after rendering
+        self._update_tab_bar_visibility(container)
+
+    def _update_tab_bar_visibility(self, container: DockContainer):
+        """
+        Updates tab bar visibility for all tab widgets in the container.
+        Hides tab bar when there's only one tab, shows it when there are multiple tabs.
+        """
+        if not container.splitter:
+            return
+            
+        # Find all QTabWidget instances in the container
+        tab_widgets = []
+        if isinstance(container.splitter, QTabWidget):
+            tab_widgets.append(container.splitter)
+        else:
+            tab_widgets = container.splitter.findChildren(QTabWidget)
+        
+        # Update visibility for each tab widget
+        for tab_widget in tab_widgets:
+            if tab_widget.count() == 1:
+                tab_widget.tabBar().setVisible(False)
+            else:
+                tab_widget.tabBar().setVisible(True)
 
     def _render_node(self, node: AnyNode, container: DockContainer) -> QWidget:
         if isinstance(node, SplitterNode):
@@ -533,6 +558,13 @@ class DockingManager(QObject):
                 widget._remove_shadow_effect()
                 if widget not in container.contained_widgets:
                     container.contained_widgets.append(widget)
+            
+            # Auto-hide tab bar for single tabs
+            if qt_tab_widget.count() == 1:
+                qt_tab_widget.tabBar().setVisible(False)
+            else:
+                qt_tab_widget.tabBar().setVisible(True)
+            
             return qt_tab_widget
         elif isinstance(node, WidgetNode):
             return node.widget.content_container
@@ -699,28 +731,43 @@ class DockingManager(QObject):
     def create_floating_window(self, widgets: list[DockableWidget], geometry: QRect, was_maximized=False,
                                normal_geometry=None):
         if not widgets: return None
-        if len(widgets) == 1:
-            widget_to_float = widgets[0]
-            # Pass the state down to the undock function.
-            return self._reparent_to_floating_window(widget_to_float, geometry, was_maximized, normal_geometry)
-        else:
-            new_container = DockContainer(manager=self, parent=None)
-            new_container.setGeometry(geometry)
+        
+        # Always create a DockContainer, regardless of widget count
+        new_container = DockContainer(manager=self, parent=None)
+        new_container.setGeometry(geometry)
 
-            widget_nodes = [WidgetNode(w) for w in widgets]
-            tab_group_node = TabGroupNode(children=widget_nodes)
-            self.model.roots[new_container] = tab_group_node
-            for widget in widgets:
-                widget.parent_container = new_container
-            self.add_widget_handlers(new_container)
-            self.containers.append(new_container)
-            self.bring_to_front(new_container)
-            self._render_layout(new_container)
-            new_container.show()
+        # Handle maximized state
+        if was_maximized:
+            new_container._is_maximized = True
+            if normal_geometry:
+                new_container._normal_geometry = normal_geometry
+            new_container.main_layout.setContentsMargins(0, 0, 0, 0)
+            new_container.title_bar.maximize_button.setIcon(
+                new_container.title_bar._create_control_icon("restore")
+            )
 
-            new_container.raise_()
-            new_container.activateWindow()
-            return new_container
+        # Create TabGroupNode structure for all widgets
+        widget_nodes = [WidgetNode(w) for w in widgets]
+        tab_group_node = TabGroupNode(children=widget_nodes)
+        self.model.roots[new_container] = tab_group_node
+        
+        # Set parent container for all widgets
+        for widget in widgets:
+            widget.parent_container = new_container
+            
+        self.add_widget_handlers(new_container)
+        self.containers.append(new_container)
+        self.bring_to_front(new_container)
+        self._render_layout(new_container)
+        
+        # Set up shadow effect for floating container
+        if not was_maximized:
+            new_container._setup_shadow_effect()
+            
+        new_container.show()
+        new_container.raise_()
+        new_container.activateWindow()
+        return new_container
 
     def _reparent_to_floating_window(self, widget_to_undock, geometry, was_maximized=False, normal_geometry=None):
         # Destroy any overlay associated with this widget before reparenting
@@ -766,13 +813,13 @@ class DockingManager(QObject):
         widget_to_undock.activateWindow()
         return widget_to_undock
 
-    def undock_widget(self, widget_to_undock: DockableWidget, global_pos: QPoint = None) -> DockableWidget | None:
+    def undock_widget(self, widget_to_undock: DockableWidget, global_pos: QPoint = None) -> DockContainer | None:
         """
         Programmatically undocks a widget from its container, making it a floating window.
 
         :param widget_to_undock: The widget to make floating.
         :param global_pos: An optional QPoint to specify the new top-left of the floating window.
-        :return: The widget that is now floating, or None on failure.
+        :return: The DockContainer that now contains the floating widget, or None on failure.
         """
         # PRE-EMPTIVE CLEANUP: Destroy ALL overlays before major layout change
         self.destroy_all_overlays()
@@ -815,7 +862,12 @@ class DockingManager(QObject):
 
         new_geometry = QRect(new_pos, new_size)
 
-        self._reparent_to_floating_window(widget_to_undock, new_geometry)
+        # Use create_floating_window to ensure DockContainer is always created
+        newly_floated_window = self.create_floating_window([widget_to_undock], new_geometry)
+        
+        if not newly_floated_window:
+            print("ERROR: Failed to create floating window.")
+            return None
 
         self._simplify_model(root_window)
         if root_window in self.model.roots:
@@ -832,7 +884,7 @@ class DockingManager(QObject):
         if root_window in self.model.roots:
             QTimer.singleShot(10, lambda: self._cleanup_container_overlays(root_window))
             
-        return widget_to_undock
+        return newly_floated_window
 
     def dock_widget(self, source_widget: DockableWidget, target_entity: QWidget, location: str):
         """
@@ -1204,8 +1256,8 @@ class DockingManager(QObject):
         self.destroy_all_overlays()
 
         # Determine if this window is one of our special, persistent roots.
-        is_persistent_root = (root_window is self.main_window.dock_area) or \
-                             isinstance(root_window, FloatingDockRoot)
+        is_persistent_root = ((self.main_window and root_window is self.main_window.dock_area) or 
+                             isinstance(root_window, FloatingDockRoot))
                     
         # Prevent event processing during model simplification
         self._rendering_layout = True
@@ -1261,38 +1313,6 @@ class DockingManager(QObject):
                         root_window.close()
                     return  # Stop simplification for this window.
 
-                # A regular container with one widget should become that widget.
-                if isinstance(root_node, TabGroupNode) and len(root_node.children) == 1:
-                    if not is_persistent_root:
-                        widget_to_undock = root_node.children[0].widget
-                        container_geometry = root_window.geometry()
-
-                        # Capture the maximized state from the old container.
-                        was_maximized = getattr(root_window, '_is_maximized', False)
-                        normal_geometry = getattr(root_window, '_normal_geometry', None)
-
-                        # Clean up overlay before closing
-                        if hasattr(root_window, 'overlay') and root_window.overlay:
-                            root_window.overlay.destroy_overlay()
-                            root_window.overlay = None
-                            
-                        # PHANTOM OVERLAY FIX: Force synchronous processing of paint events
-                        # This ensures overlay repaint completes before container is hidden
-                        QApplication.processEvents()
-                            
-                        root_window.hide()
-                        self.model.unregister_widget(root_window)
-                        root_window.close()
-
-                        # Call the updated function with the captured state.
-                        newly_floated_window = self.create_floating_window(
-                            [widget_to_undock], container_geometry, was_maximized, normal_geometry
-                        )
-
-                        if newly_floated_window and not self.is_deleted(newly_floated_window):
-                            newly_floated_window.raise_()
-                            newly_floated_window.activateWindow()
-                        return
 
                 break
         finally:
