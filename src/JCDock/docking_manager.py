@@ -43,7 +43,7 @@ class DockingManager(QObject):
         self.window_stack = []
         self.floating_widget_count = 0  # Counter for cascading new widgets.
         self.widget_factory = None  # This will hold the factory function
-        self.debug_mode = True
+        self.debug_mode = False
         self.signals = DockingSignals()
         self._rendering_layout = False  # Flag to prevent event processing during layout updates
         self._undocking_in_progress = False  # Flag to prevent overlay operations during undocking
@@ -523,6 +523,7 @@ class DockingManager(QObject):
             for widget_node in node.children:
                 widget = widget_node.widget
                 qt_tab_widget.addTab(widget.content_container, widget.windowTitle())
+                widget.content_container.setProperty("dockable_widget", widget)
                 if widget.original_bg_color:
                     bg_color_name = widget.original_bg_color.name()
                     widget.content_container.setStyleSheet(
@@ -886,7 +887,7 @@ class DockingManager(QObject):
 
         # Handle the "insert" action for dropping onto a tab bar
         if dock_location == "insert":
-            from tearable_tab_widget import TearableTabWidget
+            from .tearable_tab_widget import TearableTabWidget
             insertion_index = target_entity
             target_tab_widget = self.last_dock_target[0]
 
