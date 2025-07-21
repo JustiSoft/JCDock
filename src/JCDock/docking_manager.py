@@ -499,27 +499,38 @@ class DockingManager(QObject):
 
     def _update_tab_bar_visibility(self, container: DockContainer):
         """
-        Updates tab bar visibility for all tab widgets in the container.
-        Hides tab bar when there's only one tab, shows it when there are multiple tabs.
+        Updates tab bar visibility for all tab widgets in the container based on new UI rules.
         """
         if not container.splitter:
             return
             
-        # Find all QTabWidget instances in the container
-        tab_widgets = []
         if isinstance(container.splitter, QTabWidget):
-            tab_widgets.append(container.splitter)
-        else:
-            tab_widgets = container.splitter.findChildren(QTabWidget)
-        
-        # Update visibility for each tab widget
-        for tab_widget in tab_widgets:
-            if tab_widget.count() == 1:
+            # Root is TabGroupNode - apply Rules A/B
+            tab_widget = container.splitter
+            tab_count = tab_widget.count()
+            corner_widget = tab_widget.cornerWidget()
+            
+            if tab_count == 1:
+                # Rule A: Single widget state - hide tab bar and corner widget
                 tab_widget.tabBar().setVisible(False)
+                if corner_widget:
+                    corner_widget.setVisible(False)
             else:
+                # Rule B: Tabbed state - show tab bar and corner widget
                 tab_widget.tabBar().setVisible(True)
+                if corner_widget:
+                    corner_widget.setVisible(True)
+        else:
+            # Root is SplitterNode - apply Rule C to all child tab widgets
+            tab_widgets = container.splitter.findChildren(QTabWidget)
+            for tab_widget in tab_widgets:
+                # Rule C: Inside splitter - always show tab bar and corner widget
+                tab_widget.tabBar().setVisible(True)
+                corner_widget = tab_widget.cornerWidget()
+                if corner_widget:
+                    corner_widget.setVisible(True)
 
-    def _render_node(self, node: AnyNode, container: DockContainer) -> QWidget:
+    def _render_node(self, node: AnyNode, container: DockContainer, inside_splitter: bool = False) -> QWidget:
         if isinstance(node, SplitterNode):
             qt_splitter = QSplitter(node.orientation)
             qt_splitter.setObjectName("ContainerSplitter")
@@ -535,7 +546,7 @@ class DockingManager(QObject):
             qt_splitter.setHandleWidth(2)
             qt_splitter.setChildrenCollapsible(False)
             for child_node in node.children:
-                child_widget = self._render_node(child_node, container)
+                child_widget = self._render_node(child_node, container, inside_splitter=True)
                 if child_widget:
                     qt_splitter.addWidget(child_widget)
             if node.sizes and len(node.sizes) == qt_splitter.count():
@@ -559,11 +570,27 @@ class DockingManager(QObject):
                 if widget not in container.contained_widgets:
                     container.contained_widgets.append(widget)
             
-            # Auto-hide tab bar for single tabs
-            if qt_tab_widget.count() == 1:
-                qt_tab_widget.tabBar().setVisible(False)
-            else:
+            # Apply new UI rules for tab bar visibility
+            tab_count = qt_tab_widget.count()
+            
+            if inside_splitter:
+                # Rule C: Inside splitter - always show tab bar and corner widget
                 qt_tab_widget.tabBar().setVisible(True)
+                corner_widget = qt_tab_widget.cornerWidget()
+                if corner_widget:
+                    corner_widget.setVisible(True)
+            elif tab_count == 1:
+                # Rule A: Single widget state - hide tab bar and corner widget
+                qt_tab_widget.tabBar().setVisible(False)
+                corner_widget = qt_tab_widget.cornerWidget()
+                if corner_widget:
+                    corner_widget.setVisible(False)
+            else:
+                # Rule B: Tabbed state - show tab bar and corner widget
+                qt_tab_widget.tabBar().setVisible(True)
+                corner_widget = qt_tab_widget.cornerWidget()
+                if corner_widget:
+                    corner_widget.setVisible(True)
             
             return qt_tab_widget
         elif isinstance(node, WidgetNode):

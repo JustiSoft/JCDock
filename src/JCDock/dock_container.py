@@ -612,22 +612,43 @@ class DockContainer(QWidget):
                 self._reconnect_tab_signals(current_item.widget(i))
 
     def update_corner_widget_visibility(self):
-        if not self.splitter: return
-        all_tab_widgets = []
-        should_be_visible = False
+        """
+        Updates corner widget visibility based on new UI rules.
+        """
+        if not self.splitter: 
+            return
+            
         if isinstance(self.splitter, QTabWidget):
-            all_tab_widgets.append(self.splitter)
-            should_be_visible = False
-        elif isinstance(self.splitter, QSplitter):
-            all_tab_widgets = self.splitter.findChildren(QTabWidget)
-            should_be_visible = len(all_tab_widgets) > 1
-        for tab_widget in all_tab_widgets:
+            # Root is TabGroupNode - apply Rules A/B
+            tab_widget = self.splitter
+            tab_count = tab_widget.count()
             corner_widget = tab_widget.cornerWidget()
+            
             if corner_widget:
-                corner_widget.setVisible(should_be_visible)
+                if tab_count == 1:
+                    # Rule A: Single widget state - hide corner widget
+                    corner_widget.setVisible(False)
+                else:
+                    # Rule B: Tabbed state - show corner widget
+                    corner_widget.setVisible(True)
+                    
+                # Apply style updates
                 tab_widget.style().unpolish(tab_widget)
                 tab_widget.style().polish(tab_widget)
                 tab_widget.update()
+        else:
+            # Root is SplitterNode - apply Rule C to all child tab widgets
+            tab_widgets = self.splitter.findChildren(QTabWidget)
+            for tab_widget in tab_widgets:
+                corner_widget = tab_widget.cornerWidget()
+                if corner_widget:
+                    # Rule C: Inside splitter - always show corner widget
+                    corner_widget.setVisible(True)
+                    
+                    # Apply style updates
+                    tab_widget.style().unpolish(tab_widget)
+                    tab_widget.style().polish(tab_widget)
+                    tab_widget.update()
 
     def get_target_at(self, global_pos):
         if not self.splitter: return None
