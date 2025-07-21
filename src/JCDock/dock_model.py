@@ -74,15 +74,15 @@ class LayoutModel:
         prefix = "  " * indent
         if isinstance(node, SplitterNode):
             orientation = "Horizontal" if node.orientation == Qt.Horizontal else "Vertical"
-            print(f"{prefix}↳ Splitter ({orientation}) [id: ...{str(node.id)[-4:]}] - Children: {len(node.children)}")
+            print(f"{prefix}+- Splitter ({orientation}) [id: ...{str(node.id)[-4:]}] - Children: {len(node.children)}")
             for child in node.children:
                 self._print_node(child, indent + 1)
         elif isinstance(node, TabGroupNode):
-            print(f"{prefix}↳ TabGroup [id: ...{str(node.id)[-4:]}] - Tabs: {len(node.children)}")
+            print(f"{prefix}+- TabGroup [id: ...{str(node.id)[-4:]}] - Tabs: {len(node.children)}")
             for child in node.children:
                 self._print_node(child, indent + 1)
         elif isinstance(node, WidgetNode):
-            print(f"{prefix}↳ Widget: '{node.widget.windowTitle()}' [id: ...{str(node.id)[-4:]}]")
+            print(f"{prefix}+- Widget: '{node.widget.windowTitle()}' [id: ...{str(node.id)[-4:]}]")
 
     def find_host_info(self, widget: DockableWidget) -> tuple[TabGroupNode, AnyNode, QWidget] | tuple[None, None, None]:
         """

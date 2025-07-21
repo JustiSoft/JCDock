@@ -49,16 +49,47 @@ class DockingOverlay(QWidget):
 
     def destroy_overlay(self):
         """
-        A safe and explicit cleanup method that guarantees the overlay and all its
-        child components (like the preview) are hidden and deleted.
+        A safe and explicit cleanup method that guarantees complete destruction of
+        the overlay and all its child components. This is the ultimate cleanup method.
         """
-        # Explicitly hide the preview widget first. This is the most critical step.
-        self.preview_overlay.hide()
-        # Hide the main overlay widget itself.
-        self.hide()
-        # Remove the overlay from its parent's layout and schedule it for deletion.
-        self.setParent(None)
-        self.deleteLater()
+        try:
+            # CRITICAL: Capture parent and geometry BEFORE any destruction to force repaint
+            parent = self.parentWidget()
+            geom = self.geometry()  # Get the geometry BEFORE reparenting
+            
+            # First, explicitly hide and destroy the preview widget (the blue area)
+            if hasattr(self, 'preview_overlay') and self.preview_overlay:
+                self.preview_overlay.hide()
+                self.preview_overlay.setParent(None)
+                self.preview_overlay.deleteLater()
+                self.preview_overlay = None
+                
+            # Hide and destroy all dock icons
+            if hasattr(self, 'dock_icons'):
+                for icon in self.dock_icons.values():
+                    if icon:
+                        icon.hide()
+                        icon.setParent(None)
+                        icon.deleteLater()
+                self.dock_icons.clear()
+                
+            # Hide the main overlay widget itself
+            self.hide()
+            
+            # Critical: Remove from parent before deletion to prevent orphaning
+            self.setParent(None)
+            
+            # Schedule for deletion by Qt's event loop
+            self.deleteLater()
+            
+            # FORCE REPAINT: Tell the original parent to repaint the area we occupied
+            if parent and not (hasattr(parent, 'isDeleted') and parent.isDeleted()):
+                parent.update(geom)  # Repaint specific area
+                parent.repaint()     # Force immediate repaint
+            
+        except RuntimeError:
+            # Widget may already be deleted - this is acceptable
+            pass
 
     def reposition_icons(self):
         """
@@ -135,5 +166,7 @@ class DockingOverlay(QWidget):
         if self.preview_overlay.isVisible():
             self.preview_overlay.hide()
             parent = self.parentWidget()
-            if parent:
+            if parent and not (hasattr(parent, 'isDeleted') and parent.isDeleted()):
+                # Force immediate repaint to remove blue preview artifacts
                 parent.update()
+                parent.repaint()

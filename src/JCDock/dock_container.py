@@ -701,14 +701,23 @@ class DockContainer(QWidget):
             color = "lightgreen"
             style = 'spread'
 
-        if not self.overlay:
-            self.overlay = DockingOverlay(self, icons=icons, color=color, style=style)
+        # Destroy old overlay if it exists to ensure clean state
+        if self.overlay:
+            self.overlay.destroy_overlay()
+            self.overlay = None
+            
+        self.overlay = DockingOverlay(self, icons=icons, color=color, style=style)
 
         # To handle the case where the style might change, we re-apply it.
         self.overlay.style = style
         self.overlay.reposition_icons()
 
-        if self._should_draw_shadow:
+        # Calculate the geometry for the overlay based on the actual content area
+        if hasattr(self, 'inner_content_widget') and self.inner_content_widget:
+            # Use the inner content widget's geometry to ensure overlay is above content
+            inner_geom = self.inner_content_widget.geometry()
+            self.overlay.setGeometry(inner_geom)
+        elif self._should_draw_shadow:
             shadow_margin = 25
             content_rect = self.rect().adjusted(
                 shadow_margin, shadow_margin,
@@ -722,7 +731,11 @@ class DockContainer(QWidget):
         self.overlay.raise_()
 
     def hide_overlay(self):
-        if self.overlay: self.overlay.hide()
+        if self.overlay: 
+            # Explicitly hide the preview overlay first to prevent stuck blue areas
+            if hasattr(self.overlay, 'preview_overlay'):
+                self.overlay.preview_overlay.hide()
+            self.overlay.hide()
 
     def get_dock_location(self, global_pos):
         if self.overlay:

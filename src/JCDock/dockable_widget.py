@@ -139,6 +139,12 @@ class TitleBar(QWidget):
                 self.moving = True
                 self.offset = event.globalPosition().toPoint() - self._top_level_widget.pos()
                 self.grabMouse()
+                
+                # Build cache for fast hit-testing during drag
+                if hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager:
+                    manager = self._top_level_widget.manager
+                    manager.hit_test_cache.build_cache(manager.window_stack, manager.containers)
+                    manager.hit_test_cache.set_drag_operation_state(True)
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -557,11 +563,16 @@ class DockableWidget(QWidget):
         super().showEvent(event)
 
     def show_overlay(self):
+        # Always destroy old overlay if parent changes
         overlay_parent = self.parent_container if self.parent_container else self
+        if self.overlay and self.overlay.parent() is not overlay_parent:
+            self.overlay.destroy_overlay()
+            self.overlay = None
+            
         visible_widget = self.content_container
-        if not self.overlay or self.overlay.parent() is not overlay_parent:
-            if self.overlay: self.overlay.deleteLater()
+        if not self.overlay:
             self.overlay = DockingOverlay(overlay_parent)
+            
         global_pos = visible_widget.mapToGlobal(QPoint(0, 0))
         parent_local_pos = overlay_parent.mapFromGlobal(global_pos)
         self.overlay.setGeometry(QRect(parent_local_pos, visible_widget.size()))
@@ -569,7 +580,11 @@ class DockableWidget(QWidget):
         self.overlay.raise_()
 
     def hide_overlay(self):
-        if self.overlay: self.overlay.hide()
+        if self.overlay: 
+            # Explicitly hide the preview overlay first to prevent stuck blue areas
+            if hasattr(self.overlay, 'preview_overlay'):
+                self.overlay.preview_overlay.hide()
+            self.overlay.hide()
 
     def get_dock_location(self, global_pos):
         if self.overlay:
