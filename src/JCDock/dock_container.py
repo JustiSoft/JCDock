@@ -643,11 +643,11 @@ class DockContainer(QWidget):
             corner_widget = tab_widget.cornerWidget()
             
             if corner_widget:
-                if tab_count == 1:
-                    # Rule A: Single widget state - hide corner widget
+                if tab_count == 1 and not (self.manager and self.manager._is_persistent_root(self)):
+                    # Rule A: Single widget state - hide corner widget (except for persistent roots)
                     corner_widget.setVisible(False)
                 else:
-                    # Rule B: Tabbed state - show corner widget
+                    # Rule B: Tabbed state - show corner widget (or persistent root with single tab)
                     corner_widget.setVisible(True)
                     
                 # Apply style updates

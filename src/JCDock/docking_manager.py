@@ -54,6 +54,14 @@ class DockingManager(QObject):
         if self.debug_mode:
             self.signals.layout_changed.connect(self._debug_report_active_overlays)
 
+    def _is_persistent_root(self, container: DockContainer) -> bool:
+        """Check if the container is a persistent root (MainDockWindow dock area or FloatingDockRoot)."""
+        if self.main_window and container is self.main_window.dock_area:
+            return True
+        if isinstance(container, FloatingDockRoot):
+            return True
+        return False
+
     def save_layout_to_bytearray(self) -> bytearray:
         layout_data = []
 
@@ -507,8 +515,8 @@ class DockingManager(QObject):
             tab_count = tab_widget.count()
             corner_widget = tab_widget.cornerWidget()
             
-            if tab_count == 1:
-                # Rule A: Single widget state - hide tab bar and corner widget
+            if tab_count == 1 and not self._is_persistent_root(container):
+                # Rule A: Single widget state - hide tab bar and corner widget (except for persistent roots)
                 tab_widget.tabBar().setVisible(False)
                 if corner_widget:
                     corner_widget.setVisible(False)
@@ -577,8 +585,8 @@ class DockingManager(QObject):
                 corner_widget = qt_tab_widget.cornerWidget()
                 if corner_widget:
                     corner_widget.setVisible(True)
-            elif tab_count == 1:
-                # Rule A: Single widget state - hide tab bar and corner widget
+            elif tab_count == 1 and not self._is_persistent_root(container):
+                # Rule A: Single widget state - hide tab bar and corner widget (except for persistent roots)
                 qt_tab_widget.tabBar().setVisible(False)
                 corner_widget = qt_tab_widget.cornerWidget()
                 if corner_widget:
@@ -851,16 +859,25 @@ class DockingManager(QObject):
                     destination_tab_group.children.extend(source_widgets)
                     self.model.roots[destination_container] = destination_tab_group
             else:
-                # For directional docking, create a splitter at container level
-                orientation = Qt.Orientation.Vertical if location in ["top", "bottom"] else Qt.Orientation.Horizontal
-                new_splitter = SplitterNode(orientation=orientation)
-                
-                if location in ["top", "left"]:
-                    new_splitter.children = [source_root_node, destination_root_node]
+                # For directional docking, check if this is an empty persistent root
+                dest_widgets = self.model.get_all_widgets_from_node(destination_root_node)
+                if self._is_persistent_root(destination_container) and not dest_widgets:
+                    # Empty persistent root: create TabGroupNode directly instead of SplitterNode
+                    source_widgets = self.model.get_all_widgets_from_node(source_root_node)
+                    new_tab_group = TabGroupNode()
+                    new_tab_group.children.extend(source_widgets)
+                    self.model.roots[destination_container] = new_tab_group
                 else:
-                    new_splitter.children = [destination_root_node, source_root_node]
+                    # For directional docking, create a splitter at container level
+                    orientation = Qt.Orientation.Vertical if location in ["top", "bottom"] else Qt.Orientation.Horizontal
+                    new_splitter = SplitterNode(orientation=orientation)
                     
-                self.model.roots[destination_container] = new_splitter
+                    if location in ["top", "left"]:
+                        new_splitter.children = [source_root_node, destination_root_node]
+                    else:
+                        new_splitter.children = [destination_root_node, source_root_node]
+                        
+                    self.model.roots[destination_container] = new_splitter
                 
         else:
             # Widget-level docking: dock to a specific widget within its container
@@ -993,6 +1010,9 @@ class DockingManager(QObject):
         self._render_layout(destination_container)
         destination_container.update()
         destination_container.repaint()
+        
+        # Force processing of all pending UI events, especially repaint
+        QApplication.processEvents()
         
         # Close the source_container window
         source_container.close()
@@ -1246,6 +1266,9 @@ class DockingManager(QObject):
             root_window.update()
             root_window.repaint()
             
+            # Force processing of all pending UI events, especially repaint
+            QApplication.processEvents()
+            
             self.signals.widget_docked.emit(source_widget, root_window)
             # Immediate cleanup after docking signal
             self.destroy_all_overlays()
@@ -1282,6 +1305,9 @@ class DockingManager(QObject):
                 # Force immediate visual update
                 container_to_modify.update()
                 container_to_modify.repaint()
+                
+                # Force processing of all pending UI events, especially repaint
+                QApplication.processEvents()
                 
                 self.signals.widget_docked.emit(source_widget, container_to_modify)
                 # Immediate cleanup after docking signal
