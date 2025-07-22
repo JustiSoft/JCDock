@@ -670,14 +670,30 @@ class DockingManager(QObject):
         # Step 3: Update overlay visibility based on target
         required_overlays = set()
         if target_widget:
-            required_overlays.add(target_widget)
+            target_name = getattr(target_widget, 'objectName', lambda: f"{type(target_widget).__name__}@{id(target_widget)}")()
+            
+            # Check if target_widget itself is a container that should be filtered out
+            if isinstance(target_widget, DockContainer):
+                source_has_simple_layout = self.has_simple_layout(source_container if 'source_container' in locals() else excluded_widget)
+                target_has_simple_layout = self.has_simple_layout(target_widget)
+                
+                # Only add container target if either source or target has complex layout
+                if not source_has_simple_layout or not target_has_simple_layout:
+                    required_overlays.add(target_widget)
+            else:
+                required_overlays.add(target_widget)
             parent_container = getattr(target_widget, 'parent_container', None)
             if parent_container:
                 # Only add container overlay for complex layouts
-                if not self.has_simple_layout(parent_container):
+                # Also, don't show container overlay when dragging a single widget
+                target_has_complex_layout = not self.has_simple_layout(parent_container)
+                source_has_simple_layout = self.has_simple_layout(source_container)
+                
+                if target_has_complex_layout and not source_has_simple_layout:
                     required_overlays.add(parent_container)
 
         current_overlays = set(self.active_overlays)
+        
 
         # Hide overlays no longer needed
         for w in (current_overlays - required_overlays):
@@ -2701,14 +2717,33 @@ class DockingManager(QObject):
         # Step 3: Update overlay visibility based on target
         required_overlays = set()
         if target_widget:
-            required_overlays.add(target_widget)
+            target_name = getattr(target_widget, 'objectName', lambda: f"{type(target_widget).__name__}@{id(target_widget)}")()
+            
+            # Check if target_widget itself is a container that should be filtered out
+            if isinstance(target_widget, DockContainer):
+                source_has_simple_layout = self.has_simple_layout(source_container if 'source_container' in locals() else excluded_widget)
+                target_has_simple_layout = self.has_simple_layout(target_widget)
+                
+                # Only add container target if either source or target has complex layout
+                if not source_has_simple_layout or not target_has_simple_layout:
+                    required_overlays.add(target_widget)
+            else:
+                required_overlays.add(target_widget)
             parent_container = getattr(target_widget, 'parent_container', None)
             if parent_container:
                 # Only add container overlay for complex layouts
-                if not self.has_simple_layout(parent_container):
+                # Also, don't show container overlay when dragging a single widget
+                target_has_complex_layout = not self.has_simple_layout(parent_container)
+                source_has_simple_layout = self.has_simple_layout(excluded_widget) if excluded_widget else False
+                
+                if target_has_complex_layout and not source_has_simple_layout:
+                    print(f"DEBUG: ADDING CONTAINER to required_overlays: {getattr(parent_container, 'objectName', lambda: type(parent_container).__name__)()}")
                     required_overlays.add(parent_container)
+                else:
+                    print(f"DEBUG: NOT ADDING CONTAINER (target_complex={target_has_complex_layout}, source_simple={source_has_simple_layout})")
 
         current_overlays = set(self.active_overlays)
+        
 
         # Hide overlays no longer needed
         for w in (current_overlays - required_overlays):
