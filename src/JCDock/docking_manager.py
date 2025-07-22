@@ -1111,6 +1111,44 @@ class DockingManager(QObject):
         
         return QRect(x, y, width, height)
 
+    def _validate_window_geometry(self, geometry: QRect) -> QRect:
+        """
+        Validates and corrects a window's geometry to ensure it's visible on a screen.
+        
+        :param geometry: The proposed window geometry
+        :return: A corrected QRect that ensures the window is visible on a screen
+        """
+        screen = QApplication.screenAt(geometry.topLeft())
+        if not screen:
+            screen = QApplication.primaryScreen()
+        
+        available_geometry = screen.availableGeometry()
+        validated_geometry = QRect(geometry)
+        
+        # Ensure minimum viable size
+        min_width = max(200, validated_geometry.width())
+        min_height = max(150, validated_geometry.height())
+        validated_geometry.setWidth(min_width)
+        validated_geometry.setHeight(min_height)
+        
+        # Ensure reasonable maximum size (not larger than screen)
+        max_width = min(validated_geometry.width(), available_geometry.width())
+        max_height = min(validated_geometry.height(), available_geometry.height())
+        validated_geometry.setWidth(max_width)
+        validated_geometry.setHeight(max_height)
+        
+        # Ensure window is visible on screen
+        if validated_geometry.right() > available_geometry.right():
+            validated_geometry.moveRight(available_geometry.right())
+        if validated_geometry.bottom() > available_geometry.bottom():
+            validated_geometry.moveBottom(available_geometry.bottom())
+        if validated_geometry.left() < available_geometry.left():
+            validated_geometry.moveLeft(available_geometry.left())
+        if validated_geometry.top() < available_geometry.top():
+            validated_geometry.moveTop(available_geometry.top())
+        
+        return validated_geometry
+
     def create_floating_window(self, widgets: list[DockPanel], geometry: QRect, was_maximized=False,
                                normal_geometry=None):
         if not widgets: return None
@@ -1204,9 +1242,12 @@ class DockingManager(QObject):
             new_pos = global_pos
         else:
             count = self.floating_widget_count
-            main_window_pos = self.main_window.pos()
-            new_pos = QPoint(main_window_pos.x() + 150 + (count % 7) * 40,
-                             main_window_pos.y() + 150 + (count % 7) * 40)
+            if widget_to_undock.content_container:
+                widget_global_pos = widget_to_undock.content_container.mapToGlobal(QPoint(0, 0))
+            else:
+                widget_global_pos = widget_to_undock.mapToGlobal(QPoint(0, 0))
+            new_pos = QPoint(widget_global_pos.x() + 150 + (count % 7) * 40,
+                             widget_global_pos.y() + 150 + (count % 7) * 40)
 
         new_geometry = QRect(new_pos, new_size)
 

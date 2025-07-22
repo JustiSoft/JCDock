@@ -442,11 +442,21 @@ class DockContainer(QWidget):
                 if new_geom.height() < min_shadow_height:
                     new_geom.setHeight(min_shadow_height)
             
-            # Prevent negative coordinates
-            if new_geom.x() < 0:
-                new_geom.setX(0)
-            if new_geom.y() < 0:
-                new_geom.setY(0)
+            # Screen-aware boundary validation
+            screen = QApplication.screenAt(self.pos())
+            if not screen:
+                screen = QApplication.primaryScreen()
+            screen_geom = screen.availableGeometry()
+            
+            # Ensure window stays within screen boundaries
+            if new_geom.left() < screen_geom.left():
+                new_geom.moveLeft(screen_geom.left())
+            if new_geom.top() < screen_geom.top():
+                new_geom.moveTop(screen_geom.top())
+            if new_geom.right() > screen_geom.right():
+                new_geom.moveRight(screen_geom.right())
+            if new_geom.bottom() > screen_geom.bottom():
+                new_geom.moveBottom(screen_geom.bottom())
                 
             # Final validation before applying geometry
             if (new_geom.width() > 0 and new_geom.height() > 0 and
