@@ -52,11 +52,11 @@ class DockingTestApp:
         self.docking_manager.signals.layout_changed.connect(self.event_listener.on_layout_changed)
 
         self.widget_count = 0
-        self.main_window = MainDockWindow(manager=self.docking_manager)
+        self.main_window = MainDockWindow(manager=self.docking_manager)  # Re-enabled main window
 
         self.saved_layout_data = None
 
-        self._create_test_menu_bar()
+        self._create_test_menu_bar()  # Re-enabled menu bar
 
     def _create_test_menu_bar(self):
         """
@@ -402,11 +402,11 @@ class DockingTestApp:
 
 
     def run(self):
-        """Shows the main window and starts the application."""
-        self.main_window.show()
+        """Creates floating widgets and starts the application."""
+        self.main_window.show()  # Re-enabled main window showing
         self.create_and_register_new_widget()
         self.create_and_register_new_widget()
-        self.create_and_register_new_widget()
+        self.create_and_register_new_widget()  # Create 3 widgets for testing
         return self.app.exec()
 
 if __name__ == "__main__":

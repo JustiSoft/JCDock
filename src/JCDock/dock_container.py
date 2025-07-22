@@ -18,12 +18,13 @@ class DockContainer(QWidget):
                  show_title_bar=True, title_bar_color=None):
         super().__init__(parent)
 
-        self._should_draw_shadow = create_shadow
+        # Enable shadows with proper architecture
+        self._should_draw_shadow = create_shadow and show_title_bar  # Only for floating windows
         self._shadow_effect = None
         self._shadow_padding = 25
-        self._blur_radius = 25 if self._should_draw_shadow else 0
-        self._shadow_color_unfocused = QColor(0, 0, 0, 40)
-        self._shadow_color_focused = QColor(0, 0, 0, 75)
+        self._blur_radius = 15 if self._should_draw_shadow else 0
+        self._shadow_color_unfocused = QColor(0, 0, 0, 60)  # Light gray shadow when unfocused
+        self._shadow_color_focused = QColor(0, 0, 0, 100)  # Darker gray shadow when focused
         self._feather_power = 3.0
         self._shadow_color = self._shadow_color_focused
         self._background_color = QColor("#F0F0F0")
@@ -36,14 +37,51 @@ class DockContainer(QWidget):
 
         self.setObjectName("DockContainer")
         self.manager = manager
-        self.setAttribute(Qt.WA_TranslucentBackground)
-
+        
         if show_title_bar:
             self.setWindowTitle("Docked Widgets")
             self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
-
-        self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(self._blur_radius, self._blur_radius, self._blur_radius, self._blur_radius)
+            # Make DockContainer transparent for floating windows
+            self.setAttribute(Qt.WA_TranslucentBackground, True)
+            # DockContainer background should be transparent
+            self.setStyleSheet("DockContainer { background: transparent; }")
+            
+            # Create content wrapper widget - this will hold all visible content
+            self.content_wrapper = QWidget()
+            self.content_wrapper.setObjectName("ContentWrapper")
+            # Apply visual styling to content wrapper instead of DockContainer
+            self.content_wrapper.setStyleSheet("""
+                QWidget#ContentWrapper {
+                    background-color: #F0F0F0;
+                    border: 1px solid #6A8EAE;
+                    border-radius: 8px;
+                }
+            """)
+            
+            # Create top-level layout for DockContainer with shadow margins
+            self.container_layout = QVBoxLayout(self)
+            shadow_margin = self._shadow_padding if self._should_draw_shadow else 4
+            self.container_layout.setContentsMargins(shadow_margin, shadow_margin, shadow_margin, shadow_margin)
+            self.container_layout.setSpacing(0)
+            self.container_layout.addWidget(self.content_wrapper)
+            
+            # Main layout now belongs to content_wrapper
+            self.main_layout = QVBoxLayout(self.content_wrapper)
+        else:
+            # For docked containers, keep existing behavior
+            self.content_wrapper = None
+            self.container_layout = None
+            self.setStyleSheet("""
+                DockContainer {
+                    background-color: #F0F0F0;
+                    border: 1px solid #6A8EAE;
+                    border-radius: 8px;
+                }
+            """)
+            self.main_layout = QVBoxLayout(self)
+            
+        # Use small margins for clean CSS styling
+        self.main_layout.setContentsMargins(4, 4, 4, 4)
         self.main_layout.setSpacing(0)
 
         self.title_bar = None
@@ -66,7 +104,8 @@ class DockContainer(QWidget):
         self.parent_container = None
         self.contained_widgets = []
 
-        self.setMinimumSize(200 + 2 * self._blur_radius, 150 + 2 * self._blur_radius)
+        # Simple minimum size for CSS-styled container
+        self.setMinimumSize(200, 150)
         self.resize_margin = 8
         self.resizing = False
         self.resize_edge = None
@@ -93,57 +132,132 @@ class DockContainer(QWidget):
         if self._should_draw_shadow:
             self._setup_shadow_effect()
         
-    def eventFilter(self, watched, event):
-        """
-        Handles focus changes for shadow color updates.
-        """
-        if watched is self:
-            if event.type() == QEvent.Type.WindowActivate:
-                self._update_shadow_focus(True)
-                return False
-            elif event.type() == QEvent.Type.WindowDeactivate:
-                self._update_shadow_focus(False)
-                return False
-        return super().eventFilter(watched, event)
             
     def _setup_shadow_effect(self):
         """
-        Sets up the QGraphicsDropShadowEffect for floating containers.
+        Sets up the QGraphicsDropShadowEffect for floating containers with geometry validation.
         """
-        if not self._shadow_effect:
-            # Apply shadow effect to the main widget
-            self._shadow_effect = QGraphicsDropShadowEffect()
-            self._shadow_effect.setBlurRadius(25)
-            self._shadow_effect.setColor(QColor(0, 0, 0, 75))
-            self._shadow_effect.setOffset(0, 0)
-            self.setGraphicsEffect(self._shadow_effect)
-            # Force a repaint to ensure proper rendering
-            self.update()
+        # Only apply shadow to floating windows with content_wrapper
+        if not self._shadow_effect and self.content_wrapper:
+            # ENHANCED SAFETY: Validate geometry before applying shadow
+            widget_size = self.size()
+            min_shadow_size = QSize(100, 100)  # Minimum size for shadow to be viable
+            
+            # Check if widget is large enough for shadow effect
+            if (widget_size.width() >= min_shadow_size.width() and 
+                widget_size.height() >= min_shadow_size.height() and
+                self._blur_radius > 0):
+                
+                # Validate that shadow padding won't cause negative content area
+                content_width = widget_size.width() - (2 * self._blur_radius)
+                content_height = widget_size.height() - (2 * self._blur_radius)
+                
+                if content_width > 50 and content_height > 50:  # Minimum viable content area
+                    # Apply shadow effect to the content_wrapper, not the container
+                    self._shadow_effect = QGraphicsDropShadowEffect()
+                    self._shadow_effect.setBlurRadius(self._blur_radius)
+                    # Start with focused color, will update based on actual focus state
+                    self._shadow_effect.setColor(self._shadow_color_focused)
+                    self._shadow_effect.setOffset(0, 0)  # Centered shadow
+                    self.content_wrapper.setGraphicsEffect(self._shadow_effect)
+                    # Force a repaint to ensure proper rendering
+                    self.content_wrapper.update()
+                else:
+                    # Disable shadow for this container due to insufficient space
+                    self._should_draw_shadow = False
+                    self._blur_radius = 0
             
     def _remove_shadow_effect(self):
         """
         Removes the shadow effect (for docked containers).
         """
-        if self._shadow_effect:
-            self.setGraphicsEffect(None)
+        if self._shadow_effect and self.content_wrapper:
+            self.content_wrapper.setGraphicsEffect(None)
             self._shadow_effect = None
             # Force a repaint to ensure proper rendering
-            self.update()
+            self.content_wrapper.update()
             
     def _update_shadow_focus(self, is_focused):
         """
-        Updates shadow color based on focus state.
+        Updates shadow color based on focus state with geometry validation.
+        """
+        if self._shadow_effect and self.content_wrapper:
+            # Use the predefined focus colors
+            color = self._shadow_color_focused if is_focused else self._shadow_color_unfocused
+            self._shadow_effect.setColor(color)
+            # Force update to ensure color change is visible
+            self.content_wrapper.update()
+            self.update()
+            
+    def _deactivate_other_containers(self):
+        """
+        Deactivates shadows on all other floating containers when this one is activated.
+        """
+        if not self.manager:
+            return
+            
+        # Find all floating containers and deactivate their shadows
+        for container in self.manager.model.roots.keys():
+            if isinstance(container, DockContainer) and container is not self:
+                if container._shadow_effect and container.content_wrapper:
+                    container._shadow_effect.setColor(container._shadow_color_unfocused)
+                    container.content_wrapper.update()
+            
+    def enable_shadow(self):
+        """
+        Enables the shadow effect for floating windows.
+        Called when a container becomes floating.
+        """
+        if self.content_wrapper and self._should_draw_shadow and not self._shadow_effect:
+            self._setup_shadow_effect()
+            
+    def disable_shadow(self):
+        """
+        Disables the shadow effect for docked windows.
+        Called when a container is docked.
         """
         if self._shadow_effect:
-            color = QColor(0, 0, 0, 75) if is_focused else QColor(0, 0, 0, 40)
-            self._shadow_effect.setColor(color)
+            self._remove_shadow_effect()
+                
+    def _validate_shadow_geometry(self):
+        """
+        Validates if current widget geometry supports shadow rendering.
+        """
+        if not self._should_draw_shadow or self._blur_radius <= 0:
+            return False
+            
+        widget_size = self.size()
+        min_shadow_size = QSize(100, 100)
+        
+        # Check minimum size requirements
+        if (widget_size.width() < min_shadow_size.width() or 
+            widget_size.height() < min_shadow_size.height()):
+            return False
+            
+        # Check that shadow padding doesn't create negative content area
+        content_width = widget_size.width() - (2 * self._blur_radius)
+        content_height = widget_size.height() - (2 * self._blur_radius)
+        
+        return content_width > 50 and content_height > 50
+
+    def _update_rounded_mask(self):
+        """
+        Rounded masking is no longer needed with the new architecture.
+        CSS border-radius on content_wrapper handles corner appearance.
+        """
+        # Clear any existing mask - not needed with new architecture
+        self.clearMask()
+        
+        # For floating windows with content_wrapper, let CSS handle the rounded corners
+        # For docked containers, also let CSS handle the appearance
 
     def toggle_maximize(self):
         """Toggles the window between a maximized and normal state."""
         if self._is_maximized:
             # Restore to the previous geometry
-            shadow_margin = 25 if self._should_draw_shadow else 0
-            self.main_layout.setContentsMargins(shadow_margin, shadow_margin, shadow_margin, shadow_margin)
+            shadow_margin = self._shadow_padding if self._should_draw_shadow else 4
+            if self.container_layout:  # Floating window with content_wrapper
+                self.container_layout.setContentsMargins(shadow_margin, shadow_margin, shadow_margin, shadow_margin)
             self.setGeometry(self._normal_geometry)
             # Re-enable shadow when restored
             if self._shadow_effect:
@@ -151,13 +265,18 @@ class DockContainer(QWidget):
             self._is_maximized = False
             # Change icon back to 'maximize'
             self.title_bar.maximize_button.setIcon(self.title_bar._create_control_icon("maximize"))
+            # Update mask for restored state
+            self._update_rounded_mask()
         else:
             # Maximize the window
             self._normal_geometry = self.geometry()  # Save current geometry
             # Disable shadow when maximized
             if self._shadow_effect:
                 self._shadow_effect.setEnabled(False)
-            self.main_layout.setContentsMargins(0, 0, 0, 0)
+            if self.container_layout:  # Floating window with content_wrapper
+                self.container_layout.setContentsMargins(0, 0, 0, 0)
+            else:  # Fallback for docked containers
+                self.main_layout.setContentsMargins(0, 0, 0, 0)
             screen = QApplication.screenAt(self.pos())
             if not screen:
                 screen = QApplication.primaryScreen()
@@ -165,6 +284,25 @@ class DockContainer(QWidget):
             self._is_maximized = True
             # Change icon to 'restore'
             self.title_bar.maximize_button.setIcon(self.title_bar._create_control_icon("restore"))
+            # Update mask for maximized state (removes rounded corners)
+            self._update_rounded_mask()
+
+    def resizeEvent(self, event):
+        """
+        Enhanced resize event handler with shadow geometry validation.
+        """
+        super().resizeEvent(event)
+        
+        # Update rounded mask after resize
+        self._update_rounded_mask()
+        
+        # ENHANCED SAFETY: Validate shadow geometry after resize
+        if self._shadow_effect and not self._validate_shadow_geometry():
+            # Shadow no longer viable for new size, remove it
+            self._remove_shadow_effect()
+        elif self._should_draw_shadow and not self._shadow_effect and self._validate_shadow_geometry():
+            # Size is now suitable for shadow, re-enable it
+            self._setup_shadow_effect()
 
     def closeEvent(self, event):
         if self.manager:
@@ -176,58 +314,64 @@ class DockContainer(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        painter.fillRect(self.rect(), Qt.transparent)
-
-        # When maximized, content rect is the full widget. Otherwise, it's inset for the shadow.
-        content_rect = self.rect() if self._is_maximized else self.rect().adjusted(
-            self._blur_radius, self._blur_radius,
-            -self._blur_radius, -self._blur_radius
-        )
-
-        # Draw the container's opaque background and border
-        border_color = QColor("#6A8EAE")
+        # For transparent floating containers, do minimal painting
+        if self.content_wrapper:
+            # DockContainer is transparent - paint nothing or just transparent fill
+            painter.fillRect(self.rect(), Qt.transparent)
+            return
+        
+        # For docked containers, keep existing behavior
+        widget_rect = self.rect()
+        
+        # Validate widget has positive dimensions
+        if widget_rect.width() <= 0 or widget_rect.height() <= 0:
+            return
+            
+        # Constrain paint area and intersect with event rect for efficiency
+        safe_paint_rect = widget_rect.intersected(event.rect())
+        if safe_paint_rect.isEmpty():
+            return
+            
+        painter.setClipRect(safe_paint_rect)
+        
+        # Let CSS handle the background and border styling
+        # Paint title bar with different background color
         title_bg_color = QColor("#C0D3E8")
-        container_bg_color = QColor("#F0F0F0")
-        radius = 8.0 if not self._is_maximized else 0.0
-
-        full_path = QPainterPath()
-        full_path.addRoundedRect(QRectF(content_rect), radius, radius)
-
-        painter.setClipPath(full_path)
-
-        painter.fillRect(content_rect, container_bg_color)
-
-        if self.title_bar:
-            painter.fillRect(self.title_bar.geometry(), title_bg_color)
-
+        if self.title_bar and self.title_bar.isVisible():
+            title_geom = self.title_bar.geometry()
+            # Ensure title bar geometry is within widget bounds
+            if widget_rect.contains(title_geom):
+                painter.fillRect(title_geom, title_bg_color)
+        
+        # Reset clipping for any additional painting
         painter.setClipping(False)
-        painter.setPen(border_color)
-        painter.setBrush(Qt.NoBrush)
-        painter.drawPath(full_path)
 
     def mousePressEvent(self, event):
         from .dock_panel import DockPanel
 
         pos = event.position().toPoint()
-        content_rect = self.rect().adjusted(
-            self._blur_radius, self._blur_radius,
-            -self._blur_radius, -self._blur_radius
-        )
-
-        # Handle click-through for shadows.
-        if not content_rect.contains(pos):
-            self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-            underlying = QApplication.widgetAt(event.globalPosition().toPoint())
-            if underlying and underlying.window() is not self:
-                target_window = underlying.window()
-                if target_window:
-                    target_window.raise_()
-                    target_window.activateWindow()
-                    if self.manager and isinstance(target_window, (DockPanel, DockContainer)):
-                        self.manager.bring_to_front(target_window)
-                    QApplication.sendEvent(underlying, event)
-            self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
-            return
+        
+        # For floating windows with content_wrapper, use content_wrapper geometry for hit-testing
+        if self.content_wrapper:
+            content_rect = self.content_wrapper.geometry()
+            
+            # Handle click-through for transparent shadow areas
+            if not content_rect.contains(pos):
+                self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+                underlying = QApplication.widgetAt(event.globalPosition().toPoint())
+                if underlying and underlying.window() is not self:
+                    target_window = underlying.window()
+                    if target_window:
+                        target_window.raise_()
+                        target_window.activateWindow()
+                        if self.manager and isinstance(target_window, (DockPanel, DockContainer)):
+                            self.manager.bring_to_front(target_window)
+                        QApplication.sendEvent(underlying, event)
+                self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+                return
+        else:
+            # For docked containers, use the full widget rect
+            content_rect = self.rect()
 
         # Trigger the standard activation logic for this container.
         self.on_activation_request()
@@ -239,6 +383,11 @@ class DockContainer(QWidget):
                 self.resizing = True
                 self.resize_start_pos = event.globalPosition().toPoint()
                 self.resize_start_geom = self.geometry()
+                
+                # Set dragging flag to prevent window stacking conflicts during resize
+                if self.manager:
+                    self.manager._is_user_dragging = True
+                    
                 # Since we are resizing, we consume the event.
                 return
 
@@ -248,32 +397,61 @@ class DockContainer(QWidget):
     def mouseMoveEvent(self, event: QMouseEvent):
         """
         Handles mouse movement for resizing operations and all cursor logic.
+        Enhanced with geometry validation.
         """
-        # --- RESIZING LOGIC (omitted for brevity, keep your existing code here) ---
+        # ENHANCED RESIZING LOGIC with geometry validation
         if self.resizing and not self._is_maximized:
-            # (Your existing resizing code that calculates new_geom and calls self.setGeometry)
             delta = event.globalPosition().toPoint() - self.resize_start_pos
             new_geom = QRect(self.resize_start_geom)
 
             if "right" in self.resize_edge:
-                new_geom.setWidth(self.resize_start_geom.width() + delta.x())
+                new_width = self.resize_start_geom.width() + delta.x()
+                new_geom.setWidth(max(new_width, self.minimumWidth()))
             if "left" in self.resize_edge:
                 new_width = self.resize_start_geom.width() - delta.x()
-                if new_width < self.minimumWidth(): new_width = self.minimumWidth()
+                new_width = max(new_width, self.minimumWidth())
                 new_geom.setX(self.resize_start_geom.right() - new_width)
                 new_geom.setWidth(new_width)
             if "bottom" in self.resize_edge:
-                new_geom.setHeight(self.resize_start_geom.height() + delta.y())
+                new_height = self.resize_start_geom.height() + delta.y()
+                new_geom.setHeight(max(new_height, self.minimumHeight()))
             if "top" in self.resize_edge:
                 new_height = self.resize_start_geom.height() - delta.y()
-                if new_height < self.minimumHeight(): new_height = self.minimumHeight()
+                new_height = max(new_height, self.minimumHeight())
                 new_geom.setY(self.resize_start_geom.bottom() - new_height)
                 new_geom.setHeight(new_height)
 
-            if new_geom.width() < self.minimumWidth(): new_geom.setWidth(self.minimumWidth())
-            if new_geom.height() < self.minimumHeight(): new_geom.setHeight(self.minimumHeight())
-
-            self.setGeometry(new_geom)
+            # ENHANCED SAFETY: Additional geometry validation
+            min_width = max(self.minimumWidth(), 100)
+            min_height = max(self.minimumHeight(), 100)
+            
+            # Enforce minimum size constraints
+            if new_geom.width() < min_width:
+                new_geom.setWidth(min_width)
+            if new_geom.height() < min_height:
+                new_geom.setHeight(min_height)
+                
+            # Validate shadow compatibility for new size
+            if self._should_draw_shadow:
+                shadow_margin = 2 * self._blur_radius
+                min_shadow_width = shadow_margin + 50  # 50px minimum content
+                min_shadow_height = shadow_margin + 50
+                
+                if new_geom.width() < min_shadow_width:
+                    new_geom.setWidth(min_shadow_width)
+                if new_geom.height() < min_shadow_height:
+                    new_geom.setHeight(min_shadow_height)
+            
+            # Prevent negative coordinates
+            if new_geom.x() < 0:
+                new_geom.setX(0)
+            if new_geom.y() < 0:
+                new_geom.setY(0)
+                
+            # Final validation before applying geometry
+            if (new_geom.width() > 0 and new_geom.height() > 0 and
+                new_geom.width() <= 5000 and new_geom.height() <= 5000):  # Reasonable max size
+                self.setGeometry(new_geom)
             return
 
         # --- CURSOR LOGIC ---
@@ -299,6 +477,10 @@ class DockContainer(QWidget):
         if self.resizing:
             self.resizing = False
             self.resize_edge = None
+            
+            # Clear dragging flag after resize operation
+            if self.manager:
+                self.manager._is_user_dragging = False
 
         # Add a check to ensure the title bar exists before accessing it.
         if self.title_bar and self.title_bar.moving:
@@ -342,6 +524,9 @@ class DockContainer(QWidget):
         """
         self.update_content_event_filters()
         super().showEvent(event)
+        
+        # Apply rounded corners mask after widget is shown
+        self._update_rounded_mask()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         """
@@ -349,13 +534,27 @@ class DockContainer(QWidget):
         filters are installed before processing the first mouse move event.
         """
         if watched is self:
-            # ... (keep the existing WindowActivate/Deactivate logic here) ...
-            if event.type() == QEvent.Type.WindowActivate:
-                self._shadow_color = self._shadow_color_focused
-                self.update()
-            elif event.type() == QEvent.Type.WindowDeactivate:
-                self._shadow_color = self._shadow_color_unfocused
-                self.update()
+            # Use a manager-level flag to prevent simultaneous focus-change repaints
+            # that can cause GDI conflicts.
+            if self.manager and not self.manager._is_updating_focus:
+                if event.type() == QEvent.Type.WindowActivate:
+                    try:
+                        self.manager._is_updating_focus = True
+                        # When this window gets activated, deactivate all others first
+                        self._deactivate_other_containers()
+                        # Then activate this one
+                        self._update_shadow_focus(True)
+                    finally:
+                        QTimer.singleShot(0, lambda: setattr(self.manager, '_is_updating_focus', False))
+                    return False
+
+                elif event.type() == QEvent.Type.WindowDeactivate:
+                    try:
+                        self.manager._is_updating_focus = True
+                        self._update_shadow_focus(False)
+                    finally:
+                        QTimer.singleShot(0, lambda: setattr(self.manager, '_is_updating_focus', False))
+                    return False
             return False
 
         if event.type() == QEvent.Type.MouseMove:
@@ -430,23 +629,30 @@ class DockContainer(QWidget):
     def get_edge(self, pos):
         """
         Determines which edge (if any) the given position is on for resize operations.
+        Updated to work with content_wrapper architecture.
         """
         # Only allow resize on floating containers that are not maximized
         if not self.title_bar or self._is_maximized:
             return None
 
-        # Get the content rect (inset by shadow if present)
-        content_rect = self.rect().adjusted(
-            self._blur_radius, self._blur_radius,
-            -self._blur_radius, -self._blur_radius
-        )
-
-        # Check if position is within the content rect
-        if not content_rect.contains(pos):
-            return None
-
-        # Adjust position relative to content rect
-        adj_pos = pos - QPoint(self._blur_radius, self._blur_radius)
+        # For floating windows with content_wrapper, use content_wrapper geometry
+        if self.content_wrapper:
+            content_rect = self.content_wrapper.geometry()
+            
+            # Check if position is within the content rect
+            if not content_rect.contains(pos):
+                return None
+                
+            # Position relative to content_wrapper
+            adj_pos = pos - content_rect.topLeft()
+        else:
+            # For docked containers, use full widget rect
+            widget_rect = self.rect()
+            if widget_rect.width() <= 0 or widget_rect.height() <= 0:
+                return None
+            
+            content_rect = widget_rect
+            adj_pos = pos
 
         margin = self.resize_margin
         on_left = 0 <= adj_pos.x() < margin
@@ -789,18 +995,15 @@ class DockContainer(QWidget):
         self.overlay.reposition_icons()
 
         # Calculate the geometry for the overlay based on the actual content area
-        if hasattr(self, 'inner_content_widget') and self.inner_content_widget:
+        if self.content_wrapper:
+            # For floating windows with content_wrapper, use content_wrapper geometry
+            self.overlay.setGeometry(self.content_wrapper.geometry())
+        elif hasattr(self, 'inner_content_widget') and self.inner_content_widget:
             # Use the inner content widget's geometry to ensure overlay is above content
             inner_geom = self.inner_content_widget.geometry()
             self.overlay.setGeometry(inner_geom)
-        elif self._should_draw_shadow:
-            shadow_margin = 25
-            content_rect = self.rect().adjusted(
-                shadow_margin, shadow_margin,
-                -shadow_margin, -shadow_margin
-            )
-            self.overlay.setGeometry(content_rect)
         else:
+            # For docked containers, use the full widget rect
             self.overlay.setGeometry(self.rect())
 
         self.overlay.show()

@@ -47,6 +47,8 @@ class DockingManager(QObject):
         self.signals = DockingSignals()
         self._rendering_layout = False  # Flag to prevent event processing during layout updates
         self._undocking_in_progress = False  # Flag to prevent overlay operations during undocking
+        self._is_user_dragging = False  # Flag to prevent window stacking during drag/resize operations
+        self._is_updating_focus = False  # Flag to serialize focus-change painting to prevent GDI conflicts
         self.hit_test_cache = HitTestCache()
         self._drag_source_id = None  # Track which widget is currently being dragged
         
@@ -815,6 +817,10 @@ class DockingManager(QObject):
         destination_container.update()
         destination_container.repaint()
         
+        # Disable shadow before closing the source_container window
+        if hasattr(source_container, 'disable_shadow'):
+            source_container.disable_shadow()
+        
         # Close the source_container window
         source_container.close()
         
@@ -1014,6 +1020,10 @@ class DockingManager(QObject):
         # Force processing of all pending UI events, especially repaint
         QApplication.processEvents()
         
+        # Disable shadow before closing the source_container window
+        if hasattr(source_container, 'disable_shadow'):
+            source_container.disable_shadow()
+        
         # Close the source_container window
         source_container.close()
         
@@ -1025,6 +1035,10 @@ class DockingManager(QObject):
 
     def raise_all_floating_widgets(self):
         """Brings all true 'floating layer' widgets to the top of the stacking order..."""
+        
+        # SAFETY GUARD: Prevent window stacking during drag/resize operations
+        if self._is_user_dragging:
+            return
 
         for window in self.window_stack:
             if not window:
@@ -1065,19 +1079,59 @@ class DockingManager(QObject):
 
         return release_handler
 
+    def _validate_window_geometry(self, geometry: QRect) -> QRect:
+        """
+        Validates and corrects window geometry to prevent rendering errors.
+        """
+        # Ensure minimum viable window size
+        min_width = 150
+        min_height = 100
+        max_width = 3000
+        max_height = 2000
+        
+        # Correct invalid dimensions
+        width = max(min_width, min(geometry.width(), max_width))
+        height = max(min_height, min(geometry.height(), max_height))
+        
+        # Prevent negative coordinates
+        x = max(0, geometry.x())
+        y = max(0, geometry.y())
+        
+        # Get screen geometry for bounds checking
+        from PySide6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen()
+        if screen:
+            screen_geom = screen.availableGeometry()
+            
+            # Ensure window fits on screen
+            if x + width > screen_geom.right():
+                x = max(0, screen_geom.right() - width)
+            if y + height > screen_geom.bottom():
+                y = max(0, screen_geom.bottom() - height)
+        
+        return QRect(x, y, width, height)
+
     def create_floating_window(self, widgets: list[DockPanel], geometry: QRect, was_maximized=False,
                                normal_geometry=None):
         if not widgets: return None
         
+        # ENHANCED SAFETY: Validate and correct geometry before creating container
+        validated_geometry = self._validate_window_geometry(geometry)
+        
         # Always create a DockContainer, regardless of widget count
         new_container = DockContainer(manager=self, parent=None)
-        new_container.setGeometry(geometry)
+        new_container.setGeometry(validated_geometry)
+        
+        # Enable shadow for floating windows
+        new_container.enable_shadow()
 
         # Handle maximized state
         if was_maximized:
             new_container._is_maximized = True
             if normal_geometry:
-                new_container._normal_geometry = normal_geometry
+                # ENHANCED SAFETY: Validate normal geometry too
+                validated_normal_geometry = self._validate_window_geometry(normal_geometry)
+                new_container._normal_geometry = validated_normal_geometry
             new_container.main_layout.setContentsMargins(0, 0, 0, 0)
             new_container.title_bar.maximize_button.setIcon(
                 new_container.title_bar._create_control_icon("restore")
