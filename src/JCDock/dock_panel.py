@@ -135,6 +135,20 @@ class DockPanel(QWidget):
         super().showEvent(event)
 
     def show_overlay(self):
+        # Check if this widget is in a tab widget and if it's the currently visible tab
+        if self.parent_container and self.content_container:
+            parent = self.content_container.parent()
+            from PySide6.QtWidgets import QTabWidget
+            while parent:
+                if isinstance(parent, QTabWidget):
+                    # Check if this widget's content is the current tab
+                    current_widget = parent.currentWidget()
+                    if current_widget != self.content_container:
+                        # This widget is in a tab but not the current one - don't show overlay
+                        return
+                    break
+                parent = parent.parent()
+        
         # Always destroy old overlay if parent changes
         overlay_parent = self.parent_container if self.parent_container else self
         if self.overlay and self.overlay.parent() is not overlay_parent:
@@ -182,6 +196,4 @@ class DockPanel(QWidget):
         if self.manager:
             if self in self.manager.model.roots:
                 self.manager._cleanup_widget_references(self)
-                if self.manager.debug_mode:
-                    self.manager.model.pretty_print()
         super().closeEvent(event)

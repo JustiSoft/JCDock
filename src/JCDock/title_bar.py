@@ -140,6 +140,11 @@ class TitleBar(QWidget):
                 if hasattr(self._top_level_widget, 'on_activation_request'):
                     self._top_level_widget.on_activation_request()
 
+                # Clean up any existing overlays before starting drag operation
+                if hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager:
+                    if hasattr(self._top_level_widget.manager, 'destroy_all_overlays'):
+                        self._top_level_widget.manager.destroy_all_overlays()
+
                 self.moving = True
                 self.offset = event.globalPosition().toPoint() - self._top_level_widget.pos()
                 

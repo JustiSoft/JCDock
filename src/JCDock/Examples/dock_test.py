@@ -20,19 +20,18 @@ class EventListener(QObject):
         container_name = container.windowTitle()
         if container.objectName() == "MainDockArea":
             container_name = "Main Dock Area"
-        print(f"--- SIGNAL[widget_docked]: '{widget.windowTitle()}' docked into '{container_name}' ---")
 
     @Slot(object)
     def on_widget_undocked(self, widget):
-        print(f"--- SIGNAL[widget_undocked]: '{widget.windowTitle()}' became a floating window ---")
+        pass
 
     @Slot(str)
     def on_widget_closed(self, persistent_id):
-        print(f"--- SIGNAL[widget_closed]: Widget with ID '{persistent_id}' was closed ---")
+        pass
 
     @Slot()
     def on_layout_changed(self):
-        print("--- SIGNAL[layout_changed]: The dock layout was modified. ---")
+        pass
 
 class DockingTestApp:
     """
@@ -408,11 +407,6 @@ class DockingTestApp:
         self.create_and_register_new_widget()
         self.create_and_register_new_widget()
         self.create_and_register_new_widget()
-        print("\n=== APPLICATION READY FOR MANUAL TESTING ===")
-        print("You can now manually drag widgets to test docking behavior.")
-        print("Debug output will appear in this console.")
-        print("Close the application window to exit.")
-        print("=" * 50 + "\n")
         return self.app.exec()
 
 if __name__ == "__main__":

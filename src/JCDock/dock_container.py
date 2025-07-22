@@ -170,8 +170,6 @@ class DockContainer(QWidget):
         if self.manager:
             if self in self.manager.model.roots:
                 self.manager._cleanup_widget_references(self)
-                if self.manager.debug_mode:
-                    self.manager.model.pretty_print()
         super().closeEvent(event)
 
     def paintEvent(self, event):
@@ -478,6 +476,14 @@ class DockContainer(QWidget):
             # The fix is here: Call the correct public method.
             self.manager.request_close_widget(owner_widget)
 
+    def handle_tab_changed(self, index):
+        """
+        Called when the current tab changes in a tab widget.
+        Invalidates the hit-test cache to prevent stale geometry issues.
+        """
+        if self.manager and hasattr(self.manager, 'hit_test_cache'):
+            self.manager.hit_test_cache.invalidate()
+
     def handle_undock_tab_group(self, tab_widget):
         if self.manager:
             self.manager.undock_tab_group(tab_widget)
@@ -523,6 +529,8 @@ class DockContainer(QWidget):
         tab_widget.tabCloseRequested.connect(self.handle_tab_close)
         # This is the new connection for tracking tab reordering.
         tab_widget.tabBar().tabMoved.connect(self.handle_tab_reorder)
+        # Invalidate hit-test cache when tab selection changes to prevent stale geometry
+        tab_widget.currentChanged.connect(self.handle_tab_changed)
 
         # This is the main container widget for the corner controls.
         corner_widget = QWidget()
@@ -594,6 +602,12 @@ class DockContainer(QWidget):
             except RuntimeError:
                 pass
             current_item.tabCloseRequested.connect(self.handle_tab_close)
+
+            try:
+                current_item.currentChanged.disconnect()
+            except RuntimeError:
+                pass
+            current_item.currentChanged.connect(self.handle_tab_changed)
 
             corner_widget = current_item.cornerWidget()
             if corner_widget:
@@ -703,8 +717,6 @@ class DockContainer(QWidget):
         widget_node_to_move = tab_group_node.children.pop(from_index)
         tab_group_node.children.insert(to_index, widget_node_to_move)
 
-        if self.manager.debug_mode:
-            self.manager.model.pretty_print()
 
     def set_title(self, new_title: str):
         """
@@ -815,12 +827,9 @@ class DockContainer(QWidget):
         Handles drag enter events for Qt-native drag and drop.
         Accepts the drag if it contains a valid JCDock widget.
         """
-        print(f"DEBUG: dragEnterEvent on {self.windowTitle()}")
         if self._is_valid_widget_drag(event):
-            print(f"DEBUG: Valid drag accepted")
             event.acceptProposedAction()
         else:
-            print(f"DEBUG: Invalid drag ignored")
             event.ignore()
 
     def dragMoveEvent(self, event: QDragMoveEvent):
@@ -857,48 +866,37 @@ class DockContainer(QWidget):
         Handles drop events for Qt-native drag and drop.
         Uses the manager's centralized target information.
         """
-        print(f"DEBUG: DockContainer.dropEvent called on {self.windowTitle()}")
         if not self._is_valid_widget_drag(event):
-            print(f"DEBUG: Invalid drag in dropEvent")
             event.ignore()
             return
 
         if not self.manager:
-            print(f"DEBUG: No manager in dropEvent")
             event.ignore()
             return
 
         # Extract the widget persistent ID from MIME data
         widget_id = self._extract_widget_id(event)
-        print(f"DEBUG: Widget ID extracted: {widget_id}")
         if not widget_id:
-            print(f"DEBUG: No widget ID found")
             event.ignore()
             return
 
         # Use the manager's last_dock_target from centralized drag handling
         if self.manager.last_dock_target:
             target, location = self.manager.last_dock_target
-            print(f"DEBUG: Using manager's dock target: {type(target).__name__}, location: {location}")
             
             # Handle tab insertion case
             if len(self.manager.last_dock_target) == 3:
                 target_tab_widget, action, index = self.manager.last_dock_target
-                print(f"DEBUG: Tab insertion - index: {index}")
                 success = self.manager.dock_widget_from_drag(widget_id, target_tab_widget, "insert")
             else:
-                print(f"DEBUG: Regular docking")
                 success = self.manager.dock_widget_from_drag(widget_id, target, location)
                 
             if success:
                 event.setDropAction(Qt.MoveAction)
                 event.accept()
-                print(f"DEBUG: Drop accepted")
             else:
                 event.ignore()
-                print(f"DEBUG: Drop ignored due to docking failure")
         else:
-            print(f"DEBUG: No dock target found - creating floating window")
             # No valid dock target - this should create a floating window
             event.ignore()
 
