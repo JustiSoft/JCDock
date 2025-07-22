@@ -1937,7 +1937,13 @@ class DockingManager(QObject):
             if parent_node:
                 parent_node.children.remove(host_tab_group)
             else:
-                self.model.unregister_widget(root_window)
+                # Check if root_window is a persistent root before deciding what to do
+                if self._is_persistent_root(root_window):
+                    # It's a persistent root. DON'T unregister. Reset its model instead.
+                    self.model.roots[root_window] = SplitterNode(orientation=Qt.Horizontal)
+                else:
+                    # It's a regular container. The old behavior is correct here.
+                    self.model.unregister_widget(root_window)
 
             # Create the new floating window for the user's selection.
             newly_floated_window = self.create_floating_window(widgets_to_move, new_geom)
