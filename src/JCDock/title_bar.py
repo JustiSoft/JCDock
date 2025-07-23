@@ -60,6 +60,19 @@ class TitleBar(QWidget):
         self.moving = False
         self.offset = QPoint()
 
+    def paintEvent(self, event):
+        """Paint the title bar background using the parent container's color."""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Get the background color from the parent container
+        bg_color = QColor("#F0F0F0")  # Default fallback
+        if hasattr(self._top_level_widget, '_title_bar_color'):
+            bg_color = self._top_level_widget._title_bar_color
+            
+        painter.fillRect(self.rect(), bg_color)
+        super().paintEvent(event)
+
     def on_close_button_clicked(self):
         """
         Determines whether to close a single widget or a whole container.
@@ -134,6 +147,10 @@ class TitleBar(QWidget):
                     self._top_level_widget.resize_edge = edge
                     self._top_level_widget.resize_start_pos = event.globalPosition().toPoint()
                     self._top_level_widget.resize_start_geom = self._top_level_widget.geometry()
+                    
+                    # Set dragging flag to prevent window stacking conflicts during resize
+                    if hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager:
+                        self._top_level_widget.manager._is_user_dragging = True
 
             if not edge:
                 # A click on the title bar is an activation request for its parent window.
@@ -152,6 +169,8 @@ class TitleBar(QWidget):
                 if hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager:
                     manager = self._top_level_widget.manager
                     manager.hit_test_cache.build_cache(manager.window_stack, manager.containers)
+                    # Set dragging flag to prevent window stacking conflicts during move
+                    manager._is_user_dragging = True
                     manager.hit_test_cache.set_drag_operation_state(True)
 
     def mouseReleaseEvent(self, event):
@@ -178,11 +197,17 @@ class TitleBar(QWidget):
                     # Reset drag operation state
                     if hasattr(manager, 'hit_test_cache'):
                         manager.hit_test_cache.set_drag_operation_state(False)
+                    # Clear dragging flag to allow window stacking again
+                    manager._is_user_dragging = False
 
             # Reset resizing flags on the parent (only for DockContainer windows).
             if hasattr(self._top_level_widget, 'resizing') and self._top_level_widget.resizing:
                 self._top_level_widget.resizing = False
                 self._top_level_widget.resize_edge = None
+                
+                # Clear dragging flag after resize operation
+                if hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager:
+                    self._top_level_widget.manager._is_user_dragging = False
 
     def _create_control_icon(self, icon_type: str, color=QColor("#303030")):
         """

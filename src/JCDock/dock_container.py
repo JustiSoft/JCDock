@@ -335,13 +335,7 @@ class DockContainer(QWidget):
         painter.setClipRect(safe_paint_rect)
         
         # Let CSS handle the background and border styling
-        # Paint title bar with different background color
-        title_bg_color = QColor("#C0D3E8")
-        if self.title_bar and self.title_bar.isVisible():
-            title_geom = self.title_bar.geometry()
-            # Ensure title bar geometry is within widget bounds
-            if widget_rect.contains(title_geom):
-                painter.fillRect(title_geom, title_bg_color)
+        # Title bar now paints its own background
         
         # Reset clipping for any additional painting
         painter.setClipping(False)
@@ -845,44 +839,6 @@ class DockContainer(QWidget):
             for i in range(current_item.count()):
                 self._reconnect_tab_signals(current_item.widget(i))
 
-    def update_corner_widget_visibility(self):
-        """
-        Updates corner widget visibility based on new UI rules.
-        """
-        if not self.splitter: 
-            return
-            
-        if isinstance(self.splitter, QTabWidget):
-            # Root is TabGroupNode - apply Rules A/B
-            tab_widget = self.splitter
-            tab_count = tab_widget.count()
-            corner_widget = tab_widget.cornerWidget()
-            
-            if corner_widget:
-                if tab_count == 1 and not (self.manager and self.manager._is_persistent_root(self)):
-                    # Rule A: Single widget state - hide corner widget (except for persistent roots)
-                    corner_widget.setVisible(False)
-                else:
-                    # Rule B: Tabbed state - show corner widget (or persistent root with single tab)
-                    corner_widget.setVisible(True)
-                    
-                # Apply style updates
-                tab_widget.style().unpolish(tab_widget)
-                tab_widget.style().polish(tab_widget)
-                tab_widget.update()
-        else:
-            # Root is SplitterNode - apply Rule C to all child tab widgets
-            tab_widgets = self.splitter.findChildren(QTabWidget)
-            for tab_widget in tab_widgets:
-                corner_widget = tab_widget.cornerWidget()
-                if corner_widget:
-                    # Rule C: Inside splitter - always show corner widget
-                    corner_widget.setVisible(True)
-                    
-                    # Apply style updates
-                    tab_widget.style().unpolish(tab_widget)
-                    tab_widget.style().polish(tab_widget)
-                    tab_widget.update()
 
     def get_target_at(self, global_pos):
         if not self.splitter: return None

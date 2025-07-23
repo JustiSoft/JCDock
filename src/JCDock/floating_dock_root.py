@@ -8,16 +8,33 @@ class FloatingDockRoot(DockContainer):
     """
 
     def __init__(self, manager, parent=None):
+        from PySide6.QtGui import QColor
         super().__init__(
             parent=parent,
             manager=manager,
             create_shadow=True,
-            show_title_bar=True
+            show_title_bar=True,
+            title_bar_color=QColor("#8B4513")  # Distinct brown color for FloatingDockRoot
         )
-        self.setWindowTitle("Floating Dock Area")
+        self.setWindowTitle("Docking Application Layout")
         self.setGeometry(400, 400, 600, 500)
         # The event filter is installed on the DockContainer itself.
         self.installEventFilter(self)
+        
+        # Store the original title to prevent changes
+        self._original_title = "Docking Application Layout"
+        
+        # Set the title bar text to match
+        if self.title_bar:
+            self.title_bar.title_label.setText("Docking Application Layout")
+
+    def set_title(self, new_title: str):
+        """Override to prevent title changes - FloatingDockRoot keeps its original title."""
+        pass
+    
+    def update_dynamic_title(self):
+        """Override to prevent dynamic title updates - FloatingDockRoot keeps its original title."""
+        pass
 
     def on_activation_request(self):
         """
@@ -28,9 +45,9 @@ class FloatingDockRoot(DockContainer):
         super().on_activation_request()
 
         # Step 2: Add our special behavior.
-        # Schedule all other floating widgets to be raised on top.
+        # Make activation immediate and synchronous to eliminate race conditions.
         if self.manager:
-            QTimer.singleShot(0, self.manager.raise_all_floating_widgets)
+            self.manager.raise_all_floating_widgets()
 
     def eventFilter(self, watched, event):
         """
@@ -43,13 +60,6 @@ class FloatingDockRoot(DockContainer):
                     self.manager.raise_all_floating_widgets()
                 return super().eventFilter(watched, event)
 
-            # Case 2: The window is activated by other means (e.g., clicking client area).
-            if event.type() == QEvent.Type.WindowActivate:
-                if self.manager:
-                    # Use a timer to run this *after* the OS has raised the window.
-                    QTimer.singleShot(0, self.manager.raise_all_floating_widgets)
-                # Important: still call the parent's filter to handle shadow color changes.
-                return super().eventFilter(watched, event)
 
         # For all other events, use the parent's implementation.
         return super().eventFilter(watched, event)
