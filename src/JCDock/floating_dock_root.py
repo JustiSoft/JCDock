@@ -30,6 +30,11 @@ class FloatingDockRoot(DockContainer):
         
         # Mark this as a persistent root that should never be closed
         self.set_persistent_root(True)
+        
+        # Override the close button to actually close the window when user clicks it
+        if self.title_bar and self.title_bar.close_button:
+            self.title_bar.close_button.clicked.disconnect()
+            self.title_bar.close_button.clicked.connect(self._handle_user_close)
 
     def set_title(self, new_title: str):
         """Override to prevent title changes - FloatingDockRoot keeps its original title."""
@@ -38,6 +43,56 @@ class FloatingDockRoot(DockContainer):
     def update_dynamic_title(self):
         """Override to prevent dynamic title updates - FloatingDockRoot keeps its original title."""
         pass
+    
+    def _handle_user_close(self):
+        """Handle close button click by actually closing the window and all its contents."""
+        if self.manager:
+            # Get all widgets in this container before closing
+            root_node = self.manager.model.roots.get(self)
+            if root_node:
+                # Emit close signals for all widgets that will be closed
+                all_widgets_in_container = self.manager.model.get_all_widgets_from_node(root_node)
+                for widget_node in all_widgets_in_container:
+                    if hasattr(widget_node, 'persistent_id'):
+                        self.manager.signals.widget_closed.emit(widget_node.persistent_id)
+                
+                # Remove this container from the model
+                del self.manager.model.roots[self]
+                
+                # Remove from container tracking
+                if self in self.manager.containers:
+                    self.manager.containers.remove(self)
+                
+                # Emit layout change signal
+                self.manager.signals.layout_changed.emit()
+        
+        # Actually close the window
+        self.close()
+    
+    def closeEvent(self, event):
+        """Handle window close events (Alt+F4, system close, etc.)."""
+        if self.manager:
+            # Get all widgets in this container before closing
+            root_node = self.manager.model.roots.get(self)
+            if root_node:
+                # Emit close signals for all widgets that will be closed
+                all_widgets_in_container = self.manager.model.get_all_widgets_from_node(root_node)
+                for widget_node in all_widgets_in_container:
+                    if hasattr(widget_node, 'persistent_id'):
+                        self.manager.signals.widget_closed.emit(widget_node.persistent_id)
+                
+                # Remove this container from the model
+                del self.manager.model.roots[self]
+                
+                # Remove from container tracking
+                if self in self.manager.containers:
+                    self.manager.containers.remove(self)
+                
+                # Emit layout change signal
+                self.manager.signals.layout_changed.emit()
+        
+        # Accept the close event to allow the window to close
+        event.accept()
 
     def on_activation_request(self):
         """
