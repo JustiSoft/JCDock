@@ -58,11 +58,50 @@ class DockingManager(QObject):
 
     def _is_persistent_root(self, container: DockContainer) -> bool:
         """Check if the container is a persistent root (MainDockWindow dock area or FloatingDockRoot)."""
+        # First check the container's own persistent root flag
+        if hasattr(container, 'is_persistent_root') and container.is_persistent_root:
+            return True
+        
+        # Fallback to legacy checks for compatibility
         if self.main_window and container is self.main_window.dock_area:
             return True
         if isinstance(container, FloatingDockRoot):
             return True
         return False
+    
+    def _is_child_of_persistent_root(self, container: DockContainer) -> bool:
+        """Check if the container contains widgets that belong to a persistent root."""
+        if not container or not hasattr(container, 'contained_widgets'):
+            return False
+            
+        # Check if any of the widgets in this container belong to a persistent root
+        for widget in container.contained_widgets:
+            if hasattr(widget, 'parent_container') and widget.parent_container:
+                if self._is_persistent_root(widget.parent_container):
+                    return True
+                    
+        # Also check if this container itself is registered in a persistent root
+        for root_container, root_node in self.model.roots.items():
+            if self._is_persistent_root(root_container) and container is not root_container:
+                # Check if this container's widgets are part of the persistent root's model
+                all_widgets_in_root = self.model.get_all_widgets_from_node(root_node)
+                for widget_node in all_widgets_in_root:
+                    if hasattr(widget_node.widget, 'parent_container') and widget_node.widget.parent_container is container:
+                        return True
+        return False
+
+    def _update_container_root(self, container: DockContainer, new_root_node: AnyNode):
+        """
+        Safely update a container's root node, respecting persistent root status.
+        For persistent roots, updates the existing root in-place. For others, replaces the root.
+        """
+        if self._is_persistent_root(container):
+            # For persistent roots, update the model in-place and re-render
+            self.model.roots[container] = new_root_node
+            self._render_layout(container)
+        else:
+            # For regular containers, normal replacement is fine
+            self.model.roots[container] = new_root_node
 
     def save_layout_to_bytearray(self) -> bytearray:
         layout_data = []
@@ -216,15 +255,17 @@ class DockingManager(QObject):
         windows_to_close = list(self.model.roots.keys())
 
         for window in windows_to_close:
-            # Don't close the main application window, just clear its content
-            if isinstance(window, DockContainer) and window.parent() is self.main_window:
-                # Clear the splitter from the main dock area
-                if window.splitter:
+            # Don't close persistent roots, just clear their content
+            if self._is_persistent_root(window):
+                # Clear the splitter from the persistent root
+                if hasattr(window, 'splitter') and window.splitter:
                     window.splitter.setParent(None)
                     window.splitter.deleteLater()
                     window.splitter = None
                 # Reset its model to an empty node
                 self.model.roots[window] = SplitterNode(orientation=Qt.Horizontal)
+                # Re-render to show empty state
+                self._render_layout(window)
                 continue
 
             # For all other floating windows, unregister and close them
@@ -628,6 +669,10 @@ class DockingManager(QObject):
         :param source_container: The window/container being moved
         :param event: The mouse move event containing position information
         """
+        
+        # CRITICAL FIX: Prevent dragging persistent roots
+        if self._is_persistent_root(source_container):
+            return  # Block all dragging of persistent roots
         # Safety checks - don't show overlays during critical operations
         if self._undocking_in_progress or self._rendering_layout:
             return
@@ -757,6 +802,12 @@ class DockingManager(QObject):
         """
         
         try:
+            # CRITICAL FIX: Prevent moving persistent roots or containers that are part of persistent roots
+            if self._is_persistent_root(source_container):
+                print(f"WARNING: Attempted to move persistent root {source_container}. Operation blocked.")
+                self.destroy_all_overlays()
+                return
+            
             # Clean up any remaining overlays first
             self.destroy_all_overlays()
             QApplication.processEvents()  # Force immediate overlay cleanup
@@ -821,8 +872,14 @@ class DockingManager(QObject):
         if hasattr(source_container, 'disable_shadow'):
             source_container.disable_shadow()
         
-        # Close the source_container window
-        source_container.close()
+        # Don't close persistent roots - just remove widgets and keep container alive
+        if self._is_persistent_root(source_container):
+            # For persistent roots, remove all widgets but keep container intact
+            self.model.roots[source_container] = SplitterNode(orientation=Qt.Orientation.Horizontal)
+            self._render_layout(source_container)
+        else:
+            # Close the source_container window for regular containers
+            source_container.close()
         
         # Emit signals
         if all_source_widgets:
@@ -863,7 +920,7 @@ class DockingManager(QObject):
                         
                     source_widgets = self.model.get_all_widgets_from_node(source_root_node)
                     destination_tab_group.children.extend(source_widgets)
-                    self.model.roots[destination_container] = destination_tab_group
+                    self._update_container_root(destination_container, destination_tab_group)
             else:
                 # For directional docking, check if this is an empty persistent root
                 dest_widgets = self.model.get_all_widgets_from_node(destination_root_node)
@@ -871,24 +928,52 @@ class DockingManager(QObject):
                     # Check source complexity to determine docking approach
                     if isinstance(source_root_node, SplitterNode):
                         # Complex source: direct node replacement to preserve entire layout
-                        self.model.roots[destination_container] = source_root_node
+                        self._update_container_root(destination_container, source_root_node)
                     else:
                         # Simple source: create TabGroupNode directly instead of SplitterNode
                         source_widgets = self.model.get_all_widgets_from_node(source_root_node)
                         new_tab_group = TabGroupNode()
                         new_tab_group.children.extend(source_widgets)
-                        self.model.roots[destination_container] = new_tab_group
+                        self._update_container_root(destination_container, new_tab_group)
                 else:
-                    # For directional docking, create a splitter at container level
-                    orientation = Qt.Orientation.Vertical if location in ["top", "bottom"] else Qt.Orientation.Horizontal
-                    new_splitter = SplitterNode(orientation=orientation)
-                    
-                    if location in ["top", "left"]:
-                        new_splitter.children = [source_root_node, destination_root_node]
-                    else:
-                        new_splitter.children = [destination_root_node, source_root_node]
+                    # For directional docking, handle persistent roots specially
+                    if self._is_persistent_root(destination_container):
+                        # For non-empty persistent roots, wrap existing content and add source
+                        orientation = Qt.Orientation.Vertical if location in ["top", "bottom"] else Qt.Orientation.Horizontal
+                        new_splitter = SplitterNode(orientation=orientation)
                         
-                    self.model.roots[destination_container] = new_splitter
+                        # Wrap existing destination content in a TabGroupNode if it isn't already structured
+                        if isinstance(destination_root_node, WidgetNode):
+                            dest_tab_group = TabGroupNode()
+                            dest_tab_group.children.append(destination_root_node)
+                        elif isinstance(destination_root_node, TabGroupNode):
+                            dest_tab_group = destination_root_node
+                        else:
+                            # Keep complex structures as-is
+                            dest_tab_group = destination_root_node
+                        
+                        # Wrap source widgets in a TabGroupNode
+                        source_widgets = self.model.get_all_widgets_from_node(source_root_node)
+                        source_tab_group = TabGroupNode()
+                        source_tab_group.children.extend(source_widgets)
+                        
+                        if location in ["top", "left"]:
+                            new_splitter.children = [source_tab_group, dest_tab_group]
+                        else:
+                            new_splitter.children = [dest_tab_group, source_tab_group]
+                            
+                        self._update_container_root(destination_container, new_splitter)
+                    else:
+                        # For regular containers, use original logic
+                        orientation = Qt.Orientation.Vertical if location in ["top", "bottom"] else Qt.Orientation.Horizontal
+                        new_splitter = SplitterNode(orientation=orientation)
+                        
+                        if location in ["top", "left"]:
+                            new_splitter.children = [source_root_node, destination_root_node]
+                        else:
+                            new_splitter.children = [destination_root_node, source_root_node]
+                            
+                        self._update_container_root(destination_container, new_splitter)
                 
         else:
             # Widget-level docking: dock to a specific widget within its container
@@ -902,8 +987,12 @@ class DockingManager(QObject):
             if destination_root_node:
                 all_widgets_in_dest = self.model.get_all_widgets_from_node(destination_root_node)
                 
-                # If the destination container only contains the target widget, treat as floating-to-floating
-                if len(all_widgets_in_dest) == 1 and all_widgets_in_dest[0].widget == target_widget:
+                # CRITICAL FIX: Never use floating-to-floating logic for persistent roots
+                # If the destination container only contains the target widget AND it's not a persistent root, 
+                # treat as floating-to-floating
+                if (len(all_widgets_in_dest) == 1 and 
+                    all_widgets_in_dest[0].widget == target_widget and 
+                    not self._is_persistent_root(destination_container)):
                     return self._dock_to_floating_widget_with_nodes(source_container, source_root_node, target_widget, location)
             
                 
@@ -943,7 +1032,7 @@ class DockingManager(QObject):
                         self.model.replace_node_in_tree(container_root_node, target_widget_node, new_tab_group)
                     else:
                         # Target is the root, replace it
-                        self.model.roots[destination_container] = new_tab_group
+                        self._update_container_root(destination_container, new_tab_group)
             else:
                 # Directional docking: Create a splitter structure using ancestry information
                 orientation = Qt.Orientation.Vertical if location in ["top", "bottom"] else Qt.Orientation.Horizontal
@@ -1010,7 +1099,7 @@ class DockingManager(QObject):
                         new_splitter.children = [target_tab_group, source_node]
                     
                     # Replace entire root
-                    self.model.roots[destination_container] = new_splitter
+                    self._update_container_root(destination_container, new_splitter)
                 else:
                     print(f"ERROR: Invalid ancestry path length for directional docking")
                     return
@@ -1029,8 +1118,14 @@ class DockingManager(QObject):
         if hasattr(source_container, 'disable_shadow'):
             source_container.disable_shadow()
         
-        # Close the source_container window
-        source_container.close()
+        # Don't close persistent roots - just remove widgets and keep container alive
+        if self._is_persistent_root(source_container):
+            # For persistent roots, remove all widgets but keep container intact
+            self.model.roots[source_container] = SplitterNode(orientation=Qt.Orientation.Horizontal)
+            self._render_layout(source_container)
+        else:
+            # Close the source_container window for regular containers
+            source_container.close()
         
         # Emit signals
         source_widgets = self.model.get_all_widgets_from_node(source_root_node)
@@ -1398,7 +1493,7 @@ class DockingManager(QObject):
 
             # FIX: If docking to an empty container, just replace its root.
             if target_node and not target_node.children:
-                self.model.roots[container_to_modify] = source_node_to_move
+                self._update_container_root(container_to_modify, source_node_to_move)
                 self._render_layout(container_to_modify)
                 # Force immediate visual update
                 container_to_modify.update()
@@ -1445,7 +1540,7 @@ class DockingManager(QObject):
 
             if target_parent is None:
                 # The target was the root node, so the new splitter becomes the new root.
-                self.model.roots[container_to_modify] = new_splitter
+                self._update_container_root(container_to_modify, new_splitter)
             elif isinstance(target_parent, SplitterNode):
                 # Replace the old target node with the new splitter in the parent.
                 try:
@@ -1455,7 +1550,7 @@ class DockingManager(QObject):
                 except (ValueError, IndexError):
                     print("ERROR: Consistency error during model update.")
                     # As a fallback, just make it the new root.
-                    self.model.roots[container_to_modify] = new_splitter
+                    self._update_container_root(container_to_modify, new_splitter)
 
         # Clean up any overlays before rendering
         if hasattr(container_to_modify, 'overlay') and container_to_modify.overlay:
@@ -1834,6 +1929,19 @@ class DockingManager(QObject):
         if not root_node:
             return
 
+        # Prevent closing persistent roots - instead clear their contents
+        if self._is_persistent_root(container_to_close):
+            # Emit a close signal for every widget that is about to be closed.
+            all_widgets_in_container = self.model.get_all_widgets_from_node(root_node)
+            for widget_node in all_widgets_in_container:
+                self.signals.widget_closed.emit(widget_node.widget.persistent_id)
+            
+            # Reset persistent root to empty state instead of closing
+            self.model.roots[container_to_close] = SplitterNode(orientation=Qt.Orientation.Horizontal)
+            self._render_layout(container_to_close)
+            self.signals.layout_changed.emit()
+            return
+
         # Emit a close signal for every widget that is about to be closed.
         all_widgets_in_container = self.model.get_all_widgets_from_node(root_node)
         for widget_node in all_widgets_in_container:
@@ -1852,8 +1960,7 @@ class DockingManager(QObject):
         self.destroy_all_overlays()
 
         # Determine if this window is one of our special, persistent roots.
-        is_persistent_root = ((self.main_window and root_window is self.main_window.dock_area) or 
-                             isinstance(root_window, FloatingDockRoot))
+        is_persistent_root = self._is_persistent_root(root_window)
                     
         # Prevent event processing during model simplification
         self._rendering_layout = True
@@ -1877,15 +1984,19 @@ class DockingManager(QObject):
                         if len(current_node.children) == 1:
                             child_to_promote = current_node.children[0]
                             if parent_node is None:
-                                self.model.roots[root_window] = child_to_promote
+                                # For persistent roots, preserve the splitter structure to maintain docking capability
+                                if not is_persistent_root:
+                                    self.model.roots[root_window] = child_to_promote
+                                    made_changes = True
+                                    break
                             elif isinstance(parent_node, SplitterNode):
                                 try:
                                     idx = parent_node.children.index(current_node)
                                     parent_node.children[idx] = child_to_promote
+                                    made_changes = True
+                                    break
                                 except ValueError:
                                     print("ERROR: Consistency error during model simplification.")
-                            made_changes = True
-                            break
                         for child in current_node.children:
                             nodes_to_check.append((child, current_node))
 
@@ -1898,7 +2009,7 @@ class DockingManager(QObject):
                     break
 
                 # A regular container that becomes empty should be closed.
-                # A persistent root should be preserved.
+                # A persistent root should be preserved with a clean default state.
                 if (isinstance(root_node, (SplitterNode, TabGroupNode)) and not root_node.children):
                     if not is_persistent_root:
                         # Clean up overlay before closing
@@ -1907,6 +2018,10 @@ class DockingManager(QObject):
                             root_window.overlay = None
                         self.model.unregister_widget(root_window)
                         root_window.close()
+                    else:
+                        # For persistent roots, reset to clean default state
+                        self.model.roots[root_window] = SplitterNode(orientation=Qt.Orientation.Horizontal)
+                        self._render_layout(root_window)
                     return  # Stop simplification for this window.
 
 

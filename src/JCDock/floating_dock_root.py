@@ -27,6 +27,9 @@ class FloatingDockRoot(DockContainer):
         # Set the title bar text to match
         if self.title_bar:
             self.title_bar.title_label.setText("Docking Application Layout")
+        
+        # Mark this as a persistent root that should never be closed
+        self.set_persistent_root(True)
 
     def set_title(self, new_title: str):
         """Override to prevent title changes - FloatingDockRoot keeps its original title."""

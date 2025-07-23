@@ -38,6 +38,9 @@ class DockContainer(QWidget):
         self.setObjectName("DockContainer")
         self.manager = manager
         
+        # Flag to indicate if this is a persistent root container (should never be closed)
+        self._is_persistent_root = False
+        
         if show_title_bar:
             self.setWindowTitle("Docked Widgets")
             self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
@@ -1129,3 +1132,12 @@ class DockContainer(QWidget):
                     tab_widget.style().unpolish(tab_widget)
                     tab_widget.style().polish(tab_widget)
                     tab_widget.update()
+    
+    @property
+    def is_persistent_root(self) -> bool:
+        """Check if this container is a persistent root that should never be closed."""
+        return self._is_persistent_root
+    
+    def set_persistent_root(self, is_persistent: bool = True):
+        """Set whether this container is a persistent root that should never be closed."""
+        self._is_persistent_root = is_persistent

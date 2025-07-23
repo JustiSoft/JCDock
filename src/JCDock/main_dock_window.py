@@ -25,6 +25,7 @@ class MainDockWindow(QMainWindow):
         # The central docking area for the main window.
         self.dock_area = DockContainer(manager=self.manager, create_shadow=False, show_title_bar=False)
         self.dock_area.setObjectName("MainDockArea")
+        self.dock_area.set_persistent_root(True)  # Mark as persistent root
         self.setCentralWidget(self.dock_area)
 
         # Set initial margins for the main content area.
@@ -59,11 +60,5 @@ class MainDockWindow(QMainWindow):
                     self.manager.raise_all_floating_widgets()
                 return super().eventFilter(watched, event)
 
-            # When the window is activated (e.g., via taskbar), also raise floating panels.
-            # A timer is used to ensure this runs after the OS has finished its activation process.
-            if event.type() == QEvent.Type.WindowActivate:
-                if self.manager:
-                    QTimer.singleShot(0, self.manager.raise_all_floating_widgets)
-                return super().eventFilter(watched, event)
 
         return super().eventFilter(watched, event)

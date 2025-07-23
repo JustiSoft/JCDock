@@ -49,22 +49,57 @@ class TearableTabBar(QTabBar):
 
     def paintEvent(self, event):
         """
-        Overridden to draw the drop indicator line.
+        Overridden to draw the drop indicator line with enhanced bounds validation.
         """
         super().paintEvent(event)
         if self._drop_indicator_index != -1:
             painter = QPainter(self)
+            
+            # ENHANCED SAFETY: Validate tab bar geometry before painting
+            bar_rect = self.rect()
+            if bar_rect.width() <= 0 or bar_rect.height() <= 0:
+                return  # Skip indicator painting for invalid geometry
+                
+            # Constrain painting to tab bar bounds
+            painter.setClipRect(bar_rect)
+            
             pen = QPen(QColor(0, 120, 215), 3)  # A distinct blue color
             painter.setPen(pen)
 
             if self._drop_indicator_index < self.count():
                 tab_rect = self.tabRect(self._drop_indicator_index)
-                painter.drawLine(tab_rect.left(), 0, tab_rect.left(), self.height())
+                
+                # Validate tab rectangle before drawing
+                if (tab_rect.isValid() and 
+                    tab_rect.left() >= 0 and 
+                    tab_rect.left() <= bar_rect.width() and
+                    tab_rect.intersects(bar_rect)):
+                    
+                    # Constrain line coordinates to tab bar bounds
+                    line_x = max(0, min(tab_rect.left(), bar_rect.width()))
+                    line_top = max(0, 0)
+                    line_bottom = min(self.height(), bar_rect.height())
+                    
+                    if line_bottom > line_top:  # Ensure positive line length
+                        painter.drawLine(line_x, line_top, line_x, line_bottom)
             else:
                 # If inserting at the very end, draw line at the right of the last tab
                 if self.count() > 0:
                     tab_rect = self.tabRect(self.count() - 1)
-                    painter.drawLine(tab_rect.right(), 0, tab_rect.right(), self.height())
+                    
+                    # Validate last tab rectangle before drawing
+                    if (tab_rect.isValid() and 
+                        tab_rect.right() >= 0 and 
+                        tab_rect.right() <= bar_rect.width() and
+                        tab_rect.intersects(bar_rect)):
+                        
+                        # Constrain line coordinates to tab bar bounds
+                        line_x = max(0, min(tab_rect.right(), bar_rect.width()))
+                        line_top = max(0, 0)
+                        line_bottom = min(self.height(), bar_rect.height())
+                        
+                        if line_bottom > line_top:  # Ensure positive line length
+                            painter.drawLine(line_x, line_top, line_x, line_bottom)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
