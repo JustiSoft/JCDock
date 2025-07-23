@@ -1077,8 +1077,7 @@ class DockContainer(QWidget):
         Checks if the drag event contains a valid JCDock widget.
         """
         mime_data = event.mimeData()
-        return (mime_data.hasFormat("application/x-jcdock-widget") or 
-                mime_data.hasText())
+        return mime_data.hasFormat("application/x-jcdock-widget")
 
     def _extract_widget_id(self, event):
         """
@@ -1086,13 +1085,9 @@ class DockContainer(QWidget):
         """
         mime_data = event.mimeData()
         
-        # Try custom format first
+        # Only accept custom JCDock format
         if mime_data.hasFormat("application/x-jcdock-widget"):
             return mime_data.data("application/x-jcdock-widget").data().decode('utf-8')
-        
-        # Fall back to text format
-        if mime_data.hasText():
-            return mime_data.text()
         
         return None
 

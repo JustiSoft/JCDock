@@ -2608,7 +2608,6 @@ class DockingManager(QObject):
         
         # Create MIME data with the widget's persistent ID
         mime_data = QMimeData()
-        mime_data.setText(widget_persistent_id)
         mime_data.setData("application/x-jcdock-widget", widget_persistent_id.encode('utf-8'))
         drag.setMimeData(mime_data)
 
@@ -2631,8 +2630,8 @@ class DockingManager(QObject):
         
         try:
             # Execute the drag operation (this blocks until drag is complete)
-            # Support both Move and Copy actions to increase compatibility
-            drop_action = drag.exec(Qt.MoveAction | Qt.CopyAction)
+            # Only support Move action to prevent external application drops
+            drop_action = drag.exec(Qt.MoveAction)
         finally:
             # Always reset the drag source ID when drag operation ends
             self._drag_source_id = None
