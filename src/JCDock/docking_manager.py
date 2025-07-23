@@ -895,6 +895,14 @@ class DockingManager(QObject):
         # Emit signals
         if all_source_widgets:
             self.signals.widget_docked.emit(all_source_widgets[0].widget, destination_container)
+        
+        # Force UI to stable state before cache invalidation
+        destination_container.update()
+        destination_container.repaint()
+        QApplication.processEvents()
+        
+        # Invalidate hit test cache after layout change
+        self.hit_test_cache.invalidate()
 
     def _finalize_regular_docking(self, source_container, source_root_node, dock_target_info):
         """
@@ -1146,6 +1154,14 @@ class DockingManager(QObject):
         source_widgets = self.model.get_all_widgets_from_node(source_root_node)
         if source_widgets:
             self.signals.widget_docked.emit(source_widgets[0].widget, destination_container)
+        
+        # Force UI to stable state before cache invalidation
+        destination_container.update()
+        destination_container.repaint()
+        QApplication.processEvents()
+        
+        # Invalidate hit test cache after layout change
+        self.hit_test_cache.invalidate()
 
 
     def raise_all_floating_widgets(self):
@@ -1181,7 +1197,8 @@ class DockingManager(QObject):
                     target, dock_location = self.last_dock_target
                     self.dock_widgets(widget, target, dock_location)
 
-            # Invalidate the cache and run one immediate, brute-force cleanup
+            # Force UI to stable state and invalidate cache
+            QApplication.processEvents()
             self.hit_test_cache.invalidate()
             self.destroy_all_overlays()
             self.last_dock_target = None
@@ -1388,6 +1405,18 @@ class DockingManager(QObject):
 
         self.signals.widget_undocked.emit(widget_to_undock)
         
+        # Force UI to stable state before cache invalidation
+        if root_window in self.model.roots:
+            root_window.update()
+            root_window.repaint()
+        if newly_floated_window:
+            newly_floated_window.update()
+            newly_floated_window.repaint()
+        QApplication.processEvents()
+        
+        # Invalidate hit test cache after layout change
+        self.hit_test_cache.invalidate()
+        
         # Additional cleanup to ensure no visual artifacts remain
         if root_window in self.model.roots:
             QTimer.singleShot(10, lambda: self._cleanup_container_overlays(root_window))
@@ -1441,10 +1470,37 @@ class DockingManager(QObject):
         QApplication.processEvents()
         
         
+        # Use find_host_info to properly locate the widget, just like undock_widget and dock_widget_from_drag
         source_node_to_move = self.model.roots.get(source_widget)
+        
+        # If not found as direct root, look for it in containers (like floating widgets)
         if not source_node_to_move:
-            print(f"ERROR: Source '{source_widget.windowTitle()}' not found in model roots.")
-            return
+            host_tab_group, parent_node, root_window = self.model.find_host_info(source_widget)
+            if host_tab_group and root_window:
+                # Find the specific widget node to move
+                widget_node_to_move = next((wn for wn in host_tab_group.children if wn.widget is source_widget), None)
+                if widget_node_to_move:
+                    # Remove from current location
+                    host_tab_group.children.remove(widget_node_to_move)
+                    
+                    # Create temporary root entry for the widget (like dock_widget_from_drag does)
+                    tab_group_node = TabGroupNode(children=[widget_node_to_move])
+                    source_node_to_move = tab_group_node
+                    self.model.roots[source_widget] = source_node_to_move
+                    
+                    # Simplify and re-render the source container
+                    if root_window and root_window in self.model.roots:
+                        self._simplify_model(root_window)
+                        if root_window in self.model.roots:
+                            self._render_layout(root_window)
+                        else:
+                            root_window.update_dynamic_title()
+                else:
+                    print(f"ERROR: Could not find widget node for '{source_widget.windowTitle()}' in its container.")
+                    return
+            else:
+                print(f"ERROR: Source '{source_widget.windowTitle()}' not found in model.")
+                return
 
         # Unify docking entry point: immediately unregister source widget from top-level roots
         self.model.unregister_widget(source_widget)
@@ -1483,6 +1539,14 @@ class DockingManager(QObject):
             # Immediate cleanup after docking signal
             self.destroy_all_overlays()
             
+            # Force UI to stable state before cache invalidation
+            root_window.update()
+            root_window.repaint()
+            QApplication.processEvents()
+            
+            # Invalidate hit test cache after layout change
+            self.hit_test_cache.invalidate()
+            
             # Final forceful visual refresh after a short delay
             QTimer.singleShot(10, lambda: self._cleanup_container_overlays(root_window))
             return
@@ -1520,6 +1584,14 @@ class DockingManager(QObject):
                 self.signals.widget_docked.emit(source_widget, container_to_modify)
                 # Immediate cleanup after docking signal
                 self.destroy_all_overlays()
+                
+                # Force UI to stable state before cache invalidation
+                container_to_modify.update()
+                container_to_modify.repaint()
+                QApplication.processEvents()
+                
+                # Invalidate hit test cache after layout change
+                self.hit_test_cache.invalidate()
                 
                 # Final forceful visual refresh after a short delay
                 QTimer.singleShot(10, lambda: self._cleanup_container_overlays(container_to_modify))
@@ -1591,6 +1663,14 @@ class DockingManager(QObject):
         self.signals.widget_docked.emit(source_widget, container_to_modify)
         # Immediate cleanup after docking signal
         self.destroy_all_overlays()
+        
+        # Force UI to stable state before cache invalidation
+        container_to_modify.update()
+        container_to_modify.repaint()
+        QApplication.processEvents()
+        
+        # Invalidate hit test cache after layout change
+        self.hit_test_cache.invalidate()
         
         # Additional cleanup with slight delay to catch any lingering visual artifacts
         QTimer.singleShot(10, lambda: self._cleanup_container_overlays(container_to_modify))
@@ -1764,6 +1844,14 @@ class DockingManager(QObject):
         # Immediate cleanup after docking signal
         self.destroy_all_overlays()
         
+        # Force UI to stable state before cache invalidation
+        new_container.update()
+        new_container.repaint()
+        QApplication.processEvents()
+        
+        # Invalidate hit test cache after layout change
+        self.hit_test_cache.invalidate()
+        
         # Additional targeted cleanup for the new container
         QTimer.singleShot(10, lambda: self._cleanup_container_overlays(new_container))
 
@@ -1879,6 +1967,15 @@ class DockingManager(QObject):
         if all_widgets_in_container:
             self.signals.widget_docked.emit(all_widgets_in_container[0].widget, new_container)
         self.destroy_all_overlays()
+        
+        # Force UI to stable state before cache invalidation
+        new_container.update()
+        new_container.repaint()
+        QApplication.processEvents()
+        
+        # Invalidate hit test cache after layout change
+        self.hit_test_cache.invalidate()
+        
         QTimer.singleShot(10, lambda: self._cleanup_container_overlays(new_container))
 
     def _update_model_after_close(self, widget_to_close: DockPanel):
@@ -1931,6 +2028,16 @@ class DockingManager(QObject):
                 root_window.update_dynamic_title()
 
         self.signals.layout_changed.emit()
+        
+        # Force UI to stable state before cache invalidation
+        if root_window and not self.is_deleted(root_window):
+            root_window.update()
+            root_window.repaint()
+        QApplication.processEvents()
+        
+        # Invalidate hit test cache after layout change
+        self.hit_test_cache.invalidate()
+        
         widget_to_close.close()
 
     def request_close_container(self, container_to_close: DockContainer):
@@ -1955,6 +2062,14 @@ class DockingManager(QObject):
             self.model.roots[container_to_close] = SplitterNode(orientation=Qt.Orientation.Horizontal)
             self._render_layout(container_to_close)
             self.signals.layout_changed.emit()
+            
+            # Force UI to stable state before cache invalidation
+            container_to_close.update()
+            container_to_close.repaint()
+            QApplication.processEvents()
+            
+            # Invalidate hit test cache after layout change
+            self.hit_test_cache.invalidate()
             return
 
         # Emit a close signal for every widget that is about to be closed.
@@ -1965,6 +2080,13 @@ class DockingManager(QObject):
         # Unregister the container from the model and emit the layout change signal.
         self.model.unregister_widget(container_to_close)
         self.signals.layout_changed.emit()
+        
+        # Force UI to stable state before cache invalidation
+        QApplication.processEvents()
+        
+        # Invalidate hit test cache after layout change
+        self.hit_test_cache.invalidate()
+        
         container_to_close.close()
 
     def _simplify_model(self, root_window: QWidget):
@@ -2144,6 +2266,18 @@ class DockingManager(QObject):
 
             # Emit the final signal indicating the overall layout has changed.
             self.signals.layout_changed.emit()
+            
+            # Force UI to stable state before cache invalidation
+            if root_window and not self.is_deleted(root_window):
+                root_window.update()
+                root_window.repaint()
+            if newly_floated_window and not self.is_deleted(newly_floated_window):
+                newly_floated_window.update()
+                newly_floated_window.repaint()
+            QApplication.processEvents()
+            
+            # Invalidate hit test cache after layout change
+            self.hit_test_cache.invalidate()
         finally:
             # Always clear the flag
             self._undocking_in_progress = False
@@ -2462,6 +2596,7 @@ class DockingManager(QObject):
         except RuntimeError:
             return True
 
+
     def has_simple_layout(self, container):
         """
         Determines if a container has a simple layout (single widget).
@@ -2650,7 +2785,8 @@ class DockingManager(QObject):
         finally:
             # Always reset the drag source ID when drag operation ends
             self._drag_source_id = None
-            # Invalidate the cache since layout may have changed
+            # Force UI to stable state and invalidate cache since layout may have changed
+            QApplication.processEvents()
             self.hit_test_cache.invalidate()
 
         # Handle the result
