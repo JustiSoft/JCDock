@@ -96,12 +96,18 @@ if __name__ == "__main__":
     console_panel.setContent(create_sample_content("Console Output"))
     manager.register_widget(console_panel)
 
-    # 4. Set up initial layout programmatically
+    # 4. Create floating windows for the widgets first
+    from PySide6.QtCore import QRect
+    manager.create_floating_window([project_panel], QRect(100, 100, 400, 300))
+    manager.create_floating_window([notes_panel], QRect(520, 100, 400, 300))  
+    manager.create_floating_window([console_panel], QRect(100, 420, 400, 200))
+
+    # 5. Now dock them to create the layout
     manager.dock_widget(project_panel, main_window.dock_area, "left")
     manager.dock_widget(notes_panel, project_panel, "center")  # Creates tab group
     manager.dock_widget(console_panel, main_window.dock_area, "bottom")
 
-    # 5. Optional: Connect to signals for layout change notifications
+    # 6. Optional: Connect to signals for layout change notifications
     def on_layout_changed():
         print("Layout changed!")
         
