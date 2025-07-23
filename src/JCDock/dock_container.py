@@ -1136,3 +1136,40 @@ class DockContainer(QWidget):
             return mime_data.text()
         
         return None
+
+    def update_corner_widget_visibility(self):
+        """
+        Updates corner widget visibility based on container layout rules.
+        """
+        # Check if the main content is a QTabWidget (single tab group case)
+        if isinstance(self.splitter, QTabWidget):
+            tab_widget = self.splitter
+            corner_widget = tab_widget.cornerWidget()
+            if corner_widget:
+                tab_count = tab_widget.count()
+                is_persistent = self.manager._is_persistent_root(self) if self.manager else False
+                
+                # Rule: Hide corner widget if exactly 1 tab AND not a persistent root
+                if tab_count == 1 and not is_persistent:
+                    corner_widget.setVisible(False)
+                else:
+                    corner_widget.setVisible(True)
+                
+                # Force visual refresh
+                tab_widget.style().unpolish(tab_widget)
+                tab_widget.style().polish(tab_widget)
+                tab_widget.update()
+        
+        # Check if the main content is a QSplitter (splitter layout case)
+        elif isinstance(self.splitter, QSplitter):
+            # Rule: All tab widgets inside splitters should always show corner widgets
+            tab_widgets = self.splitter.findChildren(QTabWidget)
+            for tab_widget in tab_widgets:
+                corner_widget = tab_widget.cornerWidget()
+                if corner_widget:
+                    corner_widget.setVisible(True)
+                    
+                    # Force visual refresh
+                    tab_widget.style().unpolish(tab_widget)
+                    tab_widget.style().polish(tab_widget)
+                    tab_widget.update()

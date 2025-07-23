@@ -868,11 +868,16 @@ class DockingManager(QObject):
                 # For directional docking, check if this is an empty persistent root
                 dest_widgets = self.model.get_all_widgets_from_node(destination_root_node)
                 if self._is_persistent_root(destination_container) and not dest_widgets:
-                    # Empty persistent root: create TabGroupNode directly instead of SplitterNode
-                    source_widgets = self.model.get_all_widgets_from_node(source_root_node)
-                    new_tab_group = TabGroupNode()
-                    new_tab_group.children.extend(source_widgets)
-                    self.model.roots[destination_container] = new_tab_group
+                    # Check source complexity to determine docking approach
+                    if isinstance(source_root_node, SplitterNode):
+                        # Complex source: direct node replacement to preserve entire layout
+                        self.model.roots[destination_container] = source_root_node
+                    else:
+                        # Simple source: create TabGroupNode directly instead of SplitterNode
+                        source_widgets = self.model.get_all_widgets_from_node(source_root_node)
+                        new_tab_group = TabGroupNode()
+                        new_tab_group.children.extend(source_widgets)
+                        self.model.roots[destination_container] = new_tab_group
                 else:
                     # For directional docking, create a splitter at container level
                     orientation = Qt.Orientation.Vertical if location in ["top", "bottom"] else Qt.Orientation.Horizontal
@@ -1330,7 +1335,10 @@ class DockingManager(QObject):
         if not source_node_to_move:
             print(f"ERROR: Source '{source_widget.windowTitle()}' not found in model roots.")
             return
-            
+
+        # Unify docking entry point: immediately unregister source widget from top-level roots
+        self.model.unregister_widget(source_widget)
+        source_widget.hide()
 
         # Handle the "insert" action for dropping onto a tab bar
         if dock_location == "insert":
@@ -1347,9 +1355,6 @@ class DockingManager(QObject):
 
             target_group, _, root_window = self.model.find_host_info(owner_widget)
             if not target_group: return
-
-            self.model.unregister_widget(source_widget)
-            source_widget.hide()
 
             all_source_widgets = self.model.get_all_widgets_from_node(source_node_to_move)
 
@@ -1393,8 +1398,6 @@ class DockingManager(QObject):
 
             # FIX: If docking to an empty container, just replace its root.
             if target_node and not target_node.children:
-                self.model.unregister_widget(source_widget)
-                source_widget.hide()
                 self.model.roots[container_to_modify] = source_node_to_move
                 self._render_layout(container_to_modify)
                 # Force immediate visual update
@@ -1420,9 +1423,6 @@ class DockingManager(QObject):
 
         # At this point, we have the container to modify and the target node within it.
         
-        self.model.unregister_widget(source_widget)
-        source_widget.hide()
-
         self._save_splitter_sizes_to_model(container_to_modify.splitter, self.model.roots[container_to_modify])
 
         if dock_location == 'center' and isinstance(target_node, TabGroupNode):
@@ -1550,12 +1550,7 @@ class DockingManager(QObject):
             print("ERROR: Cannot find source or target node for floating dock operation.")
             return
 
-        # Unregister both floating widgets/containers from the model.
-        if isinstance(source_widget, DockContainer):
-            self.model.unregister_widget(source_widget)
-        else:
-            self.model.unregister_widget(source_widget)
-            
+        # Unregister target widget/container from the model (source already unregistered at entry point)
         if hasattr(target_widget, 'parent_container') and target_widget.parent_container:
             self.model.unregister_widget(target_widget.parent_container)
         else:
@@ -1962,29 +1957,30 @@ class DockingManager(QObject):
                 container.overlay.destroy_overlay()
                 container.overlay = None
 
-            widgets_to_move = []
-            for i in range(tab_widget.count()):
-                content = tab_widget.widget(i)
-                owner = next((w for w in container.contained_widgets if w.content_container is content), None)
-                if owner: widgets_to_move.append(owner)
+            # Get only the currently active widget
+            current_content = tab_widget.currentWidget()
+            if not current_content: return
+            
+            # Find the DockPanel that owns this content widget
+            active_widget = next((w for w in container.contained_widgets if w.content_container is current_content), None)
+            if not active_widget: return
+            
+            widgets_to_move = [active_widget]
 
-            if not widgets_to_move: return
-
-            host_tab_group, parent_node, root_window = self.model.find_host_info(widgets_to_move[0])
+            host_tab_group, parent_node, root_window = self.model.find_host_info(active_widget)
             if host_tab_group is None: return
 
             new_geom = QRect(tab_widget.mapToGlobal(QPoint(0, 0)), tab_widget.size())
 
-            if parent_node:
-                parent_node.children.remove(host_tab_group)
-            else:
-                # Check if root_window is a persistent root before deciding what to do
-                if self._is_persistent_root(root_window):
-                    # It's a persistent root. DON'T unregister. Reset its model instead.
-                    self.model.roots[root_window] = SplitterNode(orientation=Qt.Horizontal)
-                else:
-                    # It's a regular container. The old behavior is correct here.
-                    self.model.unregister_widget(root_window)
+            # Find and remove only the WidgetNode for the active widget
+            widget_node_to_remove = None
+            for child in host_tab_group.children:
+                if isinstance(child, WidgetNode) and child.widget is active_widget:
+                    widget_node_to_remove = child
+                    break
+            
+            if widget_node_to_remove:
+                host_tab_group.children.remove(widget_node_to_remove)
 
             # Create the new floating window for the user's selection.
             newly_floated_window = self.create_floating_window(widgets_to_move, new_geom)
