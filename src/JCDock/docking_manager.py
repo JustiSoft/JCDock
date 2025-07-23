@@ -11,6 +11,9 @@ from .dock_model import LayoutModel, AnyNode, SplitterNode, TabGroupNode, Widget
 from .dock_panel import DockPanel
 from .dock_container import DockContainer
 from .hit_test_cache import HitTestCache
+from .layout_serializer import LayoutSerializer
+from .drag_drop_controller import DragDropController
+from .layout_renderer import LayoutRenderer
 
 class DockingSignals(QObject):
     """
@@ -51,6 +54,11 @@ class DockingManager(QObject):
         self._is_updating_focus = False  # Flag to serialize focus-change painting to prevent GDI conflicts
         self.hit_test_cache = HitTestCache()
         self._drag_source_id = None  # Track which widget is currently being dragged
+        
+        # Initialize specialized classes
+        self.layout_serializer = LayoutSerializer(self)
+        self.drag_drop_controller = DragDropController(self)
+        self.layout_renderer = LayoutRenderer(self)
         
         # Set up debug overlay reporting if debug mode is enabled
         if self.debug_mode:
@@ -104,231 +112,28 @@ class DockingManager(QObject):
             self.model.roots[container] = new_root_node
 
     def save_layout_to_bytearray(self) -> bytearray:
-        layout_data = []
-
-        if self.main_window and self.main_window.dock_area in self.model.roots:
-            main_dock_area = self.main_window.dock_area
-            main_root_node = self.model.roots[main_dock_area]
-
-            if hasattr(main_dock_area, 'splitter'):
-                self._save_splitter_sizes_to_model(main_dock_area.splitter, main_root_node)
-
-            main_window_state = {
-                'class': self.main_window.__class__.__name__,
-                'geometry': self.main_window.geometry().getRect(),
-                'is_maximized': self.main_window.isMaximized(),
-                'normal_geometry': None,
-                'content': self._serialize_node(main_root_node)
-            }
-            layout_data.append(main_window_state)
-
-        for window, root_node in self.model.roots.items():
-            if window is (self.main_window.dock_area if self.main_window else None):
-                continue
-
-            if self.is_deleted(window):
-                continue
-
-            if hasattr(window, 'splitter'):
-                self._save_splitter_sizes_to_model(window.splitter, root_node)
-
-            window_state = {
-                'class': window.__class__.__name__,
-                'geometry': window.geometry().getRect(),
-                'is_maximized': getattr(window, '_is_maximized', False),
-                'normal_geometry': None,
-                'content': self._serialize_node(root_node)
-            }
-            if window_state['is_maximized']:
-                normal_geom = getattr(window, '_normal_geometry', None)
-                if normal_geom:
-                    window_state['normal_geometry'] = normal_geom.getRect()
-
-            layout_data.append(window_state)
-
-        return pickle.dumps(layout_data)
+        """Delegate to LayoutSerializer."""
+        return self.layout_serializer.save_layout_to_bytearray()
 
     def _serialize_node(self, node: AnyNode) -> dict:
-        if isinstance(node, SplitterNode):
-            return {
-                'type': 'SplitterNode',
-                'orientation': node.orientation,
-                'sizes': node.sizes,
-                'children': [self._serialize_node(child) for child in node.children]
-            }
-        elif isinstance(node, TabGroupNode):
-            return {
-                'type': 'TabGroupNode',
-                'children': [self._serialize_node(child) for child in node.children]
-            }
-        elif isinstance(node, WidgetNode):
-            return {
-                'type': 'WidgetNode',
-                'id': node.widget.persistent_id,
-                'margin': getattr(node.widget, '_content_margin_size', 5)
-            }
-        return {}
+        """Delegate to LayoutSerializer."""
+        return self.layout_serializer._serialize_node(node)
 
     def load_layout_from_bytearray(self, data: bytearray):
-        if not self.widget_factory:
-            print("ERROR: Cannot load layout without a widget factory. Please set one using set_widget_factory().")
-            return
-
-        self._clear_layout()
-
-        try:
-            layout_data = pickle.loads(data)
-        except Exception as e:
-            print(f"Error deserializing layout data: {e}")
-            return
-
-        loaded_widgets_cache = {}
-
-        for window_state in layout_data:
-            window_class = window_state['class']
-
-            if window_class == 'MainDockWindow':
-                container = self.main_window.dock_area
-                geom_tuple = window_state['geometry']
-                self.main_window.setGeometry(geom_tuple[0], geom_tuple[1], geom_tuple[2], geom_tuple[3])
-
-                if window_state.get('is_maximized', False):
-                    self.main_window.showMaximized()
-
-                self.model.roots[container] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
-                self._render_layout(container)
-                continue
-
-            new_window = None
-            if window_class == 'DockPanel':
-                widget_data = window_state['content']['children'][0]
-                persistent_id = widget_data.get('id')
-
-                if persistent_id in loaded_widgets_cache:
-                    new_window = loaded_widgets_cache[persistent_id]
-                else:
-                    new_window = self.widget_factory(widget_data)
-                    if new_window:
-                        loaded_widgets_cache[persistent_id] = new_window
-
-                if new_window:
-                    self.model.roots[new_window] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
-                    self.register_widget(new_window)
-
-            elif window_class == 'DockContainer':
-                new_window = DockContainer(manager=self, parent=None)
-                self.model.roots[new_window] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
-                self.containers.append(new_window)
-                self.add_widget_handlers(new_window)
-                self.bring_to_front(new_window)
-                self._render_layout(new_window)
-
-            elif window_class == 'FloatingDockRoot':
-                new_window = FloatingDockRoot(manager=self)
-                self.register_dock_area(new_window)
-                self.model.roots[new_window] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
-                self._render_layout(new_window)
-
-            if new_window:
-                geom_tuple = window_state['geometry']
-                new_window.setGeometry(geom_tuple[0], geom_tuple[1], geom_tuple[2], geom_tuple[3])
-
-                if window_state['is_maximized']:
-                    new_window._is_maximized = True
-                    norm_geom_tuple = window_state['normal_geometry']
-                    if norm_geom_tuple:
-                        new_window._normal_geometry = QRect(norm_geom_tuple[0], norm_geom_tuple[1], norm_geom_tuple[2],
-                                                            norm_geom_tuple[3])
-                    new_window.main_layout.setContentsMargins(0, 0, 0, 0)
-                    new_window.title_bar.maximize_button.setIcon(new_window.title_bar._create_control_icon("restore"))
-
-                new_window.show()
-                new_window.raise_()
-                new_window.activateWindow()
-                self.bring_to_front(new_window)
+        """Delegate to LayoutSerializer."""
+        return self.layout_serializer.load_layout_from_bytearray(data)
 
     def _clear_layout(self):
-        """
-        Closes all managed windows and resets the model to a clean state.
-        """
-        # Make a copy of the list of windows to close, as the original list will be modified
-        windows_to_close = list(self.model.roots.keys())
-
-        for window in windows_to_close:
-            # Don't close persistent roots, just clear their content
-            if self._is_persistent_root(window):
-                # Clear the splitter from the persistent root
-                if hasattr(window, 'splitter') and window.splitter:
-                    window.splitter.setParent(None)
-                    window.splitter.deleteLater()
-                    window.splitter = None
-                # Reset its model to an empty node
-                self.model.roots[window] = SplitterNode(orientation=Qt.Horizontal)
-                # Re-render to show empty state
-                self._render_layout(window)
-                continue
-
-            # For all other floating windows, unregister and close them
-            if window in self.model.roots:
-                self.model.unregister_widget(window)
-
-            window.setParent(None)
-            window.close()
-
-        # Reset all manager state
-        self.widgets.clear()
-        self.containers.clear()
-        self.window_stack.clear()
-        self.floating_widget_count = 0
-        # Re-add the main window's dock area back to the containers list
-        if self.main_window:
-            self.containers.append(self.main_window.dock_area)
-            self.window_stack.append(self.main_window)
+        """Delegate to LayoutSerializer."""
+        return self.layout_serializer._clear_layout()
 
     def _deserialize_node(self, node_data: dict, loaded_widgets_cache: dict) -> AnyNode:
-        node_type = node_data.get('type')
-
-        if node_type == 'SplitterNode':
-            return SplitterNode(
-                orientation=node_data['orientation'],
-                sizes=node_data['sizes'],
-                children=[self._deserialize_node(child_data, loaded_widgets_cache) for child_data in
-                          node_data['children']]
-            )
-        elif node_type == 'TabGroupNode':
-            return TabGroupNode(
-                children=[self._deserialize_node(child_data, loaded_widgets_cache) for child_data in
-                          node_data['children']]
-            )
-        elif node_type == 'WidgetNode':
-            persistent_id = node_data.get('id')
-            if not persistent_id:
-                return TabGroupNode()
-
-            if persistent_id in loaded_widgets_cache:
-                new_widget = loaded_widgets_cache[persistent_id]
-            else:
-                new_widget = self.widget_factory(node_data)
-                if new_widget:
-                    loaded_widgets_cache[persistent_id] = new_widget
-
-            if new_widget:
-                return WidgetNode(widget=new_widget)
-
-        return TabGroupNode()
+        """Delegate to LayoutSerializer."""
+        return self.layout_serializer._deserialize_node(node_data, loaded_widgets_cache)
 
     def _find_first_tab_group_node(self, node: AnyNode) -> TabGroupNode | None:
-        """
-        Recursively traverses a node tree to find the first TabGroupNode.
-        """
-        if isinstance(node, TabGroupNode):
-            return node
-        if isinstance(node, SplitterNode):
-            for child in node.children:
-                result = self._find_first_tab_group_node(child)
-                if result:
-                    return result
-        return None
+        """Delegate to LayoutSerializer."""
+        return self.layout_serializer._find_first_tab_group_node(node)
 
     def set_widget_factory(self, factory_callable):
         """
@@ -493,168 +298,16 @@ class DockingManager(QObject):
         self.model.unregister_widget(widget_to_remove)
 
     def _render_layout(self, container: DockContainer, widget_to_activate: DockPanel = None):
-        root_node = self.model.roots.get(container)
-        if not root_node:
-            print(f"ERROR: Cannot render layout for unregistered container {container.objectName()}")
-            return
-
-        # Destroy any overlays on the container before rendering
-        if hasattr(container, 'overlay') and container.overlay:
-            container.overlay.destroy_overlay()
-            container.overlay = None
-            
-        # Set flag to prevent event processing during layout rendering
-        self._rendering_layout = True
-        try:
-            # Clean up overlays on all currently contained widgets
-            for widget in container.contained_widgets:
-                if hasattr(widget, 'overlay') and widget.overlay:
-                    widget.overlay.destroy_overlay()
-                    widget.overlay = None
-                    
-            container.contained_widgets.clear()
-            new_content_widget = self._render_node(root_node, container, widget_to_activate=widget_to_activate)
-            old_content_widget = container.splitter
-            if new_content_widget:
-                container.inner_content_layout.addWidget(new_content_widget)
-
-            if old_content_widget:
-                old_content_widget.hide()
-                old_content_widget.setParent(None)
-                old_content_widget.deleteLater()
-
-            container.splitter = new_content_widget
-
-            if container.splitter:
-                container._reconnect_tab_signals(container.splitter)
-                container.update_corner_widget_visibility()
-                
-            # Ensure all contained widgets are visible after layout rendering
-            for widget in container.contained_widgets:
-                if hasattr(widget, 'content_container') and widget.content_container:
-                    widget.content_container.show()
-                    widget.content_container.update()
-
-        finally:
-            # Always clear the flag, even if an error occurs
-            self._rendering_layout = False
-            
-        # Update tab bar visibility after rendering
-        self._update_tab_bar_visibility(container)
-        
-        # Update container title based on current widgets
-        container.update_dynamic_title()
+        """Delegate to LayoutRenderer."""
+        return self.layout_renderer.render_layout(container, widget_to_activate)
 
     def _update_tab_bar_visibility(self, container: DockContainer):
-        """
-        Updates tab bar visibility for all tab widgets in the container based on new UI rules.
-        """
-        if not container.splitter:
-            return
-            
-        if isinstance(container.splitter, QTabWidget):
-            # Root is TabGroupNode - apply Rules A/B
-            tab_widget = container.splitter
-            tab_count = tab_widget.count()
-            corner_widget = tab_widget.cornerWidget()
-            
-            if tab_count == 1 and not self._is_persistent_root(container):
-                # Rule A: Single widget state - hide tab bar and corner widget (except for persistent roots)
-                tab_widget.tabBar().setVisible(False)
-                if corner_widget:
-                    corner_widget.setVisible(False)
-            else:
-                # Rule B: Tabbed state - show tab bar and corner widget
-                tab_widget.tabBar().setVisible(True)
-                if corner_widget:
-                    corner_widget.setVisible(True)
-        else:
-            # Root is SplitterNode - apply Rule C to all child tab widgets
-            tab_widgets = container.splitter.findChildren(QTabWidget)
-            for tab_widget in tab_widgets:
-                # Rule C: Inside splitter - always show tab bar and corner widget
-                tab_widget.tabBar().setVisible(True)
-                corner_widget = tab_widget.cornerWidget()
-                if corner_widget:
-                    corner_widget.setVisible(True)
+        """Delegate to LayoutRenderer."""
+        return self.layout_renderer._update_tab_bar_visibility(container)
 
     def _render_node(self, node: AnyNode, container: DockContainer, inside_splitter: bool = False, widget_to_activate: DockPanel = None) -> QWidget:
-        if isinstance(node, SplitterNode):
-            qt_splitter = QSplitter(node.orientation)
-            qt_splitter.setObjectName("ContainerSplitter")
-            qt_splitter.setStyleSheet("""
-                QSplitter::handle {
-                    background-color: #C4C4C3;
-                    border: none;
-                }
-                QSplitter::handle:hover {
-                    background-color: #A9A9A9;
-                }
-            """)
-            qt_splitter.setHandleWidth(2)
-            qt_splitter.setChildrenCollapsible(False)
-            for child_node in node.children:
-                child_widget = self._render_node(child_node, container, inside_splitter=True, widget_to_activate=widget_to_activate)
-                if child_widget:
-                    qt_splitter.addWidget(child_widget)
-            if node.sizes and len(node.sizes) == qt_splitter.count():
-                qt_splitter.setSizes(node.sizes)
-            else:
-                qt_splitter.setSizes([100] * qt_splitter.count())
-            return qt_splitter
-        elif isinstance(node, TabGroupNode):
-            qt_tab_widget = container._create_tab_widget_with_controls()
-            for widget_node in node.children:
-                widget = widget_node.widget
-                qt_tab_widget.addTab(widget.content_container, widget.windowTitle())
-                widget.content_container.setProperty("dockable_widget", widget)
-                if widget.original_bg_color:
-                    bg_color_name = widget.original_bg_color.name()
-                    widget.content_container.setStyleSheet(
-                        f"#ContentContainer {{ background-color: {bg_color_name}; border-radius: 0px; }}")
-                widget.parent_container = container
-                # Ensure content container is visible after reparenting
-                widget.content_container.show()
-                # DockPanel instances never have shadow effects (they're not windows)
-                if widget not in container.contained_widgets:
-                    container.contained_widgets.append(widget)
-            
-            # Apply new UI rules for tab bar visibility
-            tab_count = qt_tab_widget.count()
-            
-            if inside_splitter:
-                # Rule C: Inside splitter - always show tab bar and corner widget
-                qt_tab_widget.tabBar().setVisible(True)
-                corner_widget = qt_tab_widget.cornerWidget()
-                if corner_widget:
-                    corner_widget.setVisible(True)
-            elif tab_count == 1 and not self._is_persistent_root(container):
-                # Rule A: Single widget state - hide tab bar and corner widget (except for persistent roots)
-                qt_tab_widget.tabBar().setVisible(False)
-                corner_widget = qt_tab_widget.cornerWidget()
-                if corner_widget:
-                    corner_widget.setVisible(False)
-            else:
-                # Rule B: Tabbed state - show tab bar and corner widget
-                qt_tab_widget.tabBar().setVisible(True)
-                corner_widget = qt_tab_widget.cornerWidget()
-                if corner_widget:
-                    corner_widget.setVisible(True)
-            
-            # Activate the specified widget if provided
-            if widget_to_activate is not None:
-                for tab_index in range(qt_tab_widget.count()):
-                    tab_content = qt_tab_widget.widget(tab_index)
-                    if tab_content == widget_to_activate.content_container:
-                        qt_tab_widget.setCurrentIndex(tab_index)
-                        break
-            
-            return qt_tab_widget
-        elif isinstance(node, WidgetNode):
-            widget = node.widget
-            # Ensure content container is visible before returning it
-            widget.content_container.show()
-            return widget.content_container
+        """Delegate to LayoutRenderer."""
+        return self.layout_renderer._render_node(node, container, inside_splitter, widget_to_activate)
 
     def add_widget_handlers(self, widget):
         """
@@ -669,175 +322,12 @@ class DockingManager(QObject):
             widget.title_bar.mouseReleaseEvent = self.create_release_handler(widget)
 
     def handle_live_move(self, source_container, event):
-        """
-        Centralized live move handler that shows overlays during window movement.
-        This is the heart of the hybrid system, providing real-time docking feedback
-        during live window movement operations.
-        
-        :param source_container: The window/container being moved
-        :param event: The mouse move event containing position information
-        """
-        
-        # CRITICAL FIX: Prevent dragging persistent roots
-        if self._is_persistent_root(source_container):
-            return  # Block all dragging of persistent roots
-        # Safety checks - don't show overlays during critical operations
-        if self._undocking_in_progress or self._rendering_layout:
-            return
-            
-        # Verify we're actually in a moving state
-        if not hasattr(source_container, 'title_bar') or not source_container.title_bar or not source_container.title_bar.moving:
-            self.destroy_all_overlays()
-            return
-
-        if isinstance(source_container, FloatingDockRoot):
-            self.destroy_all_overlays()
-            self.last_dock_target = None
-            return
-
-        # Get the global mouse position from the event
-        global_mouse_pos = event.globalPosition().toPoint()
-
-        # Step 1: Check for tab bar insertion first (highest priority)
-        tab_bar_info = self.hit_test_cache.find_tab_bar_at_position(global_mouse_pos)
-        if tab_bar_info:
-            tab_bar = tab_bar_info.tab_widget.tabBar()
-            local_pos = tab_bar.mapFromGlobal(global_mouse_pos)
-            drop_index = tab_bar.get_drop_index(local_pos)
-
-            if drop_index != -1:
-                self.destroy_all_overlays()
-                tab_bar.set_drop_indicator_index(drop_index)
-                self.last_dock_target = (tab_bar_info.tab_widget, "insert", drop_index)
-                return
-            else:
-                tab_bar.set_drop_indicator_index(-1)
-
-        # Step 2: Find the drop target using cached data
-        # Call HitTestCache with source_container as excluded_widget
-        cached_target = self.hit_test_cache.find_drop_target_at_position(global_mouse_pos, source_container)
-        target_widget = cached_target.widget if cached_target else None
-
-
-        # Step 3: Update overlay visibility based on target
-        required_overlays = set()
-        if target_widget:
-            target_name = getattr(target_widget, 'objectName', lambda: f"{type(target_widget).__name__}@{id(target_widget)}")()
-            
-            # Check if target_widget itself is a container that should be filtered out
-            if isinstance(target_widget, DockContainer):
-                source_has_simple_layout = self.has_simple_layout(source_container if 'source_container' in locals() else excluded_widget)
-                target_has_simple_layout = self.has_simple_layout(target_widget)
-                
-                # Only add container target if either source or target has complex layout
-                if not source_has_simple_layout or not target_has_simple_layout:
-                    required_overlays.add(target_widget)
-            else:
-                required_overlays.add(target_widget)
-            parent_container = getattr(target_widget, 'parent_container', None)
-            if parent_container:
-                # Only add container overlay for complex layouts
-                # Don't show container overlay only when BOTH source AND target have simple layouts
-                target_has_complex_layout = not self.has_simple_layout(parent_container)
-                source_has_simple_layout = self.has_simple_layout(source_container)
-                
-                # Show container overlay if target is complex OR source is complex (but not if both are simple)
-                if target_has_complex_layout or not source_has_simple_layout:
-                    required_overlays.add(parent_container)
-
-        current_overlays = set(self.active_overlays)
-        
-
-        # Hide overlays no longer needed
-        for w in (current_overlays - required_overlays):
-            if not self.is_deleted(w):
-                w.hide_overlay()
-            self.active_overlays.remove(w)
-
-        # Show overlays for new targets
-        for w in (required_overlays - current_overlays):
-            try:
-                if not self.is_deleted(w):
-                    if isinstance(w, DockContainer):
-                        root_node = self.model.roots.get(w)
-                        is_empty = not (root_node and root_node.children)
-                        is_main_dock_area = (w is (self.main_window.dock_area if self.main_window else None))
-                        is_floating_root = isinstance(w, FloatingDockRoot)
-                        if is_empty and (is_main_dock_area or is_floating_root):
-                            w.show_overlay(preset='main_empty')
-                        else:
-                            w.show_overlay(preset='standard')
-                    else:
-                        w.show_overlay()
-                    self.active_overlays.append(w)
-            except RuntimeError:
-                if w in self.active_overlays:
-                    self.active_overlays.remove(w)
-
-        # Step 4: Determine final docking location
-        final_target = None
-        final_location = None
-        if target_widget:
-            location = target_widget.get_dock_location(global_mouse_pos)
-            if location:
-                final_target = target_widget
-                final_location = location
-            else:
-                parent_container = getattr(target_widget, 'parent_container', None)
-                if parent_container:
-                    parent_location = parent_container.get_dock_location(global_mouse_pos)
-                    if parent_location:
-                        final_target = parent_container
-                        final_location = parent_location
-
-        # Step 5: Update overlay previews
-        for overlay_widget in self.active_overlays:
-            if overlay_widget is final_target:
-                overlay_widget.show_preview(final_location)
-            else:
-                overlay_widget.show_preview(None)
-
-        # Store the result in self.last_dock_target
-        self.last_dock_target = (final_target, final_location) if (final_target and final_location) else None
+        """Delegate to DragDropController."""
+        return self.drag_drop_controller.handle_live_move(source_container, event)
 
     def finalize_dock_from_live_move(self, source_container, dock_target_info):
-        """
-        Finalizes a docking operation initiated from a live move.
-        This is a pure model operation that completes the transaction.
-        
-        :param source_container: The container that was being moved
-        :param dock_target_info: The dock target from last_dock_target (target, location) or (tab_widget, "insert", index)
-        """
-        
-        try:
-            # CRITICAL FIX: Prevent moving persistent roots or containers that are part of persistent roots
-            if self._is_persistent_root(source_container):
-                print(f"WARNING: Attempted to move persistent root {source_container}. Operation blocked.")
-                self.destroy_all_overlays()
-                return
-            
-            # Clean up any remaining overlays first
-            self.destroy_all_overlays()
-            QApplication.processEvents()  # Force immediate overlay cleanup
-            
-            # Get the root_node from the source_container
-            source_root_node = self.model.roots.get(source_container)
-            if not source_root_node:
-                print(f"ERROR: No root node found for source container {source_container}")
-                return
-                
-            # Handle different types of dock targets
-            if len(dock_target_info) == 3:
-                # Tab insertion: (tab_widget, "insert", drop_index)
-                self._finalize_tab_insertion(source_container, source_root_node, dock_target_info)
-            elif len(dock_target_info) == 2:
-                # Regular docking: (target_widget, location)
-                self._finalize_regular_docking(source_container, source_root_node, dock_target_info)
-                    
-        except Exception as e:
-            print(f"Error during dock finalization: {e}")
-            # Ensure overlays are cleaned up even if docking fails
-            self.destroy_all_overlays()
+        """Delegate to DragDropController."""
+        return self.drag_drop_controller.finalize_dock_from_live_move(source_container, dock_target_info)
 
     def _finalize_tab_insertion(self, source_container, source_root_node, dock_target_info):
         """
@@ -2090,18 +1580,19 @@ class DockingManager(QObject):
         container_to_close.close()
 
     def _simplify_model(self, root_window: QWidget):
-        if root_window not in self.model.roots:
-            return
+        """Delegate to LayoutRenderer for model simplification and re-render layout."""
+        self.layout_renderer.simplify_model(root_window)
+        # Re-render the layout after simplification
+        if root_window in self.model.roots:
+            self._render_layout(root_window)
+        else:
+            # If container was removed from roots, close it
+            if hasattr(root_window, 'close'):
+                root_window.close()
 
-        # PRE-EMPTIVE CLEANUP: Destroy ALL overlays before major layout change
-        self.destroy_all_overlays()
-
-        # Determine if this window is one of our special, persistent roots.
+        # Check if this is a persistent root for use in the simplification logic below
         is_persistent_root = self._is_persistent_root(root_window)
-                    
-        # Prevent event processing during model simplification
-        self._rendering_layout = True
-        root_window.setUpdatesEnabled(False)
+
         try:
             while True:
                 made_changes = False
@@ -2568,6 +2059,8 @@ class DockingManager(QObject):
         print("="*80 + "\n")
 
     def _save_splitter_sizes_to_model(self, widget, node):
+        """Delegate to LayoutSerializer."""
+        return self.layout_serializer._save_splitter_sizes_to_model(widget, node)
         """Recursively saves the current sizes of QSplitters into the layout model."""
         if not isinstance(widget, QSplitter) or not isinstance(node, SplitterNode):
             return
@@ -2724,6 +2217,8 @@ class DockingManager(QObject):
                 title_bar.grabMouse()
 
     def start_tab_drag_operation(self, widget_persistent_id: str):
+        """Delegate to DragDropController."""
+        return self.drag_drop_controller.start_tab_drag_operation(widget_persistent_id)
         """
         Initiates a Qt-native drag operation for a tab with the given persistent ID.
         This method creates a QDrag object and handles the visual drag operation.

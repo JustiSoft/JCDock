@@ -1098,11 +1098,23 @@ class DockContainer(QWidget):
                 tab_count = tab_widget.count()
                 is_persistent = self.manager._is_persistent_root(self) if self.manager else False
                 
-                # Rule: Hide corner widget if exactly 1 tab AND not a persistent root
-                if tab_count == 1 and not is_persistent:
-                    corner_widget.setVisible(False)
-                else:
-                    corner_widget.setVisible(True)
+                # Always keep corner widget visible, but selectively hide buttons
+                corner_widget.setVisible(True)
+                
+                # Find the close button specifically and hide it for simple layouts (non-persistent roots)
+                close_button = corner_widget.findChild(QPushButton, "closeAllButton")
+                if close_button:
+                    if not is_persistent:
+                        # Hide close button for simple layouts - it's redundant and causes errors
+                        close_button.setVisible(False)
+                    else:
+                        # Show close button for persistent roots
+                        close_button.setVisible(True)
+                
+                # Undock button should always remain visible (it's needed for undocking tab groups)
+                undock_button = corner_widget.findChild(QPushButton, "undockButton")
+                if undock_button:
+                    undock_button.setVisible(True)
                 
                 # Force visual refresh
                 tab_widget.style().unpolish(tab_widget)
