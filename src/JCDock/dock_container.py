@@ -83,15 +83,17 @@ class DockContainer(QWidget):
             """)
             self.main_layout = QVBoxLayout(self)
             
-        # Use small margins for clean CSS styling
-        self.main_layout.setContentsMargins(4, 4, 4, 4)
+        # Use margins that respect the 8px border-radius while maximizing title bar width
+        self.main_layout.setContentsMargins(2, 2, 2, 4)
         self.main_layout.setSpacing(0)
 
         self.title_bar = None
         if show_title_bar:
             self.title_bar = TitleBar("Docked Widgets", self, top_level_widget=self)
-            self.main_layout.addWidget(self.title_bar, 0)
             self.title_bar.setMouseTracking(True)
+            
+            # Title bar is always inside main_layout (inside content_wrapper for floating containers)
+            self.main_layout.addWidget(self.title_bar, 0)
 
         self.content_area = QWidget()
         self.content_area.setObjectName("ContentArea")
@@ -258,9 +260,6 @@ class DockContainer(QWidget):
         """Toggles the window between a maximized and normal state."""
         if self._is_maximized:
             # Restore to the previous geometry
-            shadow_margin = self._shadow_padding if self._should_draw_shadow else 4
-            if self.container_layout:  # Floating window with content_wrapper
-                self.container_layout.setContentsMargins(shadow_margin, shadow_margin, shadow_margin, shadow_margin)
             self.setGeometry(self._normal_geometry)
             # Re-enable shadow when restored
             if self._shadow_effect:
@@ -276,10 +275,6 @@ class DockContainer(QWidget):
             # Disable shadow when maximized
             if self._shadow_effect:
                 self._shadow_effect.setEnabled(False)
-            if self.container_layout:  # Floating window with content_wrapper
-                self.container_layout.setContentsMargins(0, 0, 0, 0)
-            else:  # Fallback for docked containers
-                self.main_layout.setContentsMargins(0, 0, 0, 0)
             screen = QApplication.screenAt(self.pos())
             if not screen:
                 screen = QApplication.primaryScreen()

@@ -17,7 +17,7 @@ class TitleBar(QWidget):
         self.setMouseTracking(True)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 0, 4, 0)
+        layout.setContentsMargins(2, 0, 2, 0)
         layout.setSpacing(4)
 
         self.title_label = QLabel(title)
@@ -61,7 +61,7 @@ class TitleBar(QWidget):
         self.offset = QPoint()
 
     def paintEvent(self, event):
-        """Paint the title bar background using the parent container's color."""
+        """Paint the title bar background with rounded top corners to match container."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         
@@ -69,8 +69,27 @@ class TitleBar(QWidget):
         bg_color = QColor("#F0F0F0")  # Default fallback
         if hasattr(self._top_level_widget, '_title_bar_color'):
             bg_color = self._top_level_widget._title_bar_color
-            
-        painter.fillRect(self.rect(), bg_color)
+        
+        # Create a rounded rectangle path with rounded top corners only
+        rect = QRectF(self.rect())
+        path = QPainterPath()
+        radius = 8.0  # Match container's border-radius
+        
+        # Start from bottom-left corner (no rounding)
+        path.moveTo(rect.left(), rect.bottom())
+        # Line to top-left, then arc for top-left rounded corner
+        path.lineTo(rect.left(), rect.top() + radius)
+        path.arcTo(rect.left(), rect.top(), radius * 2, radius * 2, 180, -90)
+        # Line across top to top-right rounded corner
+        path.lineTo(rect.right() - radius, rect.top())
+        path.arcTo(rect.right() - radius * 2, rect.top(), radius * 2, radius * 2, 90, -90)
+        # Line down to bottom-right (no rounding)
+        path.lineTo(rect.right(), rect.bottom())
+        # Close the path
+        path.closeSubpath()
+        
+        # Fill the path with the background color
+        painter.fillPath(path, QBrush(bg_color))
         super().paintEvent(event)
 
     def on_close_button_clicked(self):
