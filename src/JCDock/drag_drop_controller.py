@@ -535,42 +535,19 @@ class DragDropController:
         Returns:
             tuple: (QTabWidget, tab_index) or (None, -1) if not found
         """
-        # Find the widget's container
-        if not hasattr(widget, 'parent_container') or not widget.parent_container:
-            return None, -1
+        # Use the comprehensive approach that searches all containers
+        for container in self.manager.containers:
+            if self.manager.is_deleted(container):
+                continue
             
-        container = widget.parent_container
+            # Use findChildren to get all QTabWidget instances in the container
+            from PySide6.QtWidgets import QTabWidget
+            tab_widgets = container.findChildren(QTabWidget)
+            for tab_widget in tab_widgets:
+                for i in range(tab_widget.count()):
+                    if tab_widget.widget(i) is widget.content_container:
+                        return tab_widget, i
         
-        # Check if container has splitter attribute
-        if not hasattr(container, 'splitter'):
-            return None, -1
-            
-        # Check widget.content_container
-        if not hasattr(widget, 'content_container'):
-            return None, -1
-            
-        # The container.splitter can be either:
-        # 1. A single TearableTabWidget (simple layout)
-        # 2. A QSplitter containing multiple TearableTabWidget instances (complex layout)
-        splitter = container.splitter
-        
-        # Check if the splitter itself is a TearableTabWidget
-        from .tearable_tab_widget import TearableTabWidget
-        if isinstance(splitter, TearableTabWidget):
-            for tab_index in range(splitter.count()):
-                if splitter.widget(tab_index) is widget.content_container:
-                    return splitter, tab_index
-        
-        # Otherwise, search through splitter children for TearableTabWidget instances
-        elif hasattr(splitter, 'count'):
-            for splitter_index in range(splitter.count()):
-                child_widget = splitter.widget(splitter_index)
-                
-                if isinstance(child_widget, TearableTabWidget):
-                    for tab_index in range(child_widget.count()):
-                        if child_widget.widget(tab_index) is widget.content_container:
-                            return child_widget, tab_index
-                        
         return None, -1
 
     def _finalize_regular_docking(self, source_container, source_root_node, dock_target_info):
