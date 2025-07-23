@@ -492,7 +492,7 @@ class DockingManager(QObject):
             self.window_stack.remove(widget_to_remove)
         self.model.unregister_widget(widget_to_remove)
 
-    def _render_layout(self, container: DockContainer):
+    def _render_layout(self, container: DockContainer, widget_to_activate: DockPanel = None):
         root_node = self.model.roots.get(container)
         if not root_node:
             print(f"ERROR: Cannot render layout for unregistered container {container.objectName()}")
@@ -513,7 +513,7 @@ class DockingManager(QObject):
                     widget.overlay = None
                     
             container.contained_widgets.clear()
-            new_content_widget = self._render_node(root_node, container)
+            new_content_widget = self._render_node(root_node, container, widget_to_activate=widget_to_activate)
             old_content_widget = container.splitter
             if new_content_widget:
                 container.inner_content_layout.addWidget(new_content_widget)
@@ -578,7 +578,7 @@ class DockingManager(QObject):
                 if corner_widget:
                     corner_widget.setVisible(True)
 
-    def _render_node(self, node: AnyNode, container: DockContainer, inside_splitter: bool = False) -> QWidget:
+    def _render_node(self, node: AnyNode, container: DockContainer, inside_splitter: bool = False, widget_to_activate: DockPanel = None) -> QWidget:
         if isinstance(node, SplitterNode):
             qt_splitter = QSplitter(node.orientation)
             qt_splitter.setObjectName("ContainerSplitter")
@@ -594,7 +594,7 @@ class DockingManager(QObject):
             qt_splitter.setHandleWidth(2)
             qt_splitter.setChildrenCollapsible(False)
             for child_node in node.children:
-                child_widget = self._render_node(child_node, container, inside_splitter=True)
+                child_widget = self._render_node(child_node, container, inside_splitter=True, widget_to_activate=widget_to_activate)
                 if child_widget:
                     qt_splitter.addWidget(child_widget)
             if node.sizes and len(node.sizes) == qt_splitter.count():
@@ -640,6 +640,14 @@ class DockingManager(QObject):
                 corner_widget = qt_tab_widget.cornerWidget()
                 if corner_widget:
                     corner_widget.setVisible(True)
+            
+            # Activate the specified widget if provided
+            if widget_to_activate is not None:
+                for tab_index in range(qt_tab_widget.count()):
+                    tab_content = qt_tab_widget.widget(tab_index)
+                    if tab_content == widget_to_activate.content_container:
+                        qt_tab_widget.setCurrentIndex(tab_index)
+                        break
             
             return qt_tab_widget
         elif isinstance(node, WidgetNode):
@@ -862,9 +870,12 @@ class DockingManager(QObject):
         # Add source widgets to destination's model tree at the specified index
         for i, widget_node in enumerate(all_source_widgets):
             target_group.children.insert(drop_index + i, widget_node)
+        
+        # Identify the primary widget from the source that should be activated
+        widget_to_activate = all_source_widgets[0].widget if all_source_widgets else None
             
         # Re-render the destination container
-        self._render_layout(destination_container)
+        self._render_layout(destination_container, widget_to_activate)
         destination_container.update()
         destination_container.repaint()
         
@@ -1106,8 +1117,12 @@ class DockingManager(QObject):
                     
             
             
+        # Identify the primary widget from the source that should be activated
+        source_widgets = self.model.get_all_widgets_from_node(source_root_node)
+        widget_to_activate = source_widgets[0].widget if source_widgets else None
+        
         # Re-render the destination container
-        self._render_layout(destination_container)
+        self._render_layout(destination_container, widget_to_activate)
         destination_container.update()
         destination_container.repaint()
         
@@ -1456,7 +1471,7 @@ class DockingManager(QObject):
             for i, widget_node in enumerate(all_source_widgets):
                 target_group.children.insert(insertion_index + i, widget_node)
 
-            self._render_layout(root_window)
+            self._render_layout(root_window, source_widget)
             # Force immediate visual update
             root_window.update()
             root_window.repaint()
@@ -1494,7 +1509,7 @@ class DockingManager(QObject):
             # FIX: If docking to an empty container, just replace its root.
             if target_node and not target_node.children:
                 self._update_container_root(container_to_modify, source_node_to_move)
-                self._render_layout(container_to_modify)
+                self._render_layout(container_to_modify, source_widget)
                 # Force immediate visual update
                 container_to_modify.update()
                 container_to_modify.repaint()
@@ -1557,7 +1572,7 @@ class DockingManager(QObject):
             container_to_modify.overlay.destroy_overlay()
             container_to_modify.overlay = None
             
-        self._render_layout(container_to_modify)
+        self._render_layout(container_to_modify, source_widget)
         
         # Force immediate visual update before cleanup
         container_to_modify.update()
