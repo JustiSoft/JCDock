@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt, QPoint, QTimer, QMimeData
-from PySide6.QtGui import QDrag, QPixmap, QPainter, QCursor
+from PySide6.QtCore import Qt, QPoint, QTimer, QMimeData, QRect
+from PySide6.QtGui import QDrag, QPixmap, QPainter, QCursor, QPen, QBrush, QColor
 
 from .docking_state import DockingState
 from .dock_model import WidgetNode, TabGroupNode, SplitterNode
@@ -23,6 +23,69 @@ class DragDropController:
         """
         self.manager = manager
 
+    def _create_enhanced_drag_pixmap(self, tab_widget, tab_index, tab_rect):
+        """
+        Creates an enhanced drag pixmap with visual indicators for tab undocking.
+        Shows the tab with a subtle window frame and shadow to indicate floating action.
+        
+        Args:
+            tab_widget: The tab widget containing the tab
+            tab_index: Index of the tab being dragged
+            tab_rect: Rectangle of the tab
+            
+        Returns:
+            QPixmap: Enhanced drag visual with floating window indicators
+        """
+        if tab_rect.isEmpty():
+            return QPixmap()
+            
+        # Create a larger pixmap to accommodate shadow and frame effects
+        margin = 8
+        enhanced_size = tab_rect.size()
+        enhanced_size.setWidth(enhanced_size.width() + margin * 2)
+        enhanced_size.setHeight(enhanced_size.height() + margin * 2)
+        
+        pixmap = QPixmap(enhanced_size)
+        pixmap.fill(Qt.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        
+        # Draw subtle shadow first (behind everything)
+        shadow_rect = QRect(margin + 2, margin + 2, tab_rect.width(), tab_rect.height())
+        painter.fillRect(shadow_rect, QColor(0, 0, 0, 40))
+        
+        # Draw a subtle window frame to indicate floating
+        frame_rect = QRect(margin, margin, tab_rect.width(), tab_rect.height())
+        frame_pen = QPen(QColor(100, 150, 200, 180), 2)
+        painter.setPen(frame_pen)
+        painter.drawRect(frame_rect)
+        
+        # Draw the actual tab content with slight transparency
+        painter.setOpacity(0.8)
+        tab_widget.tabBar().render(painter, QPoint(margin, margin), tab_rect)
+        
+        # Add small floating indicator (window icon in corner)
+        painter.setOpacity(1.0)
+        indicator_size = 12
+        indicator_rect = QRect(frame_rect.right() - indicator_size - 2, 
+                             frame_rect.top() + 2, 
+                             indicator_size, 
+                             indicator_size)
+        
+        # Draw simple window icon (rectangle with title bar)
+        painter.setPen(QPen(QColor(60, 120, 180), 2))
+        painter.setBrush(QBrush(QColor(240, 240, 240, 200)))
+        painter.drawRect(indicator_rect)
+        
+        # Draw title bar of the mini window icon
+        title_bar_rect = QRect(indicator_rect.x(), indicator_rect.y(), 
+                              indicator_rect.width(), 3)
+        painter.fillRect(title_bar_rect, QColor(60, 120, 180))
+        
+        painter.end()
+        return pixmap
+
     def handle_live_move(self, source_container, event):
         """
         Core live move handler that shows overlays during window movement.
@@ -39,9 +102,18 @@ class DragDropController:
         if self.manager.is_rendering():
             return
             
-        # Assert we're in the correct state - the state machine should guarantee this
-        assert self.manager.state == DockingState.DRAGGING_WINDOW, f"handle_live_move called in wrong state: {self.manager.state}"
-        assert hasattr(source_container, 'title_bar') and source_container.title_bar and source_container.title_bar.moving, "handle_live_move called without proper moving state"
+        # Check state and fix if necessary - defensive programming
+        if self.manager.state != DockingState.DRAGGING_WINDOW:
+            # If called from title bar that thinks it's moving, fix the state
+            if hasattr(source_container, 'title_bar') and source_container.title_bar and source_container.title_bar.moving:
+                self.manager._set_state(DockingState.DRAGGING_WINDOW)
+                self.manager.hit_test_cache.set_drag_operation_state(True)
+            else:
+                return
+        
+        # Verify we have proper moving state
+        if not (hasattr(source_container, 'title_bar') and source_container.title_bar and source_container.title_bar.moving):
+            return
 
         if isinstance(source_container, self.manager.FloatingDockRoot if hasattr(self.manager, 'FloatingDockRoot') else type(None)):
             self.manager.destroy_all_overlays()
@@ -232,19 +304,15 @@ class DragDropController:
         mime_data.setData("application/x-jcdock-widget", widget_persistent_id.encode('utf-8'))
         drag.setMimeData(mime_data)
 
-        # Create a pixmap of the tab for visual feedback
+        # Create enhanced drag pixmap with floating window indicators
         tab_rect = tab_widget.tabBar().tabRect(tab_index)
         if not tab_rect.isEmpty():
-            pixmap = QPixmap(tab_rect.size())
-            pixmap.fill(Qt.transparent)
-            
-            painter = QPainter(pixmap)
-            painter.setOpacity(0.7)  # Semi-transparent
-            tab_widget.tabBar().render(painter, QPoint(0, 0), tab_rect)
-            painter.end()
+            pixmap = self._create_enhanced_drag_pixmap(tab_widget, tab_index, tab_rect)
             
             drag.setPixmap(pixmap)
-            drag.setHotSpot(QPoint(tab_rect.width() // 2, tab_rect.height() // 2))
+            # Adjust hot spot to account for the margin added in enhanced pixmap
+            margin = 8
+            drag.setHotSpot(QPoint(tab_rect.width() // 2 + margin, tab_rect.height() // 2 + margin))
 
         # Set the drag source ID for hit-testing exclusion
         self.manager._drag_source_id = widget_persistent_id
@@ -523,6 +591,15 @@ class DragDropController:
             # Emit signals for the undocking and layout change
             self.manager.signals.widget_undocked.emit(widget)
             self.manager.signals.layout_changed.emit()
+            
+            # Ensure proper window activation and focus
+            floating_window.show()
+            floating_window.raise_()
+            floating_window.activateWindow()
+            
+            # Process events to ensure window is properly activated
+            from PySide6.QtWidgets import QApplication
+            QApplication.processEvents()
             
             # Schedule a delayed title refresh for all containers to ensure visual consistency
             from PySide6.QtCore import QTimer

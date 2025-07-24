@@ -139,7 +139,10 @@ class DockPanel(QWidget):
             
         visible_widget = self.content_container
         if not self.overlay:
-            self.overlay = DockingOverlay(overlay_parent)
+            try:
+                self.overlay = DockingOverlay(overlay_parent)
+            except (SystemError, RuntimeError):
+                return  # Skip showing overlay if creation fails
             
         global_pos = visible_widget.mapToGlobal(QPoint(0, 0))
         parent_local_pos = overlay_parent.mapFromGlobal(global_pos)

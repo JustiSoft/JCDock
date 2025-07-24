@@ -1,7 +1,10 @@
 # tearable_tab_widget.py
-from PySide6.QtGui import QPainter, QPen, QColor
+from PySide6.QtGui import QPainter, QPen, QColor, QCursor
 from PySide6.QtWidgets import QTabWidget, QTabBar, QApplication
 from PySide6.QtCore import Qt, QPoint
+
+from .tab_drag_preview import TabDragPreview
+from .docking_state import DockingState
 
 
 class TearableTabBar(QTabBar):
@@ -132,21 +135,29 @@ class TearableTabWidget(QTabWidget):
         self.tab_bar = TearableTabBar(self)
         self.setTabBar(self.tab_bar)
         self.manager = None
+        
+        # Custom drag tracking variables
+        self.drag_preview = None
+        self.dragged_tab_index = -1
+        self.dragged_widget = None
+        self.is_custom_dragging = False
+        self.mouse_grabbed = False
 
     def set_manager(self, manager):
         self.manager = manager
 
     def start_tab_drag(self, index):
         """
-        Starts a Qt-native drag operation for a tab at the specified index.
+        Starts a custom drag operation for a tab at the specified index.
+        Uses a floating preview window instead of Qt's native drag system.
         """
-        if not self.manager:
+        if not self.manager or self.is_custom_dragging:
             return
 
         # 1. Identify the DockPanel associated with this tab index
         content_to_remove = self.widget(index)
 
-        # We need to find the DockContainer that owns this tab widget to look up the widget
+        # Find the DockContainer that owns this tab widget
         from .dock_container import DockContainer
 
         container = self.parent()
@@ -158,5 +169,174 @@ class TearableTabWidget(QTabWidget):
                                 None)
 
             if owner_widget:
-                # 2. Tell the manager to start the Qt drag operation
-                self.manager.start_tab_drag_operation(owner_widget.persistent_id)
+                # 2. Start custom drag operation
+                self._start_custom_drag(index, owner_widget)
+
+    def _start_custom_drag(self, tab_index, widget):
+        """
+        Initialize custom drag operation with floating preview.
+        """
+        self.is_custom_dragging = True
+        self.dragged_tab_index = tab_index
+        self.dragged_widget = widget
+        
+        # Set visual feedback on original tab (dim it)
+        self.setTabEnabled(tab_index, False)
+        
+        # Create floating preview window
+        self.drag_preview = TabDragPreview(self, tab_index)
+        
+        # Set manager state and initialize systems
+        self.manager._set_state(DockingState.DRAGGING_TAB)
+        self.manager.destroy_all_overlays()
+        self.manager.hit_test_cache.build_cache(self.manager.window_stack, self.manager.containers)
+        self.manager.hit_test_cache.set_drag_operation_state(True)
+        
+        # Show preview at current cursor position
+        cursor_pos = QCursor.pos()
+        self.drag_preview.show_preview(cursor_pos)
+        
+        # Capture mouse events globally
+        self.grabMouse()
+        self.mouse_grabbed = True
+
+    def mouseMoveEvent(self, event):
+        """
+        Handle mouse movement for custom drag operations.
+        """
+        if self.is_custom_dragging and self.drag_preview:
+            # Update preview position
+            global_pos = self.mapToGlobal(event.pos())
+            self.drag_preview.update_position(global_pos)
+            
+            # Update overlays for valid drop zones
+            if self.manager:
+                # Set drag source ID for exclusion in hit testing
+                self.manager._drag_source_id = self.dragged_widget.persistent_id
+                self.manager.handle_qdrag_move(global_pos)
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """
+        Handle mouse release to complete or cancel custom drag operation.
+        """
+        if self.is_custom_dragging and event.button() == Qt.LeftButton:
+            self._complete_custom_drag()
+        else:
+            super().mouseReleaseEvent(event)
+
+    def _complete_custom_drag(self):
+        """
+        Complete the custom drag operation by docking or creating floating window.
+        """
+        if not self.is_custom_dragging or not self.dragged_widget:
+            return
+            
+        try:
+            # Get current cursor position for drop logic
+            cursor_pos = QCursor.pos()
+            
+            # CRITICAL: Release mouse capture BEFORE creating any new widgets
+            # Qt cannot create widgets properly while mouse is captured
+            if self.mouse_grabbed:
+                try:
+                    self.releaseMouse()
+                    self.mouse_grabbed = False
+                except RuntimeError:
+                    # Widget may have been deleted, ignore
+                    pass
+            
+            # Process events to ensure mouse release takes effect
+            QApplication.processEvents()
+            
+            # Check if we have a valid drop target
+            dock_target_info = None
+            if self.manager and hasattr(self.manager, 'last_dock_target'):
+                dock_target_info = self.manager.last_dock_target
+            
+            if dock_target_info:
+                # Valid drop target - perform docking
+                try:
+                    target, location = dock_target_info
+                    success = self.manager.dock_widget_from_drag(
+                        self.dragged_widget.persistent_id, 
+                        target, 
+                        location
+                    )
+                    if not success:
+                        # Fallback to floating window if dock fails
+                        self._create_floating_window_from_drag(cursor_pos)
+                except Exception as e:
+                    print(f"ERROR during dock operation: {e}")
+                    # Fallback to floating window
+                    self._create_floating_window_from_drag(cursor_pos)
+            else:
+                # No valid drop target - create floating window
+                self._create_floating_window_from_drag(cursor_pos)
+                
+        except Exception as e:
+            # Ensure mouse is released even if everything fails
+            if self.mouse_grabbed:
+                try:
+                    self.releaseMouse()
+                    self.mouse_grabbed = False
+                except:
+                    pass
+        finally:
+            self._cleanup_custom_drag()
+
+    def _create_floating_window_from_drag(self, cursor_pos):
+        """
+        Create a floating window from the dragged tab.
+        """
+        if self.manager and self.dragged_widget:
+            self.manager._create_floating_window_from_drag(self.dragged_widget, cursor_pos)
+
+    def _cleanup_custom_drag(self):
+        """
+        Clean up after custom drag operation.
+        """
+        # Restore original tab state
+        if self.dragged_tab_index >= 0:
+            self.setTabEnabled(self.dragged_tab_index, True)
+        
+        # Hide and cleanup preview window
+        if self.drag_preview:
+            self.drag_preview.hide_preview()
+            self.drag_preview.deleteLater()
+            self.drag_preview = None
+        
+        # Release mouse capture safely - only if still grabbed
+        if self.mouse_grabbed:
+            try:
+                self.releaseMouse()
+                self.mouse_grabbed = False
+            except RuntimeError:
+                # Widget may have been deleted, ignore
+                pass
+        
+        # Process events to ensure mouse release is handled
+        QApplication.processEvents()
+        
+        # Reset manager state
+        if self.manager:
+            self.manager._set_state(DockingState.IDLE)
+            self.manager.hit_test_cache.set_drag_operation_state(False)
+            self.manager.destroy_all_overlays()
+            self.manager._drag_source_id = None
+        
+        # Reset drag variables
+        self.is_custom_dragging = False
+        self.dragged_tab_index = -1
+        self.dragged_widget = None
+        self.mouse_grabbed = False
+
+    def keyPressEvent(self, event):
+        """
+        Handle ESC key to cancel drag operation.
+        """
+        if self.is_custom_dragging and event.key() == Qt.Key_Escape:
+            self._cleanup_custom_drag()
+        else:
+            super().keyPressEvent(event)

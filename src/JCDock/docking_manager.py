@@ -2403,8 +2403,11 @@ class DockingManager(QObject):
                 title_bar.grabMouse()
 
     def start_tab_drag_operation(self, widget_persistent_id: str):
-        """Delegate to DragDropController."""
-        return self.drag_drop_controller.start_tab_drag_operation(widget_persistent_id)
+        """
+        DEPRECATED: This method is no longer used. 
+        Tab drag operations now use custom mouse tracking in TearableTabWidget.
+        """
+        return
         """
         Initiates a Qt-native drag operation for a tab with the given persistent ID.
         This method creates a QDrag object and handles the visual drag operation.

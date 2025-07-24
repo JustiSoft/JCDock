@@ -42,10 +42,13 @@ class DockingOverlay(QWidget):
                 icon.setAttribute(Qt.WA_TranslucentBackground, False)
                 self.dock_icons[key] = icon
 
-        self.preview_overlay = QWidget(self)
-        self.preview_overlay.setStyleSheet("background-color: rgba(0, 0, 255, 128);")
-        self.preview_overlay.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.preview_overlay.hide()
+        try:
+            self.preview_overlay = QWidget(self)
+            self.preview_overlay.setStyleSheet("background-color: rgba(0, 0, 255, 128);")
+            self.preview_overlay.setAttribute(Qt.WA_TransparentForMouseEvents)
+            self.preview_overlay.hide()
+        except (SystemError, RuntimeError):
+            self.preview_overlay = None
 
     def destroy_overlay(self):
         """
@@ -138,6 +141,8 @@ class DockingOverlay(QWidget):
         return None
 
     def show_preview(self, location):
+        if not self.preview_overlay:
+            return
         if location is None:
             self.preview_overlay.hide()
             return
@@ -163,7 +168,7 @@ class DockingOverlay(QWidget):
             self.preview_overlay.hide()
 
     def hide_preview(self):
-        if self.preview_overlay.isVisible():
+        if self.preview_overlay and self.preview_overlay.isVisible():
             self.preview_overlay.hide()
             parent = self.parentWidget()
             if parent and not (hasattr(parent, 'isDeleted') and parent.isDeleted()):
