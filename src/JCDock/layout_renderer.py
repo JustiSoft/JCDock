@@ -131,9 +131,31 @@ class LayoutRenderer:
                 widget.parent_container = container
                 # Ensure content container is visible after reparenting
                 widget.content_container.show()
+                # CRITICAL FIX: Force visibility and ensure proper reparenting
+                widget.content_container.setVisible(True)
+                widget.content_container.activateWindow()
+                widget.content_container.raise_()
+                # Double-check that the content widget inside has proper size
+                if hasattr(widget, 'content_widget') and widget.content_widget:
+                    widget.content_widget.setVisible(True)
+                # DockPanel instances never have shadow effects (they're not windows)
                 # DockPanel instances never have shadow effects (they're not windows)
                 if widget not in container.contained_widgets:
                     container.contained_widgets.append(widget)
+                    
+            # CRITICAL FIX: After all tabs are added, ensure the tab widget properly displays content
+            if qt_tab_widget.count() > 0:
+                # Make sure the first tab is properly selected and visible
+                current_index = qt_tab_widget.currentIndex()
+                if current_index >= 0:
+                    current_widget = qt_tab_widget.widget(current_index)
+                    if current_widget:
+                        current_widget.setVisible(True)
+                        current_widget.update()
+                        
+                # Force the tab widget to update its display
+                qt_tab_widget.update()
+                qt_tab_widget.repaint()
             
             # Apply new UI rules for tab bar visibility
             tab_count = qt_tab_widget.count()

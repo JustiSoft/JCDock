@@ -112,9 +112,7 @@ class LayoutSerializer:
         Args:
             data: Binary layout data from save_layout_to_bytearray()
         """
-        if not self.manager.widget_factory:
-            print("ERROR: Cannot load layout without a widget factory. Please set one using set_widget_factory().")
-            return
+        # No longer need to check for widget_factory - we use the registry system
 
         self._clear_layout()
 
@@ -148,12 +146,20 @@ class LayoutSerializer:
                 widget_data = window_state['content']['children'][0]
                 persistent_id = widget_data.get('id')
 
-                if persistent_id in loaded_widgets_cache:
-                    new_window = loaded_widgets_cache[persistent_id]
+                # CRITICAL FIX: Use unique cache key for floating windows too
+                cache_key = f"{persistent_id}_{id(widget_data)}_{len(loaded_widgets_cache)}"
+                
+                if cache_key in loaded_widgets_cache:
+                    new_window = loaded_widgets_cache[cache_key]
                 else:
-                    new_window = self.manager.widget_factory(widget_data)
-                    if new_window:
-                        loaded_widgets_cache[persistent_id] = new_window
+                    # Use the DockingManager's internal panel factory from the registry
+                    try:
+                        new_window = self.manager._create_panel_from_key(persistent_id)
+                        if new_window:
+                            loaded_widgets_cache[cache_key] = new_window
+                    except ValueError as e:
+                        print(f"ERROR: Cannot recreate widget '{persistent_id}': {e}")
+                        new_window = None
 
                 if new_window:
                     self.manager.model.roots[new_window] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
@@ -243,11 +249,11 @@ class LayoutSerializer:
         node_type = node_data.get('type')
 
         if node_type == 'SplitterNode':
+            children = [self._deserialize_node(child_data, loaded_widgets_cache) for child_data in node_data['children']]
             return SplitterNode(
                 orientation=node_data['orientation'],
                 sizes=node_data['sizes'],
-                children=[self._deserialize_node(child_data, loaded_widgets_cache) for child_data in
-                          node_data['children']]
+                children=children
             )
         elif node_type == 'TabGroupNode':
             return TabGroupNode(
@@ -259,12 +265,23 @@ class LayoutSerializer:
             if not persistent_id:
                 return TabGroupNode()
 
-            if persistent_id in loaded_widgets_cache:
-                new_widget = loaded_widgets_cache[persistent_id]
+            # CRITICAL FIX: Create unique cache key for each widget instance
+            # This prevents multiple widgets of the same type from sharing the same instance
+            cache_key = f"{persistent_id}_{id(node_data)}_{len(loaded_widgets_cache)}"
+            
+            if cache_key in loaded_widgets_cache:
+                new_widget = loaded_widgets_cache[cache_key]
             else:
-                new_widget = self.manager.widget_factory(node_data)
-                if new_widget:
-                    loaded_widgets_cache[persistent_id] = new_widget
+                # Use the DockingManager's internal panel factory from the registry
+                try:
+                    new_widget = self.manager._create_panel_from_key(persistent_id)
+                    if new_widget:
+                        loaded_widgets_cache[cache_key] = new_widget
+                        # Important: Register the widget with the manager
+                        self.manager.register_widget(new_widget)
+                except ValueError as e:
+                    print(f"ERROR: Cannot recreate widget '{persistent_id}': {e}")
+                    new_widget = None
 
             if new_widget:
                 return WidgetNode(widget=new_widget)

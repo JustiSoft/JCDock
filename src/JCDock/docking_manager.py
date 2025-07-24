@@ -15,6 +15,7 @@ from .hit_test_cache import HitTestCache
 from .layout_serializer import LayoutSerializer
 from .drag_drop_controller import DragDropController
 from .layout_renderer import LayoutRenderer
+from .widget_registry import get_registry
 
 class DockingSignals(QObject):
     """
@@ -46,7 +47,6 @@ class DockingManager(QObject):
         self.main_window = None  # Reference to the main application window for parenting.
         self.window_stack = []
         self.floating_widget_count = 0  # Counter for cascading new widgets.
-        self.widget_factory = None  # This will hold the factory function
         self.debug_mode = False
         self.signals = DockingSignals()
         
@@ -164,12 +164,201 @@ class DockingManager(QObject):
         """Delegate to LayoutSerializer."""
         return self.layout_serializer._find_first_tab_group_node(node)
 
-    def set_widget_factory(self, factory_callable):
+
+    def _create_panel_from_key(self, key: str) -> DockPanel:
         """
-        Registers the application-specific function that can create widgets from a persistent ID.
-        The callable must accept a string ID and return a DockPanel instance.
+        Internal factory method that creates a fully-wrapped DockPanel from a registered key.
+        This is the single, internal authority for creating DockPanels from the registry.
+        
+        Args:
+            key: String key for the registered widget type
+            
+        Returns:
+            Fully prepared DockPanel with the widget instance inside
+            
+        Raises:
+            ValueError: If the key is not registered
         """
-        self.widget_factory = factory_callable
+        registry = get_registry()
+        registration = registry.get_registration(key)
+        
+        if registration is None:
+            raise ValueError(f"Widget key '{key}' is not registered. Use @dockable decorator to register widget types.")
+        
+        # Create the user's widget instance
+        widget_instance = registration.widget_class()
+        
+        # Create the DockPanel wrapper
+        panel = DockPanel(registration.default_title, parent=None, manager=self)
+        
+        # Set the content widget
+        panel.setContent(widget_instance)
+        
+        # The Vital Link: Assign the key to the panel's persistent_id
+        panel.persistent_id = key
+        
+        return panel
+
+    def create_floating_widget_from_key(self, key: str, position=None, size=None) -> DockContainer:
+        """
+        Create a floating widget from a registered key (By Type path).
+        This is the first public API for the simplified widget creation system.
+        
+        Args:
+            key: String key for the registered widget type
+            position: Optional position for the floating window (defaults to cascaded position)
+            size: Optional size for the floating window (defaults to 400x300)
+            
+        Returns:
+            DockContainer containing the new widget
+            
+        Raises:
+            ValueError: If the key is not registered
+        """
+        # Use the internal panel factory to get a fully prepared DockPanel
+        panel = self._create_panel_from_key(key)
+        
+        # Calculate sensible default position and size for the new window
+        if size is None:
+            size = QSize(400, 300)
+        elif not isinstance(size, QSize):
+            # Convert tuple/list to QSize
+            if hasattr(size, '__iter__') and len(size) >= 2:
+                size = QSize(int(size[0]), int(size[1]))
+            else:
+                size = QSize(400, 300)
+            
+        if position is None:
+            # Use cascading logic similar to existing undock behavior
+            count = self.floating_widget_count
+            if self.main_window:
+                main_pos = self.main_window.pos()
+                position = QPoint(main_pos.x() + 150 + (count % 7) * 40,
+                                main_pos.y() + 150 + (count % 7) * 40)
+            else:
+                # Fallback if no main window
+                position = QPoint(150 + (count % 7) * 40, 150 + (count % 7) * 40)
+        elif not isinstance(position, QPoint):
+            # Convert tuple/list to QPoint
+            if hasattr(position, '__iter__') and len(position) >= 2:
+                position = QPoint(int(position[0]), int(position[1]))
+            else:
+                # Fallback to cascading logic
+                count = self.floating_widget_count
+                if self.main_window:
+                    main_pos = self.main_window.pos()
+                    position = QPoint(main_pos.x() + 150 + (count % 7) * 40,
+                                    main_pos.y() + 150 + (count % 7) * 40)
+                else:
+                    position = QPoint(150 + (count % 7) * 40, 150 + (count % 7) * 40)
+        
+        # Include title bar height in the size calculation
+        title_height = 30  # Approximate title bar height
+        adjusted_size = QSize(size.width(), size.height() + title_height)
+        
+        geometry = QRect(position, adjusted_size)
+        
+        # Pass the panel and calculated geometry to existing create_floating_window logic
+        container = self.create_floating_window([panel], geometry)
+        
+        # Register the widget with the manager (create_floating_window doesn't do this)
+        self.register_widget(panel)
+        
+        # Increment the floating widget counter for cascading
+        self.floating_widget_count += 1
+        
+        return container
+
+    def add_as_floating_widget(self, widget_instance: QWidget, persistent_key: str, title: str = None, 
+                              position=None, size=None) -> DockContainer:
+        """
+        Make an existing widget instance dockable as a floating window (By Instance path).
+        This is the second public API for the simplified widget creation system.
+        
+        Args:
+            widget_instance: The existing widget object to make dockable
+            persistent_key: Key that must exist in the registry for layout persistence
+            title: Optional title for the widget (uses registry default if not provided)
+            position: Optional position for the floating window (defaults to cascaded position)  
+            size: Optional size for the floating window (defaults to 400x300)
+            
+        Returns:
+            DockContainer containing the dockable widget
+            
+        Raises:
+            ValueError: If the persistent_key is not registered
+        """
+        # Validation: Check that the persistent_key exists in the registry
+        registry = get_registry()
+        if not registry.is_registered(persistent_key):
+            raise ValueError(f"Persistent key '{persistent_key}' is not registered. "
+                           f"The system must know how to recreate this widget type for layout loading. "
+                           f"Use @dockable decorator to register the widget type first.")
+        
+        # Get registration info for default title if needed
+        registration = registry.get_registration(persistent_key)
+        if title is None:
+            title = registration.default_title
+        
+        # Create the DockPanel wrapper
+        panel = DockPanel(title, parent=None, manager=self)
+        
+        # Set the user's provided widget instance as content
+        panel.setContent(widget_instance)
+        
+        # The Vital Link: Assign the persistent_key to the panel's persistent_id
+        panel.persistent_id = persistent_key
+        
+        # Calculate sensible default position and size for the new window
+        if size is None:
+            size = QSize(400, 300)
+        elif not isinstance(size, QSize):
+            # Convert tuple/list to QSize
+            if hasattr(size, '__iter__') and len(size) >= 2:
+                size = QSize(int(size[0]), int(size[1]))
+            else:
+                size = QSize(400, 300)
+            
+        if position is None:
+            # Use cascading logic similar to existing undock behavior
+            count = self.floating_widget_count
+            if self.main_window:
+                main_pos = self.main_window.pos()
+                position = QPoint(main_pos.x() + 150 + (count % 7) * 40,
+                                main_pos.y() + 150 + (count % 7) * 40)
+            else:
+                # Fallback if no main window
+                position = QPoint(150 + (count % 7) * 40, 150 + (count % 7) * 40)
+        elif not isinstance(position, QPoint):
+            # Convert tuple/list to QPoint
+            if hasattr(position, '__iter__') and len(position) >= 2:
+                position = QPoint(int(position[0]), int(position[1]))
+            else:
+                # Fallback to cascading logic
+                count = self.floating_widget_count
+                if self.main_window:
+                    main_pos = self.main_window.pos()
+                    position = QPoint(main_pos.x() + 150 + (count % 7) * 40,
+                                    main_pos.y() + 150 + (count % 7) * 40)
+                else:
+                    position = QPoint(150 + (count % 7) * 40, 150 + (count % 7) * 40)
+        
+        # Include title bar height in the size calculation
+        title_height = 30  # Approximate title bar height
+        adjusted_size = QSize(size.width(), size.height() + title_height)
+        
+        geometry = QRect(position, adjusted_size)
+        
+        # Proceed with the same logic as Step 4 to create the floating window
+        container = self.create_floating_window([panel], geometry)
+        
+        # Register the widget with the manager (create_floating_window doesn't do this)
+        self.register_widget(panel)
+        
+        # Increment the floating widget counter for cascading
+        self.floating_widget_count += 1
+        
+        return container
 
     def bring_to_front(self, widget):
         """Brings a window to the top of our manual stack."""

@@ -9,6 +9,77 @@ from JCDock.docking_manager import DockingManager
 from JCDock.dock_panel import DockPanel
 from JCDock.main_dock_window import MainDockWindow
 from JCDock.dock_container import DockContainer
+from JCDock import dockable
+
+
+@dockable("test_widget", "Test Widget")
+class TestContentWidget(QWidget):
+    """Registered widget class for the new registry system."""
+    def __init__(self, widget_name="Test Widget"):
+        super().__init__()
+        self.widget_name = widget_name
+        
+        layout = QVBoxLayout(self)
+        
+        # Add a label
+        label = QLabel(f"This is {widget_name}")
+        label.setStyleSheet("font-weight: bold; padding: 10px;")
+        layout.addWidget(label)
+        
+        # Add some buttons
+        button1 = QPushButton("Button 1")
+        button2 = QPushButton("Button 2") 
+        layout.addWidget(button1)
+        layout.addWidget(button2)
+        
+        # Add a table with test data
+        table = QTableWidget(5, 3)
+        table.setHorizontalHeaderLabels(["Item ID", "Description", "Value"])
+        
+        for row in range(5):
+            item_id = QTableWidgetItem(f"{widget_name}-I{row+1}")
+            item_desc = QTableWidgetItem(f"Sample data item for row {row+1}")
+            item_value = QTableWidgetItem(str(random.randint(100, 999)))
+            
+            item_id.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            item_value.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            
+            table.setItem(row, 0, item_id)
+            table.setItem(row, 1, item_desc)
+            table.setItem(row, 2, item_value)
+        
+        table.resizeColumnsToContents()
+        layout.addWidget(table)
+
+
+@dockable("tab_widget_1", "Tab Widget 1")
+class TabWidget1(QWidget):
+    """First widget type for tab testing."""
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Tab Widget 1 Content"))
+        layout.addWidget(QPushButton("Tab 1 Button"))
+
+
+@dockable("tab_widget_2", "Tab Widget 2") 
+class TabWidget2(QWidget):
+    """Second widget type for tab testing."""
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Tab Widget 2 Content"))
+        layout.addWidget(QPushButton("Tab 2 Button"))
+
+
+@dockable("right_widget", "Right Widget")
+class RightWidget(QWidget):
+    """Widget type for right-side testing."""
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Right Widget Content"))
+        layout.addWidget(QPushButton("Right Button"))
 
 
 class EventListener(QObject):
@@ -43,7 +114,6 @@ class DockingTestApp:
         self.app.setApplicationName("Docking Library Test")
 
         self.docking_manager = DockingManager()
-        self.docking_manager.set_widget_factory(self.app_widget_factory)
 
         self.event_listener = EventListener()
         self.docking_manager.signals.widget_docked.connect(self.event_listener.on_widget_docked)
@@ -74,8 +144,34 @@ class DockingTestApp:
         exit_action.triggered.connect(self.main_window.close)
 
         widget_menu = menu_bar.addMenu("Widgets")
-        new_widget_action = widget_menu.addAction("Create New Widget")
-        new_widget_action.triggered.connect(self.create_and_register_new_widget)
+        
+        # Submenu for "By Type" path - demonstrates registry-based creation
+        # This shows how developers can create widgets directly from registered keys
+        by_type_menu = widget_menu.addMenu("Create By Type (Registry)")
+        test_widget_action = by_type_menu.addAction("Test Widget")
+        test_widget_action.triggered.connect(lambda: self.create_widget_by_type("test_widget"))
+        tab1_widget_action = by_type_menu.addAction("Tab Widget 1")
+        tab1_widget_action.triggered.connect(lambda: self.create_widget_by_type("tab_widget_1"))
+        tab2_widget_action = by_type_menu.addAction("Tab Widget 2")
+        tab2_widget_action.triggered.connect(lambda: self.create_widget_by_type("tab_widget_2"))
+        right_widget_action = by_type_menu.addAction("Right Widget")
+        right_widget_action.triggered.connect(lambda: self.create_widget_by_type("right_widget"))
+        
+        # Submenu for "By Instance" path - demonstrates making existing widgets dockable
+        # This shows how developers can take pre-configured widget instances and make them dockable
+        by_instance_menu = widget_menu.addMenu("Create By Instance (Existing)")
+        instance_test_action = by_instance_menu.addAction("Test Widget Instance")
+        instance_test_action.triggered.connect(lambda: self.create_widget_by_instance("test_widget"))
+        instance_tab1_action = by_instance_menu.addAction("Tab Widget 1 Instance")
+        instance_tab1_action.triggered.connect(lambda: self.create_widget_by_instance("tab_widget_1"))
+        
+        widget_menu.addSeparator()
+        
+        # Legacy option for comparison
+        legacy_widget_action = widget_menu.addAction("Create Widget (Legacy Method)")
+        legacy_widget_action.triggered.connect(self.create_and_register_new_widget)
+        
+        widget_menu.addSeparator()
         create_floating_root_action = widget_menu.addAction("Create New Floating Root")
         create_floating_root_action.triggered.connect(self.docking_manager.create_new_floating_root)
 
@@ -112,6 +208,12 @@ class DockingTestApp:
         self.debug_mode_action.setChecked(self.docking_manager.debug_mode)
         self.debug_mode_action.triggered.connect(self.docking_manager.set_debug_mode)
 
+        test_menu.addSeparator()
+        
+        # Add tab activation test
+        tab_activation_test_action = test_menu.addAction("Test: Tab Activation Bug")
+        tab_activation_test_action.triggered.connect(self.run_tab_activation_test)
+        
         test_menu.addSeparator()
         run_all_tests_action = test_menu.addAction("Run All Tests Sequentially")
         run_all_tests_action.triggered.connect(self.run_all_tests_sequentially)
@@ -160,22 +262,70 @@ class DockingTestApp:
 
         return content_widget
 
-    def create_and_register_new_widget(self):
-        """This application-level function creates a widget and registers it with the manager."""
-        self.widget_count += 1
-        widget_name = f"Widget {self.widget_count}"
-        persistent_id = f"test_widget_{self.widget_count}"
-
-        new_dockable_widget = self._create_and_configure_widget(widget_name, persistent_id)
-
-        # Add widget to manager's widget list (but don't register as floating)
-        new_dockable_widget.manager = self.docking_manager
-        self.docking_manager.widgets.append(new_dockable_widget)
-        self.docking_manager.add_widget_handlers(new_dockable_widget)
+    def create_widget_by_type(self, widget_key: str):
+        """Create a widget using the 'By Type' path - registry-based creation."""
+        print(f"Creating widget using 'By Type' path: {widget_key}")
         
-        # Create a floating window using DockContainer
-        geometry = QRect(200 + self.widget_count * 40, 200 + self.widget_count * 40, 400, 300)
-        self.docking_manager.create_floating_window([new_dockable_widget], geometry)
+        # Calculate cascading position using simple integers
+        count = len(self.docking_manager.widgets)
+        x = 200 + count * 40
+        y = 200 + count * 40
+        
+        # Use the new "By Type" API - create from registered key
+        container = self.docking_manager.create_floating_widget_from_key(
+            widget_key,
+            position=(x, y),
+            size=(400, 300)
+        )
+        
+        print(f"Created widget container: {container}")
+    
+    def create_widget_by_instance(self, widget_key: str):
+        """Create a widget using the 'By Instance' path - make existing widget dockable."""
+        print(f"Creating widget using 'By Instance' path: {widget_key}")
+        
+        # Calculate cascading position using simple integers
+        count = len(self.docking_manager.widgets)
+        x = 250 + count * 40
+        y = 250 + count * 40
+        
+        # Create an instance first and configure it
+        if widget_key == "test_widget":
+            widget_instance = TestContentWidget("Custom Instance Widget")
+        elif widget_key == "tab_widget_1":
+            widget_instance = TabWidget1()
+        elif widget_key == "tab_widget_2":
+            widget_instance = TabWidget2()
+        elif widget_key == "right_widget":
+            widget_instance = RightWidget()
+        else:
+            print(f"Unknown widget key: {widget_key}")
+            return
+            
+        # Use the new "By Instance" API - make existing widget dockable
+        container = self.docking_manager.add_as_floating_widget(
+            widget_instance,
+            widget_key,
+            title=f"Custom {widget_key}",
+            position=(x, y),
+            size=(400, 300)
+        )
+        
+        print(f"Made widget instance dockable: {container}")
+
+    def create_and_register_new_widget(self):
+        """Legacy method for comparison - shows the old complexity."""
+        self.widget_count += 1
+        widget_name = f"Legacy Widget {self.widget_count}"
+
+        # Use the new simplified API but show it's just one line now!
+        position = QPoint(300 + self.widget_count * 40, 300 + self.widget_count * 40)
+        container = self.docking_manager.create_floating_widget_from_key(
+            "test_widget", 
+            position=position,
+            size=QSize(400, 300)
+        )
+        print(f"Legacy method created: {container}")
 
 
     def _reset_widget_visual_state(self, widget: DockPanel):
@@ -270,44 +420,14 @@ class DockingTestApp:
             self._print_test_footer()
 
 
-    def _create_and_configure_widget(self, name: str, persistent_id: str) -> DockPanel:
-        """Helper method that creates and a single dockable widget."""
-        new_dockable_widget = DockPanel(
-            name,
-            parent=None,
-            manager=self.docking_manager,
-            persistent_id=persistent_id
-        )
-
-        test_content = self._create_test_content(name)
-        new_dockable_widget.setContent(test_content)
-
-        return new_dockable_widget
-
-    def app_widget_factory(self, node_data: dict) -> DockPanel:
-        """
-        This is the application's factory. The docking manager will call this
-        during a 'load' operation to recreate a widget from its saved ID.
-        """
-        persistent_id = node_data.get('id')
-        margin_size = node_data.get('margin', 5)
-
-        print(f"Factory called to create widget with ID: {persistent_id}")
-        match = re.search(r'\d+$', persistent_id)
-        widget_num = match.group(0) if match else "N/A"
-        widget_name = f"Widget {widget_num}"
-
-        new_dockable_widget = DockPanel(
-            widget_name,
-            parent=None,
-            manager=self.docking_manager,
-            persistent_id=persistent_id
-        )
-
-        test_content = self._create_test_content(widget_name)
-        new_dockable_widget.setContent(test_content, margin_size=margin_size)
-
-        return new_dockable_widget
+    def _create_floating_widget(self, name: str) -> DockContainer:
+        """Helper method that creates a floating widget using the new registry system."""
+        print(f"Creating widget: {name}")
+        
+        # Use the new "By Type" API - much simpler!
+        container = self.docking_manager.create_floating_widget_from_key("test_widget")
+        
+        return container
 
     def save_layout(self):
         """Saves the current docking layout to an internal variable."""
@@ -436,6 +556,106 @@ class DockingTestApp:
                 widget.set_title_bar_color(QColor("#90EE90"))
         
         self._run_test_with_isolation("Get floating widgets", test_logic)
+
+    def run_tab_activation_test(self):
+        """
+        Tests the tab activation preservation issue.
+        Creates tab group, adds widget to right, activates second tab, removes right widget.
+        """
+        def test_logic():
+            print("=== TAB ACTIVATION PRESERVATION TEST ===")
+            print("This test reproduces the issue where removing a widget changes active tab.")
+            
+            # Create test widgets using the new simplified APIs
+            print("Creating test widgets with new registry system...")
+            container1 = self.docking_manager.create_floating_widget_from_key("tab_widget_1")
+            container2 = self.docking_manager.create_floating_widget_from_key("tab_widget_2") 
+            container3 = self.docking_manager.create_floating_widget_from_key("right_widget")
+            
+            # Extract the DockPanel widgets from the containers for the test
+            widget_left1 = None
+            widget_left2 = None
+            widget_right = None
+            
+            for widget in self.docking_manager.widgets:
+                if widget.persistent_id == "tab_widget_1":
+                    widget_left1 = widget
+                elif widget.persistent_id == "tab_widget_2":
+                    widget_left2 = widget
+                elif widget.persistent_id == "right_widget":
+                    widget_right = widget
+            
+            main_dock_area = self.main_window.dock_area
+            
+            print("Step 1: Creating tab group with two widgets...")
+            
+            # Create tab group by moving both widgets to main area
+            success1 = self.docking_manager.move_widget_to_container(widget_left1, main_dock_area)
+            success2 = self.docking_manager.move_widget_to_container(widget_left2, main_dock_area)
+            
+            print(f"  - Widget 1 move success: {success1}")
+            print(f"  - Widget 2 move success: {success2}")
+            
+            if not (success1 and success2):
+                self._print_failure("Failed to create tab group")
+                return
+            
+            print("Step 2: Docking right widget to the right...")
+            
+            # Try to dock the right widget to create a splitter
+            try:
+                self.docking_manager.dock_widget(widget_right, main_dock_area, "right")
+                print("  - Right widget docked successfully")
+            except Exception as e:
+                print(f"  - Error docking right widget: {e}")
+                # Fallback - this will still test the tab preservation
+                success3 = self.docking_manager.move_widget_to_container(widget_right, main_dock_area)
+                print(f"  - Right widget move (fallback): {success3}")
+            
+            print("Step 3: Checking initial active tab...")
+            
+            # Check what's currently active
+            active_before_change = self.docking_manager._get_currently_active_widget(main_dock_area)
+            print(f"  - Currently active: {active_before_change.windowTitle() if active_before_change else 'None'}")
+            
+            print("Step 4: Activating second tab (Tab Widget 2)...")
+            
+            # Activate the second widget
+            self.docking_manager.set_active_widget(widget_left2)
+            
+            # Verify it's now active
+            active_after_change = self.docking_manager._get_currently_active_widget(main_dock_area)
+            print(f"  - Active after activation: {active_after_change.windowTitle() if active_after_change else 'None'}")
+            
+            if active_after_change != widget_left2:
+                self._print_failure("Failed to activate Tab Widget 2")
+                return
+            
+            print("Step 5: CRITICAL TEST - Removing right widget...")
+            print("  - This should NOT change the active tab from 'Tab Widget 2'")
+            
+            # This is the critical operation that was causing the bug
+            self.docking_manager.request_close_widget(widget_right)
+            
+            # Check what's active after removal
+            final_active = self.docking_manager._get_currently_active_widget(main_dock_area)
+            print(f"  - Final active widget: {final_active.windowTitle() if final_active else 'None'}")
+            
+            # Evaluate the test result
+            if final_active == widget_left2:
+                self._print_success("Tab activation preserved! Tab Widget 2 remained active.")
+                print("  ✅ Fix is working correctly")
+            elif final_active == widget_left1:
+                self._print_failure("BUG REPRODUCED: Tab Widget 1 became active instead of Tab Widget 2")
+                print("  ❌ The issue still exists")
+            else:
+                self._print_failure(f"Unexpected result: {final_active.windowTitle() if final_active else 'None'} is active")
+            
+            # Color the widgets for visual confirmation
+            if final_active:
+                final_active.set_title_bar_color(QColor("#90EE90"))  # Green for success
+            
+        self._run_test_with_isolation("Tab activation preservation", test_logic)
 
     def run_is_widget_docked_test(self):
         """
@@ -771,11 +991,23 @@ class DockingTestApp:
         print('='*60)
 
     def run(self):
-        """Creates floating widgets and starts the application."""
-        self.main_window.show()  # Re-enabled main window showing
-        self.create_and_register_new_widget()
-        self.create_and_register_new_widget()
-        self.create_and_register_new_widget()  # Create 3 widgets for testing
+        """Creates floating widgets using the new simplified APIs and starts the application."""
+        self.main_window.show()
+        
+        print("Creating startup widgets to demonstrate the Two Paths to Simplicity...")
+        
+        # Demonstrate Path 1: "By Type" - Create widgets from registered keys
+        print("\n1. Creating widgets using 'By Type' path (registry-based):")
+        self.create_widget_by_type("test_widget")
+        self.create_widget_by_type("tab_widget_1")
+        
+        # Demonstrate Path 2: "By Instance" - Make existing widgets dockable  
+        print("\n2. Creating widgets using 'By Instance' path (existing instances):")
+        self.create_widget_by_instance("tab_widget_2")
+        
+        print(f"\nStartup complete! Created {len(self.docking_manager.widgets)} widgets using the new simplified APIs.")
+        print("Use the 'Widgets' menu to create more widgets and test both API paths.")
+        
         return self.app.exec()
 
 if __name__ == "__main__":
