@@ -540,6 +540,8 @@ class DockContainer(QWidget):
                         self._deactivate_other_containers()
                         # Then activate this one
                         self._update_shadow_focus(True)
+                        # Sync Z-order tracking with Qt's window activation
+                        self.manager.sync_window_activation(self)
                     finally:
                         QTimer.singleShot(0, lambda: setattr(self.manager, '_is_updating_focus', False))
                     return False

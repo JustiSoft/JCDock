@@ -368,6 +368,17 @@ class DockingManager(QObject):
         self.window_stack = [w for w in self.window_stack if w is not widget]
         self.window_stack.append(widget)
 
+    def sync_window_activation(self, activated_widget):
+        """
+        Synchronizes window_stack when a window is activated through Qt's native system.
+        This ensures Z-order tracking stays consistent with actual window stacking.
+        """
+        # Only sync if the widget is actually in our tracking system
+        if activated_widget in self.window_stack:
+            self.bring_to_front(activated_widget)
+            # Invalidate hit test cache to reflect new Z-order
+            self.hit_test_cache.invalidate()
+
     def move_widget_to_container(self, widget_to_move: DockPanel, target_container: DockContainer) -> bool:
         """
         Moves a widget from its current location directly into a target container as a new tab.

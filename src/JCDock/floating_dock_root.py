@@ -117,6 +117,15 @@ class FloatingDockRoot(DockContainer):
                 if self.manager:
                     self.manager.raise_all_floating_widgets()
                 return super().eventFilter(watched, event)
+                
+            # Case 2: Window activated through Qt's native system
+            elif event.type() == QEvent.Type.WindowActivate:
+                if self.manager:
+                    # Sync Z-order tracking with Qt's window activation
+                    self.manager.sync_window_activation(self)
+                    # Also ensure consistent stacking with other floating widgets
+                    self.manager.raise_all_floating_widgets()
+                return super().eventFilter(watched, event)
 
 
         # For all other events, use the parent's implementation.
