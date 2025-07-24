@@ -734,15 +734,20 @@ class DockingManager(QObject):
                             # Keep complex structures as-is
                             dest_tab_group = destination_root_node
                         
-                        # Wrap source widgets in a TabGroupNode
-                        source_widgets = self.model.get_all_widgets_from_node(source_root_node)
-                        source_tab_group = TabGroupNode()
-                        source_tab_group.children.extend(source_widgets)
+                        # Preserve complex source structures, only wrap simple cases
+                        if isinstance(source_root_node, SplitterNode):
+                            # Complex source: preserve the entire structure
+                            source_node = source_root_node
+                        else:
+                            # Simple source: wrap in TabGroupNode as before
+                            source_widgets = self.model.get_all_widgets_from_node(source_root_node)
+                            source_node = TabGroupNode()
+                            source_node.children.extend(source_widgets)
                         
                         if location in ["top", "left"]:
-                            new_splitter.children = [source_tab_group, dest_tab_group]
+                            new_splitter.children = [source_node, dest_tab_group]
                         else:
-                            new_splitter.children = [dest_tab_group, source_tab_group]
+                            new_splitter.children = [dest_tab_group, source_node]
                             
                         self._update_container_root(destination_container, new_splitter)
                     else:
@@ -796,11 +801,10 @@ class DockingManager(QObject):
                 return
                 
                 
-            # Get source widgets that will be part of the new structure
-            source_widgets = self.model.get_all_widgets_from_node(source_root_node)
-            
             if location == 'center':
                 # Center docking: Add source widgets to the same tab group as target
+                # Always flatten source for center docking (tabs)
+                source_widgets = self.model.get_all_widgets_from_node(source_root_node)
                 if isinstance(parent_node, TabGroupNode):
                     parent_node.children.extend(source_widgets)
                 else:
@@ -820,15 +824,21 @@ class DockingManager(QObject):
                 orientation = Qt.Orientation.Vertical if location in ["top", "bottom"] else Qt.Orientation.Horizontal
                 new_splitter = SplitterNode(orientation=orientation)
                 
-                # Prepare source node (ensure proper wrapping)
-                if len(source_widgets) == 1:
-                    # Single widget needs to be wrapped in TabGroupNode for splitter
-                    source_node = TabGroupNode()
-                    source_node.children.append(source_widgets[0])
+                # Prepare source node - preserve complex structures, wrap only simple cases
+                if isinstance(source_root_node, SplitterNode):
+                    # Complex source: preserve the entire structure
+                    source_node = source_root_node
                 else:
-                    # Multiple widgets already form a TabGroupNode
-                    source_node = TabGroupNode()
-                    source_node.children.extend(source_widgets)
+                    # Simple source: get widgets and wrap appropriately
+                    source_widgets = self.model.get_all_widgets_from_node(source_root_node)
+                    if len(source_widgets) == 1:
+                        # Single widget needs to be wrapped in TabGroupNode for splitter
+                        source_node = TabGroupNode()
+                        source_node.children.append(source_widgets[0])
+                    else:
+                        # Multiple widgets already form a TabGroupNode
+                        source_node = TabGroupNode()
+                        source_node.children.extend(source_widgets)
                 
                 # Analyze ancestry to determine replacement strategy
                 if len(ancestry_path) >= 3:
