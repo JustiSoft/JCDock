@@ -6,6 +6,7 @@ from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QBrush, Q
     QPalette, QDragEnterEvent, QDragMoveEvent, QDragLeaveEvent, QDropEvent
 from PySide6.QtWidgets import QTableWidget, QTreeWidget, QListWidget, QTextEdit, QPlainTextEdit, QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QSlider, QScrollBar
 
+from .docking_state import DockingState
 from .tearable_tab_widget import TearableTabWidget
 from .title_bar import TitleBar
 from .dock_panel import DockPanel
@@ -376,9 +377,9 @@ class DockContainer(QWidget):
                 self.resize_start_pos = event.globalPosition().toPoint()
                 self.resize_start_geom = self.geometry()
                 
-                # Set dragging flag to prevent window stacking conflicts during resize
+                # Set resizing state to prevent window stacking conflicts during resize
                 if self.manager:
-                    self.manager._is_user_dragging = True
+                    self.manager._set_state(DockingState.RESIZING_WINDOW)
                     
                 # Since we are resizing, we consume the event.
                 return
@@ -480,9 +481,9 @@ class DockContainer(QWidget):
             self.resizing = False
             self.resize_edge = None
             
-            # Clear dragging flag after resize operation
+            # Return to idle state after resize operation
             if self.manager:
-                self.manager._is_user_dragging = False
+                self.manager._set_state(DockingState.IDLE)
 
         # Add a check to ensure the title bar exists before accessing it.
         if self.title_bar and self.title_bar.moving:

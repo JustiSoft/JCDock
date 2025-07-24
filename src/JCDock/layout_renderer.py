@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import QSplitter, QTabWidget
 from PySide6.QtCore import Qt
 
+from .docking_state import DockingState
 from .dock_model import AnyNode, SplitterNode, TabGroupNode, WidgetNode
 from .dock_panel import DockPanel
 from .dock_container import DockContainer
@@ -39,8 +40,8 @@ class LayoutRenderer:
             container.overlay.destroy_overlay()
             container.overlay = None
             
-        # Set flag to prevent event processing during layout rendering
-        self.manager._rendering_layout = True
+        # Set state to prevent event processing during layout rendering
+        self.manager._set_state(DockingState.RENDERING)
         try:
             # Clean up overlays on all currently contained widgets
             for widget in container.contained_widgets:
@@ -72,8 +73,8 @@ class LayoutRenderer:
                     widget.content_container.update()
 
         finally:
-            # Always clear the flag, even if an error occurs
-            self.manager._rendering_layout = False
+            # Always return to idle state, even if an error occurs
+            self.manager._set_state(DockingState.IDLE)
             
         # Update tab bar visibility after rendering
         self._update_tab_bar_visibility(container)

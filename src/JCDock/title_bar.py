@@ -4,6 +4,7 @@ from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QPushButton, QHBoxLa
 from PySide6.QtCore import Qt, QPoint, QRect, QEvent, QRectF
 from PySide6.QtGui import QColor, QPainter, QBrush, QMouseEvent, QPainterPath, QPalette, QRegion, QPen, QIcon, QPixmap
 
+from .docking_state import DockingState
 from .icon_cache import IconCache
 
 
@@ -167,9 +168,9 @@ class TitleBar(QWidget):
                     self._top_level_widget.resize_start_pos = event.globalPosition().toPoint()
                     self._top_level_widget.resize_start_geom = self._top_level_widget.geometry()
                     
-                    # Set dragging flag to prevent window stacking conflicts during resize
+                    # Set resizing state to prevent window stacking conflicts during resize
                     if hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager:
-                        self._top_level_widget.manager._is_user_dragging = True
+                        self._top_level_widget.manager._set_state(DockingState.RESIZING_WINDOW)
 
             if not edge:
                 # A click on the title bar is an activation request for its parent window.
@@ -188,8 +189,8 @@ class TitleBar(QWidget):
                 if hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager:
                     manager = self._top_level_widget.manager
                     manager.hit_test_cache.build_cache(manager.window_stack, manager.containers)
-                    # Set dragging flag to prevent window stacking conflicts during move
-                    manager._is_user_dragging = True
+                    # Set dragging state to prevent window stacking conflicts during move
+                    manager._set_state(DockingState.DRAGGING_WINDOW)
                     manager.hit_test_cache.set_drag_operation_state(True)
 
     def mouseReleaseEvent(self, event):
@@ -216,17 +217,17 @@ class TitleBar(QWidget):
                     # Reset drag operation state
                     if hasattr(manager, 'hit_test_cache'):
                         manager.hit_test_cache.set_drag_operation_state(False)
-                    # Clear dragging flag to allow window stacking again
-                    manager._is_user_dragging = False
+                    # Return to idle state to allow window stacking again
+                    manager._set_state(DockingState.IDLE)
 
             # Reset resizing flags on the parent (only for DockContainer windows).
             if hasattr(self._top_level_widget, 'resizing') and self._top_level_widget.resizing:
                 self._top_level_widget.resizing = False
                 self._top_level_widget.resize_edge = None
                 
-                # Clear dragging flag after resize operation
+                # Return to idle state after resize operation
                 if hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager:
-                    self._top_level_widget.manager._is_user_dragging = False
+                    self._top_level_widget.manager._set_state(DockingState.IDLE)
 
     def _create_control_icon(self, icon_type: str, color=QColor("#303030")):
         """

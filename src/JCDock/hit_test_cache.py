@@ -191,19 +191,18 @@ class HitTestCache:
             return
 
         if isinstance(current_widget, QTabWidget):
-            # Iterate through all tabs, not just the current one
-            for i in range(current_widget.count()):
-                tab_content = current_widget.widget(i)
-                if tab_content:
-                    # Use the stored property to get the DockPanel
-                    dockable_widget = tab_content.property("dockable_widget")
-                    if dockable_widget:
-                        self._drop_targets.append(CachedDropTarget(
-                            widget=dockable_widget,
-                            target_type='widget',
-                            parent_container=container,
-                            z_order=z_order
-                        ))
+            # Only cache the currently visible tab as a drop target
+            current_tab_content = current_widget.currentWidget()
+            if current_tab_content:
+                # Use the stored property to get the DockPanel
+                dockable_widget = current_tab_content.property("dockable_widget")
+                if dockable_widget:
+                    self._drop_targets.append(CachedDropTarget(
+                        widget=dockable_widget,
+                        target_type='widget',
+                        parent_container=container,
+                        z_order=z_order
+                    ))
 
             # Cache the tab bar for insertion checks
             tab_bar = current_widget.tabBar()

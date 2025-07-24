@@ -2,6 +2,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt, QPoint, QTimer, QMimeData
 from PySide6.QtGui import QDrag, QPixmap, QPainter, QCursor
 
+from .docking_state import DockingState
 from .dock_model import WidgetNode, TabGroupNode, SplitterNode
 from .dock_panel import DockPanel
 from .dock_container import DockContainer
@@ -35,13 +36,12 @@ class DragDropController:
             return  # Block all dragging of persistent roots
         
         # Safety checks - don't show overlays during critical operations
-        if self.manager._undocking_in_progress or self.manager._rendering_layout:
+        if self.manager.is_rendering():
             return
             
-        # Verify we're actually in a moving state
-        if not hasattr(source_container, 'title_bar') or not source_container.title_bar or not source_container.title_bar.moving:
-            self.manager.destroy_all_overlays()
-            return
+        # Assert we're in the correct state - the state machine should guarantee this
+        assert self.manager.state == DockingState.DRAGGING_WINDOW, f"handle_live_move called in wrong state: {self.manager.state}"
+        assert hasattr(source_container, 'title_bar') and source_container.title_bar and source_container.title_bar.moving, "handle_live_move called without proper moving state"
 
         if isinstance(source_container, self.manager.FloatingDockRoot if hasattr(self.manager, 'FloatingDockRoot') else type(None)):
             self.manager.destroy_all_overlays()
@@ -249,11 +249,16 @@ class DragDropController:
         # Set the drag source ID for hit-testing exclusion
         self.manager._drag_source_id = widget_persistent_id
         
+        # Set state to indicate native Qt drag operation is in progress
+        self.manager._set_state(DockingState.DRAGGING_TAB)
+        
         try:
             # Execute the drag operation (this blocks until drag is complete)
             # Only support Move action to prevent external application drops
             drop_action = drag.exec(Qt.MoveAction)
         finally:
+            # Always return to idle state when drag operation ends
+            self.manager._set_state(DockingState.IDLE)
             # Always reset the drag source ID when drag operation ends
             self.manager._drag_source_id = None
             # Force UI to stable state and invalidate cache since layout may have changed

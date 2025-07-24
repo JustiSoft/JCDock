@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QWidget, QSplitter, QVBoxLayout, QTabWidget, QHBox
 from PySide6.QtCore import Qt, QRect, QEvent, QPoint, QRectF, QSize, QTimer, Signal, QObject, QMimeData
 from PySide6.QtGui import QColor, QDrag, QPixmap, QPainter, QCursor
 
+from .docking_state import DockingState
 from .floating_dock_root import FloatingDockRoot
 from .main_dock_window import MainDockWindow
 from .dock_model import LayoutModel, AnyNode, SplitterNode, TabGroupNode, WidgetNode
@@ -48,9 +49,11 @@ class DockingManager(QObject):
         self.widget_factory = None  # This will hold the factory function
         self.debug_mode = False
         self.signals = DockingSignals()
-        self._rendering_layout = False  # Flag to prevent event processing during layout updates
-        self._undocking_in_progress = False  # Flag to prevent overlay operations during undocking
-        self._is_user_dragging = False  # Flag to prevent window stacking during drag/resize operations
+        
+        # State machine
+        self.state = DockingState.IDLE
+        
+        # Legacy flag - kept for focus serialization to prevent GDI conflicts
         self._is_updating_focus = False  # Flag to serialize focus-change painting to prevent GDI conflicts
         self.hit_test_cache = HitTestCache()
         self._drag_source_id = None  # Track which widget is currently being dragged
@@ -63,6 +66,25 @@ class DockingManager(QObject):
         # Set up debug overlay reporting if debug mode is enabled
         if self.debug_mode:
             self.signals.layout_changed.connect(self._debug_report_active_overlays)
+
+    def _set_state(self, new_state: DockingState) -> None:
+        """Set the docking manager state and print transition for debugging."""
+        if self.state != new_state:
+            if self.debug_mode:
+                print(f"STATE: {self.state.value} -> {new_state.value}")
+            self.state = new_state
+
+    def is_idle(self) -> bool:
+        """Check if the docking manager is in the idle state."""
+        return self.state == DockingState.IDLE
+
+    def is_rendering(self) -> bool:
+        """Check if the docking manager is currently rendering layouts."""
+        return self.state == DockingState.RENDERING
+
+    def is_user_interacting(self) -> bool:
+        """Check if the user is currently dragging or resizing windows."""
+        return self.state in [DockingState.DRAGGING_WINDOW, DockingState.RESIZING_WINDOW, DockingState.DRAGGING_TAB]
 
     def _is_persistent_root(self, container: DockContainer) -> bool:
         """Check if the container is a persistent root (MainDockWindow dock area or FloatingDockRoot)."""
@@ -658,7 +680,7 @@ class DockingManager(QObject):
         """Brings all true 'floating layer' widgets to the top of the stacking order..."""
         
         # SAFETY GUARD: Prevent window stacking during drag/resize operations
-        if self._is_user_dragging:
+        if self.is_user_interacting():
             return
 
         for window in self.window_stack:
@@ -1655,8 +1677,7 @@ class DockingManager(QObject):
 
                 break
         finally:
-            # Always clear the flag and re-enable updates
-            self._rendering_layout = False
+            # Always re-enable updates
             if not self.is_deleted(root_window):
                 root_window.setUpdatesEnabled(True)
                 root_window.update()
@@ -1683,8 +1704,8 @@ class DockingManager(QObject):
         # PHANTOM OVERLAY FIX: Force immediate processing of overlay destruction paint events
         QApplication.processEvents()
         
-        # Prevent overlay operations during undocking
-        self._undocking_in_progress = True
+        # Set state to prevent overlay operations during undocking (which involves rendering)
+        self._set_state(DockingState.RENDERING)
         try:
             # Clear dock target state
             self.last_dock_target = None
@@ -1770,8 +1791,8 @@ class DockingManager(QObject):
             # Invalidate hit test cache after layout change
             self.hit_test_cache.invalidate()
         finally:
-            # Always clear the flag
-            self._undocking_in_progress = False
+            # Always return to idle state
+            self._set_state(DockingState.IDLE)
             # Clear any dock-related state
             self.last_dock_target = None
             # Ensure no widgets think they're being dragged
@@ -2571,8 +2592,8 @@ class DockingManager(QObject):
         This is the main entry point for the manager to receive mouse events
         from its filtered widgets.
         """
-        # Ignore all events during layout rendering or undocking to prevent phantom overlays
-        if self._rendering_layout or self._undocking_in_progress:
+        # Ignore events during layout rendering to prevent phantom overlays
+        if self.is_rendering():
             return False
             
 
