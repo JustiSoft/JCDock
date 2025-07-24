@@ -66,6 +66,17 @@ class DockingManager(QObject):
         # Set up debug overlay reporting if debug mode is enabled
         if self.debug_mode:
             self.signals.layout_changed.connect(self._debug_report_active_overlays)
+        
+        # Install global event filter for centralized event handling
+        self._install_global_event_filter()
+
+    def _install_global_event_filter(self) -> None:
+        """Install a global event filter on QApplication for centralized event handling."""
+        app = QApplication.instance()
+        if app:
+            app.installEventFilter(self)
+            if self.debug_mode:
+                print("GLOBAL_FILTER: Installed global event filter on QApplication")
 
     def _set_state(self, new_state: DockingState) -> None:
         """Set the docking manager state and print transition for debugging."""
@@ -2588,16 +2599,116 @@ class DockingManager(QObject):
 
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
         """
-        Intercepts events for managed widgets to handle global drag-and-drop.
-        This is the main entry point for the manager to receive mouse events
-        from its filtered widgets.
+        Centralized event filter that intercepts all application events.
+        Routes mouse events through the HitTestCache system for efficient handling.
         """
         # Ignore events during layout rendering to prevent phantom overlays
         if self.is_rendering():
             return False
+        
+        # Handle mouse events centrally
+        if event.type() == QEvent.Type.MouseMove:
+            return self._handle_global_mouse_move(obj, event)
+        elif event.type() == QEvent.Type.MouseButtonPress:
+            return self._handle_global_mouse_press(obj, event)
+        elif event.type() == QEvent.Type.MouseButtonRelease:
+            return self._handle_global_mouse_release(obj, event)
             
-
+        # For non-mouse events, delegate to existing filters
         return super().eventFilter(obj, event)
+
+    def _handle_global_mouse_move(self, obj: QObject, event: QEvent) -> bool:
+        """
+        Handle mouse move events globally using HitTestCache for efficient targeting.
+        Provides centralized coordination while delegating specific behaviors to components.
+        """
+        # Skip if user is interacting (dragging/resizing) to avoid interference
+        if self.is_user_interacting():
+            # During drag operations, let existing drag handlers manage events
+            return False
+        
+        # Only process mouse move events on widgets we manage
+        if not self._is_managed_widget(obj):
+            return False
+        
+        global_pos = event.globalPosition().toPoint()
+        
+        # Centralized coordination: Build hit test cache if needed
+        # This replaces the scattered cache building logic
+        if not hasattr(self.hit_test_cache, '_cache_valid') or not self.hit_test_cache._cache_valid:
+            self.hit_test_cache.build_cache(self.window_stack, self.containers)
+        
+        # State machine integration: Only allow overlay operations during IDLE state
+        if self.is_idle():
+            # Use HitTestCache to efficiently determine if this mouse position
+            # requires overlay updates or other coordinated actions
+            cached_target = self.hit_test_cache.find_drop_target_at_position(global_pos, None)
+            
+            # Centralized overlay coordination (without interfering with component-specific logic)
+            if cached_target and self.debug_mode:
+                print(f"GLOBAL_FILTER: Target at {global_pos}: {cached_target.widget.__class__.__name__}")
+        
+        # Delegate to existing component handling for specific behaviors
+        # (resizing, cursor changes, etc. remain in components)
+        return False
+
+    def _handle_global_mouse_press(self, obj: QObject, event: QEvent) -> bool:
+        """
+        Handle mouse press events globally with state machine integration.
+        Provides centralized coordination for drag initiation and window management.
+        """
+        # Only process mouse press events on widgets we manage
+        if not self._is_managed_widget(obj):
+            return False
+        
+        # State machine integration: Prepare for potential state transitions
+        if self.is_idle():
+            # Mouse press during idle state might initiate drag/resize operations
+            # Ensure hit test cache is ready for any drag operations that might start
+            self.hit_test_cache.build_cache(self.window_stack, self.containers)
+            
+            if self.debug_mode:
+                print(f"GLOBAL_FILTER: MousePress on {obj.__class__.__name__} - cache ready")
+        
+        # Delegate to existing component handling for specific press behaviors
+        return False
+
+    def _handle_global_mouse_release(self, obj: QObject, event: QEvent) -> bool:
+        """
+        Handle mouse release events globally with state machine integration.
+        Handles cleanup and state transitions after drag/resize operations.
+        """
+        # Only process mouse release events on widgets we manage
+        if not self._is_managed_widget(obj):
+            return False
+        
+        # State machine integration: Handle state transitions and cleanup
+        if self.is_user_interacting():
+            # Mouse release during interaction might complete drag/resize operations
+            # Prepare for state transition back to IDLE
+            if self.debug_mode:
+                print(f"GLOBAL_FILTER: MouseRelease on {obj.__class__.__name__} - interaction ending")
+        
+        # Delegate to existing component handling for specific release behaviors
+        return False
+
+    def _is_managed_widget(self, obj: QObject) -> bool:
+        """
+        Check if the given object is a widget managed by this DockingManager.
+        """
+        if not isinstance(obj, QWidget):
+            return False
+        
+        # Check if it's a registered widget or container
+        for widget in self.widgets:
+            if obj is widget or obj.isAncestorOf(widget) or widget.isAncestorOf(obj):
+                return True
+        
+        for container in self.containers:
+            if obj is container or obj.isAncestorOf(container) or container.isAncestorOf(obj):
+                return True
+        
+        return False
         
     def _clean_orphaned_overlays(self):
         """

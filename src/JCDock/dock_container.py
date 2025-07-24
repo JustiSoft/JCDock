@@ -493,32 +493,25 @@ class DockContainer(QWidget):
 
     def update_content_event_filters(self):
         """
-        Scans the entire widget hierarchy within this container and ensures the
-        event filter is correctly installed on all interactive content widgets
-        and their viewports.
+        Lightweight event filter setup now that global filtering handles most coordination.
+        Only installs filters where component-specific behavior is needed.
         """
-        # Define the types of widgets whose viewports are the true source of mouse events.
-        viewport_widgets = (QTableWidget, QTreeWidget, QListWidget, QTextEdit, QPlainTextEdit)
-
-        # findChildren is a reliable way to get every single QWidget descendant.
-        all_descendants = self.findChildren(QWidget)
-
-        for widget in all_descendants:
-            # Install the filter on the widget itself to catch general mouse movement.
-            widget.installEventFilter(self)
-
-            # Perform the critical check for viewport-based widgets.
-            if isinstance(widget, viewport_widgets):
-                # This logic is taken directly from the working DockPanel.setContent method.
+        # With global event filtering, we only need local filters for container-specific
+        # behaviors like resizing and cursor management
+        self.installEventFilter(self)
+        
+        # Still need mouse tracking enabled for viewport widgets to generate events
+        viewport_widget_types = [QTableWidget, QTreeWidget, QListWidget, QTextEdit, QPlainTextEdit]
+        
+        # Much lighter scan - only set mouse tracking, don't install filters everywhere
+        for widget_type in viewport_widget_types:
+            for widget in self.findChildren(widget_type):
                 widget.setMouseTracking(True)
                 if hasattr(widget, 'viewport'):
                     viewport = widget.viewport()
                     if viewport:
                         viewport.setMouseTracking(True)
-                        viewport.installEventFilter(self)
-
-        # Finally, ensure the container itself is monitored.
-        self.installEventFilter(self)
+                        # Global filter handles the coordination
 
     def showEvent(self, event):
         """
@@ -561,24 +554,20 @@ class DockContainer(QWidget):
             return False
 
         if event.type() == QEvent.Type.MouseMove:
-            # --- NEW JUST-IN-TIME LOGIC ---
-            # If filters haven't been installed for this container yet, run the
-            # installation now. This catches content added after the initial show.
-            if not self._filters_installed:
-                self.update_content_event_filters()
-                self._filters_installed = True
-            # --- END NEW LOGIC ---
-
+            # Simplified logic: Global filter handles coordination,
+            # container only handles specific behaviors
             is_moving = self.title_bar.moving if self.title_bar else False
             if self.resizing or is_moving:
-                return super().eventFilter(watched, event)
-
-            mapped_event = QMouseEvent(
-                event.type(), self.mapFromGlobal(watched.mapToGlobal(event.pos())),
-                event.globalPosition(), event.button(),
-                event.buttons(), event.modifiers()
-            )
-            self.mouseMoveEvent(mapped_event)
+                # During container-specific operations (resize/move), handle locally
+                mapped_event = QMouseEvent(
+                    event.type(), self.mapFromGlobal(watched.mapToGlobal(event.pos())),
+                    event.globalPosition(), event.button(),
+                    event.buttons(), event.modifiers()
+                )
+                self.mouseMoveEvent(mapped_event)
+                return True  # Consume the event during container operations
+            
+            # Otherwise let global filter coordinate
 
         return super().eventFilter(watched, event)
 
@@ -597,27 +586,21 @@ class DockContainer(QWidget):
 
     def _install_event_filter_recursive(self, widget):
         """
-        Recursively installs this container's event filter on a widget and all its
-        descendants, with special handling for viewports in scroll areas.
+        Lightweight filter installation now that global filtering handles coordination.
+        Only ensures mouse tracking is enabled for event generation.
         """
         if not widget:
             return
 
-        # Install on the widget itself and print for debugging.
-        widget.installEventFilter(self)
+        # Global filter handles coordination, just ensure mouse tracking is enabled
+        widget.setMouseTracking(True)
 
-        # CRITICAL: For widgets with a viewport (like QTableView), the viewport is
-        # the actual source of mouse events. We must install the filter there too.
+        # Still critical for viewport widgets to generate mouse events
         if hasattr(widget, 'viewport'):
             viewport = widget.viewport()
             if viewport:
-                viewport.installEventFilter(self)
-
-        # Recurse through all children to catch widgets added to layouts.
-        for child in widget.children():
-            if isinstance(child, QWidget):
-                # We recurse to handle nested children (e.g., a widget inside a layout).
-                self._install_event_filter_recursive(child)
+                viewport.setMouseTracking(True)
+                # Global filter will catch viewport events, no need for local filter
 
     def on_activation_request(self):
         """

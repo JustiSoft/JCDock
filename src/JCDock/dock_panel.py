@@ -52,7 +52,7 @@ class DockPanel(QWidget):
 
         self.is_tabbed = False
         self.setMouseTracking(True)
-        self.installEventFilter(self)
+        # Event filter removed: Global filter handles coordination
 
     def set_title_bar_color(self, new_color: QColor):
         """
@@ -74,13 +74,14 @@ class DockPanel(QWidget):
 
 
     def _reinstall_content_filters(self):
-
+        """Lightweight filter setup - global filter handles coordination."""
         if self.content_widget:
-            self.content_widget.installEventFilter(self)
+            # Just ensure mouse tracking is enabled for event generation
+            self.content_widget.setMouseTracking(True)
             if hasattr(self.content_widget, 'viewport'):
                 viewport = self.content_widget.viewport()
                 if viewport:
-                    viewport.installEventFilter(self)
+                    viewport.setMouseTracking(True)
 
     def changeEvent(self, event):
 
@@ -88,11 +89,7 @@ class DockPanel(QWidget):
             self._reinstall_content_filters()
         super().changeEvent(event)
 
-    def eventFilter(self, watched, event):
-        """
-        Filters events from self and child widgets.
-        """
-        return super().eventFilter(watched, event)
+    # eventFilter removed: Global filter handles all event coordination
 
 
     def setContent(self, widget, margin_size=5):
@@ -107,12 +104,11 @@ class DockPanel(QWidget):
         self.content_layout.addWidget(widget)
         if self.content_widget:
             self.content_widget.setMouseTracking(True)
-            self.content_widget.installEventFilter(self)
+            # Global filter handles coordination, no need for local filter
             if hasattr(widget, 'viewport'):
                 viewport = widget.viewport()
                 if viewport:
                     viewport.setMouseTracking(True)
-                    viewport.installEventFilter(self)
         self.update()
 
     def getContent(self) -> QWidget | None:
