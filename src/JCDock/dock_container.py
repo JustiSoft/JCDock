@@ -675,6 +675,23 @@ class DockContainer(QWidget):
         """
         if self.manager and hasattr(self.manager, 'hit_test_cache'):
             self.manager.hit_test_cache.invalidate()
+        
+        # Find the tab widget that emitted the signal and activate the new current widget
+        if self.manager and index >= 0:
+            sender_tab_widget = self.sender()
+            if isinstance(sender_tab_widget, QTabWidget):
+                current_content = sender_tab_widget.currentWidget()
+                if current_content:
+                    # Find the DockPanel that owns this content widget
+                    active_widget = next((w for w in self.contained_widgets 
+                                        if w.content_container is current_content), None)
+                    if active_widget:
+                        # Use activate_widget to properly activate the widget
+                        self.manager.activate_widget(active_widget)
+        
+        # Trigger debug output if debug mode is enabled
+        if self.manager and hasattr(self.manager, '_debug_report_layout_state'):
+            self.manager._debug_report_layout_state()
 
     def handle_undock_tab_group(self, tab_widget):
         if self.manager:

@@ -63,9 +63,9 @@ class DockingManager(QObject):
         self.drag_drop_controller = DragDropController(self)
         self.layout_renderer = LayoutRenderer(self)
         
-        # Set up debug overlay reporting if debug mode is enabled
+        # Set up debug layout reporting if debug mode is enabled
         if self.debug_mode:
-            self.signals.layout_changed.connect(self._debug_report_active_overlays)
+            self.signals.layout_changed.connect(self._debug_report_layout_state)
         
         # Install global event filter for centralized event handling
         self._install_global_event_filter()
@@ -75,14 +75,10 @@ class DockingManager(QObject):
         app = QApplication.instance()
         if app:
             app.installEventFilter(self)
-            if self.debug_mode:
-                print("GLOBAL_FILTER: Installed global event filter on QApplication")
 
     def _set_state(self, new_state: DockingState) -> None:
-        """Set the docking manager state and print transition for debugging."""
+        """Set the docking manager state."""
         if self.state != new_state:
-            if self.debug_mode:
-                print(f"STATE: {self.state.value} -> {new_state.value}")
             self.state = new_state
 
     def is_idle(self) -> bool:
@@ -261,21 +257,21 @@ class DockingManager(QObject):
 
     def set_debug_mode(self, enabled: bool):
         """
-        Enables or disables the printing of the layout state and overlay census
+        Enables or disables the printing of the layout state
         to the console after operations.
         """
         # Disconnect any existing connection first
         try:
-            self.signals.layout_changed.disconnect(self._debug_report_active_overlays)
+            self.signals.layout_changed.disconnect(self._debug_report_layout_state)
         except (TypeError, RuntimeError):
             # No connection exists or signal system issue - this is fine
             pass
             
         self.debug_mode = enabled
         
-        # Connect overlay reporting if debug mode is enabled
+        # Connect layout reporting if debug mode is enabled
         if enabled:
-            self.signals.layout_changed.connect(self._debug_report_active_overlays)
+            self.signals.layout_changed.connect(self._debug_report_layout_state)
             
 
     def register_widget(self, widget: DockPanel):
@@ -337,6 +333,50 @@ class DockingManager(QObject):
     def _update_tab_bar_visibility(self, container: DockContainer):
         """Delegate to LayoutRenderer."""
         return self.layout_renderer._update_tab_bar_visibility(container)
+
+
+    def _get_currently_active_widget(self, container: DockContainer) -> DockPanel | None:
+        """
+        Get the currently active widget in a container's tab group.
+        Recursively searches through complex layouts (splitters containing tab groups).
+        Returns None if container has no tab widget or no active tab.
+        """
+        if not container or not hasattr(container, 'layout') or not container.layout():
+            return None
+        
+        # Recursively find all tab widgets in the container hierarchy
+        def find_tab_widgets(widget):
+            """Recursively find all QTabWidget instances in the widget hierarchy."""
+            tab_widgets = []
+            if isinstance(widget, QTabWidget):
+                tab_widgets.append(widget)
+            elif hasattr(widget, 'children'):
+                for child in widget.children():
+                    if isinstance(child, QWidget):
+                        tab_widgets.extend(find_tab_widgets(child))
+            # Also check layout items for splitters and other containers
+            if hasattr(widget, 'layout') and widget.layout():
+                for i in range(widget.layout().count()):
+                    item = widget.layout().itemAt(i)
+                    if item and item.widget():
+                        tab_widgets.extend(find_tab_widgets(item.widget()))
+            return tab_widgets
+        
+        # Find all tab widgets in the container
+        tab_widgets = find_tab_widgets(container)
+        
+        # Check each tab widget for the currently active tab that belongs to this container
+        # Return the last active widget found to handle complex layouts better
+        last_active_widget = None
+        for tab_widget in tab_widgets:
+            current_content = tab_widget.currentWidget()
+            if current_content:
+                # Find the DockPanel that owns this content widget
+                active_widget = next((w for w in container.contained_widgets if w.content_container is current_content), None)
+                if active_widget:
+                    last_active_widget = active_widget
+        
+        return last_active_widget
 
     def _render_node(self, node: AnyNode, container: DockContainer, inside_splitter: bool = False, widget_to_activate: DockPanel = None) -> QWidget:
         """Delegate to LayoutRenderer."""
@@ -880,6 +920,13 @@ class DockingManager(QObject):
             print("ERROR: Could not find widget in the layout model.")
             return None
 
+        # Preserve currently active widget before undocking (unless it's the one being undocked)
+        currently_active_widget = None
+        if isinstance(root_window, DockContainer):
+            currently_active_widget = self._get_currently_active_widget(root_window)
+            if currently_active_widget == widget_to_undock:
+                currently_active_widget = None  # Don't preserve the widget being undocked
+
         widget_node_to_remove = next((wn for wn in host_tab_group.children if wn.widget is widget_to_undock), None)
         if widget_node_to_remove:
             host_tab_group.children.remove(widget_node_to_remove)
@@ -913,10 +960,8 @@ class DockingManager(QObject):
             print("ERROR: Failed to create floating window.")
             return None
 
-        self._simplify_model(root_window)
+        self._simplify_model(root_window, currently_active_widget)
         if root_window in self.model.roots:
-            self._render_layout(root_window)
-            
             # CRITICAL: Force aggressive visual cleanup on the remaining container
             # This prevents stranded overlay graphics on Widget 1 when Widget 2 is undocked
             root_window.update()
@@ -1000,6 +1045,13 @@ class DockingManager(QObject):
         if not source_node_to_move:
             host_tab_group, parent_node, root_window = self.model.find_host_info(source_widget)
             if host_tab_group and root_window:
+                # Preserve currently active widget before removing source widget (unless it's the one being moved)
+                currently_active_widget = None
+                if isinstance(root_window, DockContainer):
+                    currently_active_widget = self._get_currently_active_widget(root_window)
+                    if currently_active_widget == source_widget:
+                        currently_active_widget = None  # Don't preserve the widget being moved
+                        
                 # Find the specific widget node to move
                 widget_node_to_move = next((wn for wn in host_tab_group.children if wn.widget is source_widget), None)
                 if widget_node_to_move:
@@ -1013,11 +1065,7 @@ class DockingManager(QObject):
                     
                     # Simplify and re-render the source container
                     if root_window and root_window in self.model.roots:
-                        self._simplify_model(root_window)
-                        if root_window in self.model.roots:
-                            self._render_layout(root_window)
-                        else:
-                            root_window.update_dynamic_title()
+                        self._simplify_model(root_window, currently_active_widget)
                 else:
                     print(f"ERROR: Could not find widget node for '{source_widget.windowTitle()}' in its container.")
                     return
@@ -1513,10 +1561,15 @@ class DockingManager(QObject):
 
         # Case 2: The widget is docked inside a container.
         elif host_tab_group and isinstance(root_window, DockContainer):
+            # Preserve the currently active widget before making changes
+            currently_active_widget = self._get_currently_active_widget(root_window)
+            if currently_active_widget == widget_to_close:
+                currently_active_widget = None
+            
             widget_node_to_remove = next((wn for wn in host_tab_group.children if wn.widget is widget_to_close), None)
             if widget_node_to_remove:
                 host_tab_group.children.remove(widget_node_to_remove)
-            self._simplify_model(root_window)
+            self._simplify_model(root_window, currently_active_widget)
             if root_window in self.model.roots:
                 self._render_layout(root_window)
 
@@ -1540,15 +1593,17 @@ class DockingManager(QObject):
 
         # Case 2: The widget is docked inside a container.
         elif host_tab_group and isinstance(root_window, DockContainer):
+            # Preserve currently active widget before making changes (unless it's the one being closed)
+            currently_active_widget = self._get_currently_active_widget(root_window)
+            
+            if currently_active_widget == widget_to_close:
+                currently_active_widget = None  # Don't preserve the widget being closed
+                
             widget_node_to_remove = next((wn for wn in host_tab_group.children if wn.widget is widget_to_close), None)
             if widget_node_to_remove:
                 host_tab_group.children.remove(widget_node_to_remove)
-            self._simplify_model(root_window)
-            if root_window in self.model.roots:
-                self._render_layout(root_window)
-            else:
-                # If container was removed from roots, still update its title
-                root_window.update_dynamic_title()
+            
+            self._simplify_model(root_window, currently_active_widget)
 
         self.signals.layout_changed.emit()
         
@@ -1612,12 +1667,12 @@ class DockingManager(QObject):
         
         container_to_close.close()
 
-    def _simplify_model(self, root_window: QWidget):
+    def _simplify_model(self, root_window: QWidget, widget_to_activate: DockPanel = None):
         """Delegate to LayoutRenderer for model simplification and re-render layout."""
         self.layout_renderer.simplify_model(root_window)
         # Re-render the layout after simplification
         if root_window in self.model.roots:
-            self._render_layout(root_window)
+            self._render_layout(root_window, widget_to_activate)
         else:
             # If container was removed from roots, close it
             if hasattr(root_window, 'close'):
@@ -1662,7 +1717,7 @@ class DockingManager(QObject):
                             nodes_to_check.append((child, current_node))
 
                 if made_changes:
-                    self._render_layout(root_window)
+                    self._render_layout(root_window, widget_to_activate)
                     continue
 
                 root_node = self.model.roots.get(root_window)
@@ -1682,7 +1737,7 @@ class DockingManager(QObject):
                     else:
                         # For persistent roots, reset to clean default state
                         self.model.roots[root_window] = SplitterNode(orientation=Qt.Orientation.Horizontal)
-                        self._render_layout(root_window)
+                        self._render_layout(root_window, widget_to_activate)
                     return  # Stop simplification for this window.
 
 
@@ -1762,11 +1817,14 @@ class DockingManager(QObject):
 
             # Simplify the old container, which may cause another window to float.
             if not self.is_deleted(root_window):
+                # Preserve the currently active widget in the remaining container
+                remaining_active_widget = self._get_currently_active_widget(root_window)
+                
                 # Force destroy overlay before simplification
                 if hasattr(root_window, 'overlay') and root_window.overlay:
                     root_window.overlay.destroy_overlay() 
                     root_window.overlay = None
-                self._simplify_model(root_window)
+                self._simplify_model(root_window, remaining_active_widget)
                 
                 # CRITICAL: Force visual cleanup on remaining container after undocking
                 # This prevents stranded overlay graphics when widgets are undocked
@@ -1908,8 +1966,6 @@ class DockingManager(QObject):
                     except RuntimeError:
                         pass
                         
-        if self.debug_mode and overlays_destroyed > 0:
-            print(f"[CLEANUP] Destroyed {overlays_destroyed} overlay widgets")
 
     def force_cleanup_stuck_overlays(self):
         """
@@ -1971,124 +2027,17 @@ class DockingManager(QObject):
         except RuntimeError:
             pass
             
-        if self.debug_mode and stuck_overlays_found > 0:
-            print(f"Force cleanup removed {stuck_overlays_found} stuck overlay widgets")
         
         return stuck_overlays_found
 
-    def _debug_report_active_overlays(self):
+    def _debug_report_layout_state(self):
         """
-        Debug method to scan and report all DockingOverlay widgets currently in the application.
-        This provides a comprehensive "census" of overlay state to identify stuck overlays.
+        Debug method to print the current layout state to the console.
         """
         if not self.debug_mode:
             return
-            
-        print("\n" + "="*80)
-        print("--- OVERLAY STATE REPORT ---")
-        print("="*80)
         
-        overlay_count = 0
-        visible_overlay_count = 0
-        stuck_overlay_count = 0
-        
-        try:
-            from .docking_overlay import DockingOverlay
-            all_widgets = QApplication.allWidgets()
-            
-            for widget in all_widgets:
-                if isinstance(widget, DockingOverlay):
-                    overlay_count += 1
-                    
-                    # Gather comprehensive diagnostic information
-                    try:
-                        parent_widget = None
-                        parent_access_error = False
-                        try:
-                            parent_widget = widget.parentWidget()
-                        except RuntimeError as e:
-                            parent_access_error = True
-                            parent_widget = None
-                            
-                        parent_name = parent_widget.objectName() if parent_widget else "None"
-                        parent_class = parent_widget.__class__.__name__ if parent_widget else "None"
-                        
-                        is_visible = widget.isVisible()
-                        is_deleted = self.is_deleted(widget)
-                        geometry = widget.geometry()
-                        
-                        preview_visible = False
-                        preview_deleted = False
-                        if hasattr(widget, 'preview_overlay') and widget.preview_overlay:
-                            try:
-                                preview_visible = widget.preview_overlay.isVisible()
-                                preview_deleted = self.is_deleted(widget.preview_overlay)
-                            except RuntimeError:
-                                preview_deleted = True
-                        
-                        # Count visible overlays
-                        if is_visible:
-                            visible_overlay_count += 1
-                            
-                        # Enhanced stuck detection
-                        is_stuck = False
-                        stuck_reasons = []
-                        
-                        if is_visible and not is_deleted:
-                            is_stuck = True
-                            stuck_reasons.append("visible")
-                            
-                        if parent_widget is None and not is_deleted:
-                            is_stuck = True
-                            stuck_reasons.append("orphaned")
-                            
-                        if parent_access_error:
-                            is_stuck = True
-                            stuck_reasons.append("parent_access_error")
-                            
-                        if preview_visible and not preview_deleted:
-                            is_stuck = True
-                            stuck_reasons.append("preview_stuck")
-                            
-                        if is_stuck:
-                            stuck_overlay_count += 1
-                            
-                        # Print detailed information
-                        status = "STUCK" if is_stuck else "OK"
-                        stuck_reason = f" - Reason: {', '.join(stuck_reasons)}" if stuck_reasons else ""
-                            
-                        print(f"[{status}] DockingOverlay #{overlay_count}{stuck_reason}")
-                        print(f"  Parent: {parent_class}('{parent_name}') {'[ACCESS ERROR]' if parent_access_error else ''}")
-                        print(f"  Visible: {is_visible}")
-                        print(f"  Preview Visible: {preview_visible} {'[DELETED]' if preview_deleted else ''}")
-                        print(f"  Deleted: {is_deleted}")
-                        print(f"  Geometry: {geometry.x()}, {geometry.y()}, {geometry.width()}x{geometry.height()}")
-                        print(f"  Memory: {hex(id(widget))}")
-                        
-                        # Additional validation checks
-                        if is_stuck:
-                            print(f"  ** DIAGNOSTIC: This overlay should be investigated **")
-                            if parent_widget is None:
-                                print(f"  ** ISSUE: Overlay has no parent - likely orphaned **")
-                            if preview_visible:
-                                print(f"  ** ISSUE: Preview overlay is visible - blue area may be stuck **")
-                        print()
-                        
-                    except RuntimeError as e:
-                        print(f"[ERROR] DockingOverlay #{overlay_count} - RuntimeError accessing properties: {e}")
-                        print()
-                        
-        except Exception as e:
-            print(f"Error during overlay report: {e}")
-            
-        # Summary
-        print("-" * 80)
-        print(f"SUMMARY: {overlay_count} total overlays, {visible_overlay_count} visible, {stuck_overlay_count} stuck")
-        if stuck_overlay_count > 0:
-            print(f"WARNING: {stuck_overlay_count} overlays appear to be stuck and should be investigated!")
-        else:
-            print("All overlays appear to be properly cleaned up.")
-        print("="*80 + "\n")
+        self.model.pretty_print(manager=self)
 
     def _save_splitter_sizes_to_model(self, widget, node):
         """Delegate to LayoutSerializer."""
@@ -2179,6 +2128,13 @@ class DockingManager(QObject):
         if not host_tab_group:
             return
 
+        # Preserve currently active widget before making changes (unless it's the one being undocked)
+        currently_active_widget = None
+        if isinstance(root_window, DockContainer):
+            currently_active_widget = self._get_currently_active_widget(root_window)
+            if currently_active_widget == widget_to_undock:
+                currently_active_widget = None  # Don't preserve the widget being undocked
+
         # Destroy overlay on the root window before modification
         if hasattr(root_window, 'overlay') and root_window.overlay:
             root_window.overlay.destroy_overlay()
@@ -2217,11 +2173,9 @@ class DockingManager(QObject):
 
             # 4. Simplify the model for the source window (where the tab was removed from)
             if not self.is_deleted(root_window):
-                self._simplify_model(root_window)
-                # If the root window still exists, re-render its layout
+                self._simplify_model(root_window, currently_active_widget)
+                # CRITICAL: Force aggressive visual cleanup on the remaining container
                 if root_window in self.model.roots:
-                    self._render_layout(root_window)
-                    # CRITICAL: Force aggressive visual cleanup on the remaining container
                     root_window.update()
                     root_window.repaint()
                 else:
@@ -2357,6 +2311,13 @@ class DockingManager(QObject):
         if self.is_widget_docked(widget):
             host_tab_group, parent_node, root_window = self.model.find_host_info(widget)
             if host_tab_group:
+                # Preserve currently active widget before making changes (unless it's the one being dragged)
+                currently_active_widget = None
+                if isinstance(root_window, DockContainer):
+                    currently_active_widget = self._get_currently_active_widget(root_window)
+                    if currently_active_widget == widget:
+                        currently_active_widget = None  # Don't preserve the widget being dragged
+                
                 # Remove the widget from its current tab group
                 widget_node_to_remove = next((wn for wn in host_tab_group.children if wn.widget is widget), None)
                 if widget_node_to_remove:
@@ -2364,10 +2325,9 @@ class DockingManager(QObject):
                     
                     # Simplify and re-render the source container
                     if root_window and root_window in self.model.roots:
-                        self._simplify_model(root_window)
+                        self._simplify_model(root_window, currently_active_widget)
+                        # Force visual refresh after layout rendering
                         if root_window in self.model.roots:
-                            self._render_layout(root_window)
-                            # Force visual refresh after layout rendering
                             root_window.update()
                             root_window.repaint()
                             QApplication.processEvents()
@@ -2424,6 +2384,13 @@ class DockingManager(QObject):
         if self.is_widget_docked(widget_to_move):
             host_tab_group, parent_node, root_window = self.model.find_host_info(widget_to_move)
             if host_tab_group:
+                # Preserve currently active widget before making changes (unless it's the one being moved)
+                currently_active_widget = None
+                if isinstance(root_window, DockContainer):
+                    currently_active_widget = self._get_currently_active_widget(root_window)
+                    if currently_active_widget == widget_to_move:
+                        currently_active_widget = None  # Don't preserve the widget being moved
+                
                 # Remove the widget from its current tab group
                 widget_node_to_remove = next((wn for wn in host_tab_group.children if wn.widget is widget_to_move), None)
                 if widget_node_to_remove:
@@ -2432,9 +2399,9 @@ class DockingManager(QObject):
                     
                     # Simplify and re-render the source container
                     if root_window and root_window in self.model.roots:
-                        self._simplify_model(root_window)
+                        self._simplify_model(root_window, currently_active_widget)
                         if root_window in self.model.roots:
-                            self._render_layout(root_window)
+                            pass  # Already handled by _simplify_model
                         else:
                             # If container was removed from roots, still update its title
                             root_window.update_dynamic_title()
@@ -2645,8 +2612,6 @@ class DockingManager(QObject):
             cached_target = self.hit_test_cache.find_drop_target_at_position(global_pos, None)
             
             # Centralized overlay coordination (without interfering with component-specific logic)
-            if cached_target and self.debug_mode:
-                print(f"GLOBAL_FILTER: Target at {global_pos}: {cached_target.widget.__class__.__name__}")
         
         # Delegate to existing component handling for specific behaviors
         # (resizing, cursor changes, etc. remain in components)
@@ -2666,9 +2631,6 @@ class DockingManager(QObject):
             # Mouse press during idle state might initiate drag/resize operations
             # Ensure hit test cache is ready for any drag operations that might start
             self.hit_test_cache.build_cache(self.window_stack, self.containers)
-            
-            if self.debug_mode:
-                print(f"GLOBAL_FILTER: MousePress on {obj.__class__.__name__} - cache ready")
         
         # Delegate to existing component handling for specific press behaviors
         return False
@@ -2686,8 +2648,7 @@ class DockingManager(QObject):
         if self.is_user_interacting():
             # Mouse release during interaction might complete drag/resize operations
             # Prepare for state transition back to IDLE
-            if self.debug_mode:
-                print(f"GLOBAL_FILTER: MouseRelease on {obj.__class__.__name__} - interaction ending")
+            pass
         
         # Delegate to existing component handling for specific release behaviors
         return False

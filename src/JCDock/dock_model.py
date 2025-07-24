@@ -55,7 +55,7 @@ class LayoutModel:
         if widget in self.roots:
             del self.roots[widget]
 
-    def pretty_print(self):
+    def pretty_print(self, manager=None):
         """Outputs the current state of the entire layout model to the console."""
         print("\n--- DOCKING LAYOUT STATE ---")
         if not self.roots:
@@ -66,23 +66,62 @@ class LayoutModel:
         for i, (widget, root_node) in enumerate(self.roots.items()):
             window_title = widget.windowTitle() if widget.windowTitle() else "Container"
             print(f"\n[Window {i+1}: '{window_title}' ({type(widget).__name__}) ID: {widget.objectName()}]")
-            self._print_node(root_node, indent=1)
+            self._print_node(root_node, indent=1, container_widget=widget, manager=manager)
         print("----------------------------\n")
 
-    def _print_node(self, node: AnyNode, indent: int):
+    def _print_node(self, node: AnyNode, indent: int, container_widget=None, manager=None, active_widget=None):
         """Recursively prints a node and its children."""
         prefix = "  " * indent
         if isinstance(node, SplitterNode):
             orientation = "Horizontal" if node.orientation == Qt.Horizontal else "Vertical"
             print(f"{prefix}+- Splitter ({orientation}) [id: ...{str(node.id)[-4:]}] - Children: {len(node.children)}")
             for child in node.children:
-                self._print_node(child, indent + 1)
+                self._print_node(child, indent + 1, container_widget=container_widget, manager=manager, active_widget=active_widget)
         elif isinstance(node, TabGroupNode):
             print(f"{prefix}+- TabGroup [id: ...{str(node.id)[-4:]}] - Tabs: {len(node.children)}")
+            
+            # Determine the active widget for this specific tab group
+            tab_group_active_widget = None
+            if manager and container_widget:
+                tab_group_active_widget = self._get_active_widget_for_tab_group(node, container_widget)
+            
             for child in node.children:
-                self._print_node(child, indent + 1)
+                self._print_node(child, indent + 1, container_widget=container_widget, manager=manager, active_widget=tab_group_active_widget)
         elif isinstance(node, WidgetNode):
-            print(f"{prefix}+- Widget: '{node.widget.windowTitle()}' [id: ...{str(node.id)[-4:]}]")
+            # Check if this is the active widget
+            is_active = active_widget == node.widget if active_widget else False
+            active_marker = " [ACTIVE]" if is_active else ""
+            print(f"{prefix}+- Widget: '{node.widget.windowTitle()}' [id: ...{str(node.id)[-4:]}]{active_marker}")
+
+    def _get_active_widget_for_tab_group(self, tab_group_node: TabGroupNode, container_widget) -> DockPanel | None:
+        """
+        Find the currently active widget in a specific tab group.
+        Returns the DockPanel that corresponds to the current tab in the QTabWidget for this TabGroupNode.
+        """
+        from PySide6.QtWidgets import QTabWidget
+        
+        # Find all tab widgets in the container
+        all_tab_widgets = container_widget.findChildren(QTabWidget)
+        
+        # For each tab widget, check if it contains widgets from this tab group
+        for tab_widget in all_tab_widgets:
+            # Check if this tab widget contains any of the widgets from our tab group
+            tab_group_widgets = [child.widget for child in tab_group_node.children if hasattr(child, 'widget')]
+            
+            # Check each tab in this tab widget
+            for i in range(tab_widget.count()):
+                tab_content = tab_widget.widget(i)
+                if tab_content:
+                    # Find which DockPanel owns this content
+                    owning_widget = next((w for w in tab_group_widgets if hasattr(w, 'content_container') and w.content_container is tab_content), None)
+                    if owning_widget:
+                        # This tab widget contains widgets from our tab group
+                        # Return the currently active widget in this tab widget
+                        current_content = tab_widget.currentWidget()
+                        if current_content:
+                            return next((w for w in tab_group_widgets if hasattr(w, 'content_container') and w.content_container is current_content), None)
+        
+        return None
 
     def find_host_info(self, widget: DockPanel) -> tuple[TabGroupNode, AnyNode, QWidget] | tuple[None, None, None]:
         """
