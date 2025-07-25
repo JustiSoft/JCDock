@@ -53,7 +53,6 @@ class TitleBar(QWidget):
         self.close_button.setFixedSize(24, 24)
         self.close_button.setStyleSheet(button_style)
 
-        # This is the fix: The button now calls the correct manager method based on the window type.
         self.close_button.clicked.connect(self.on_close_button_clicked)
 
         layout.addWidget(self.close_button)
@@ -66,38 +65,27 @@ class TitleBar(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         
-        # Get the background color from the parent container
-        bg_color = QColor("#F0F0F0")  # Default fallback
+        bg_color = QColor("#F0F0F0")
         if hasattr(self._top_level_widget, '_title_bar_color'):
             bg_color = self._top_level_widget._title_bar_color
         
-        # Create a rounded rectangle path with rounded top corners only
         rect = QRectF(self.rect())
         path = QPainterPath()
-        radius = 8.0  # Match container's border-radius
+        radius = 8.0
         
-        # Start from bottom-left corner (no rounding)
         path.moveTo(rect.left(), rect.bottom())
-        # Line to top-left, then arc for top-left rounded corner
         path.lineTo(rect.left(), rect.top() + radius)
         path.arcTo(rect.left(), rect.top(), radius * 2, radius * 2, 180, -90)
-        # Line across top to top-right rounded corner
         path.lineTo(rect.right() - radius, rect.top())
         path.arcTo(rect.right() - radius * 2, rect.top(), radius * 2, radius * 2, 90, -90)
-        # Line down to bottom-right (no rounding)
         path.lineTo(rect.right(), rect.bottom())
-        # Close the path
         path.closeSubpath()
         
-        # Fill the path with the background color
         painter.fillPath(path, QBrush(bg_color))
         super().paintEvent(event)
 
     def on_close_button_clicked(self):
-        """
-        Determines whether to close a single widget or a whole container.
-        """
-        # Local import to avoid circular dependency at module level
+        """Determines whether to close a single widget or a whole container."""
         from .dock_container import DockContainer
 
         manager = getattr(self._top_level_widget, 'manager', None)
@@ -107,31 +95,19 @@ class TitleBar(QWidget):
 
         if isinstance(self._top_level_widget, DockContainer):
             manager.request_close_container(self._top_level_widget)
-        else:  # It's a DockPanel
+        else:
             manager.request_close_widget(self._top_level_widget)
 
     def mouseMoveEvent(self, event):
-        # If the title bar is in "moving" mode, it has two jobs:
-        # 1. Move the window directly (live move).
-        # 2. Ask the docking manager to check for docking opportunities.
         if self.moving:
-            # 1. First notify the manager to create overlays before moving the window.
             if hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager:
                 self._top_level_widget.manager.handle_live_move(self._top_level_widget, event)
-
-            # 2. Then move the window based on the mouse drag (live move).
             new_widget_global = event.globalPosition().toPoint() - self.offset
             self._top_level_widget.move(new_widget_global)
-
-            # The event is fully handled, so we prevent further processing.
             return
-
-        # If not moving, pass the event to the default handler to process
-        # other things like hover events for tooltips, etc.
         super().mouseMoveEvent(event)
 
     def mousePressEvent(self, event):
-        # Do not start a drag if clicking on any of the control buttons.
         if (self.close_button.geometry().contains(event.pos()) or
                 self.maximize_button.geometry().contains(event.pos()) or
                 self.minimize_button.geometry().contains(event.pos())):
@@ -139,7 +115,6 @@ class TitleBar(QWidget):
             return
 
         if event.button() == Qt.LeftButton:
-            # Only DockContainer windows support resizing, not DockPanel content wrappers
             from .dock_container import DockContainer
             
             edge = None
@@ -168,16 +143,12 @@ class TitleBar(QWidget):
                     self._top_level_widget.resize_start_pos = event.globalPosition().toPoint()
                     self._top_level_widget.resize_start_geom = self._top_level_widget.geometry()
                     
-                    # Set resizing state to prevent window stacking conflicts during resize
                     if hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager:
                         self._top_level_widget.manager._set_state(DockingState.RESIZING_WINDOW)
 
             if not edge:
-                # A click on the title bar is an activation request for its parent window.
                 if hasattr(self._top_level_widget, 'on_activation_request'):
                     self._top_level_widget.on_activation_request()
-
-                # Clean up any existing overlays before starting drag operation
                 if hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager:
                     if hasattr(self._top_level_widget.manager, 'destroy_all_overlays'):
                         self._top_level_widget.manager.destroy_all_overlays()
@@ -185,56 +156,40 @@ class TitleBar(QWidget):
                 self.moving = True
                 self.offset = event.globalPosition().toPoint() - self._top_level_widget.pos()
                 
-                # Build hit test cache and set drag operation state
                 if hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager:
                     manager = self._top_level_widget.manager
                     manager.hit_test_cache.build_cache(manager.window_stack, manager.containers)
-                    # Set dragging state to prevent window stacking conflicts during move
                     manager._set_state(DockingState.DRAGGING_WINDOW)
                     manager.hit_test_cache.set_drag_operation_state(True)
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
-            # If we were moving, finalize the operation (move or dock).
             if self.moving:
                 # First, clear the moving flag
                 self.moving = False
                 
-                # Check if we have a manager and if there's a dock target
                 manager = getattr(self._top_level_widget, 'manager', None)
                 if manager and hasattr(manager, 'last_dock_target') and manager.last_dock_target:
-                    # A dock target exists - the drag ended over a valid drop zone
-                    # Call the manager to finalize the dock operation
                     manager.finalize_dock_from_live_move(self._top_level_widget, manager.last_dock_target)
                 
-                # Finally, clear the manager's last_dock_target and clean up overlays
                 if manager:
                     if hasattr(manager, 'last_dock_target'):
                         manager.last_dock_target = None
-                    # Clean up any remaining overlays after the operation
                     if hasattr(manager, 'destroy_all_overlays'):
                         manager.destroy_all_overlays()
-                    # Reset drag operation state
                     if hasattr(manager, 'hit_test_cache'):
                         manager.hit_test_cache.set_drag_operation_state(False)
-                    # Return to idle state to allow window stacking again
                     manager._set_state(DockingState.IDLE)
                 
-                # Always restore normal opacity when drag completes
                 if hasattr(self._top_level_widget, 'restore_normal_opacity'):
                     self._top_level_widget.restore_normal_opacity()
-
-            # Reset resizing flags on the parent (only for DockContainer windows).
             if hasattr(self._top_level_widget, 'resizing') and self._top_level_widget.resizing:
                 self._top_level_widget.resizing = False
                 self._top_level_widget.resize_edge = None
                 
-                # Return to idle state after resize operation
                 if hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager:
                     self._top_level_widget.manager._set_state(DockingState.IDLE)
 
     def _create_control_icon(self, icon_type: str, color=QColor("#303030")):
-        """
-        Creates cached window control icons for improved performance.
-        """
+        """Creates cached window control icons for improved performance."""
         return IconCache.get_control_icon(icon_type, color.name(), 24)

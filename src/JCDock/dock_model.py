@@ -6,7 +6,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QWidget
 from .dock_panel import DockPanel
 
-# Define a type hint for any possible node
 AnyNode = Union['SplitterNode', 'TabGroupNode', 'WidgetNode']
 
 # --- Node Definitions ---
@@ -36,8 +35,6 @@ class SplitterNode:
 class LayoutModel:
     """The complete model for the entire application's dock layout."""
     def __init__(self):
-        # The keys are the top-level floating widgets (DockPanel or DockContainer).
-        # The values are the root nodes of their internal layout trees.
         self.roots: dict[QWidget, AnyNode] = {}
 
     def register_widget(self, widget: DockPanel):
@@ -46,8 +43,6 @@ class LayoutModel:
         Use create_floating_window() in DockingManager instead to create DockContainers.
         This method is kept for compatibility but should not be used for new DockPanel instances.
         """
-        # DockPanel instances should never be registered as standalone windows
-        # They should only exist within DockContainers
         pass
 
     def unregister_widget(self, widget: QWidget):
@@ -80,7 +75,6 @@ class LayoutModel:
         elif isinstance(node, TabGroupNode):
             print(f"{prefix}+- TabGroup [id: ...{str(node.id)[-4:]}] - Tabs: {len(node.children)}")
             
-            # Determine the active widget for this specific tab group
             tab_group_active_widget = None
             if manager and container_widget:
                 tab_group_active_widget = self._get_active_widget_for_tab_group(node, container_widget)
@@ -100,23 +94,16 @@ class LayoutModel:
         """
         from PySide6.QtWidgets import QTabWidget
         
-        # Find all tab widgets in the container
         all_tab_widgets = container_widget.findChildren(QTabWidget)
         
-        # For each tab widget, check if it contains widgets from this tab group
         for tab_widget in all_tab_widgets:
-            # Check if this tab widget contains any of the widgets from our tab group
             tab_group_widgets = [child.widget for child in tab_group_node.children if hasattr(child, 'widget')]
             
-            # Check each tab in this tab widget
             for i in range(tab_widget.count()):
                 tab_content = tab_widget.widget(i)
                 if tab_content:
-                    # Find which DockPanel owns this content
                     owning_widget = next((w for w in tab_group_widgets if hasattr(w, 'content_container') and w.content_container is tab_content), None)
                     if owning_widget:
-                        # This tab widget contains widgets from our tab group
-                        # Return the currently active widget in this tab widget
                         current_content = tab_widget.currentWidget()
                         if current_content:
                             return next((w for w in tab_group_widgets if hasattr(w, 'content_container') and w.content_container is current_content), None)
@@ -129,7 +116,6 @@ class LayoutModel:
         Returns: (The TabGroupNode hosting the widget, its parent node, the top-level QWidget window)
         """
         for root_window, root_node in self.roots.items():
-            # Search inside the window's tree
             group, parent = self._find_widget_in_tree(root_node, widget)
             if group:
                 return group, parent, root_window
@@ -137,19 +123,16 @@ class LayoutModel:
 
     def _find_widget_in_tree(self, current_node, target_widget, parent=None):
         """Recursive helper to find the TabGroupNode that contains a widget."""
-        # Base case: we found the tab group that holds our target widget.
         if isinstance(current_node, TabGroupNode):
             if any(wn.widget is target_widget for wn in current_node.children):
                 return current_node, parent
 
-        # Recursive step: search inside a splitter.
         if isinstance(current_node, SplitterNode):
             for child in current_node.children:
                 group, p = self._find_widget_in_tree(child, target_widget, current_node)
                 if group:
                     return group, p
 
-        # This handles the case of a simple floating widget where the root node is the tab group.
         if parent is None and isinstance(current_node, TabGroupNode):
             if any(wn.widget is target_widget for wn in current_node.children):
                 return current_node, None
@@ -193,14 +176,14 @@ class LayoutModel:
         return self._find_widget_with_parent_helper(root_node, target_widget, None)
     
     def _find_widget_with_parent_helper(self, node: AnyNode, target_widget, parent: AnyNode) -> tuple[WidgetNode, AnyNode]:
-        """Helper method for find_widget_node_with_parent"""
+        """Helper method for find_widget_node_with_parent."""
         if isinstance(node, WidgetNode):
             if node.widget is target_widget:
                 return node, parent
         elif isinstance(node, (TabGroupNode, SplitterNode)):
             for child in node.children:
                 result = self._find_widget_with_parent_helper(child, target_widget, node)
-                if result[0]:  # If widget_node was found
+                if result[0]:
                     return result
         return None, None
 
@@ -214,7 +197,7 @@ class LayoutModel:
             
             if current_node is target_node:
                 return current_path
-                
+            
             if isinstance(current_node, (TabGroupNode, SplitterNode)):
                 for child in current_node.children:
                     result = search_with_path(child, current_path)

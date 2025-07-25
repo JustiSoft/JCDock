@@ -31,7 +31,6 @@ class LayoutSerializer:
         """
         layout_data = []
 
-        # Handle main window layout first
         if self.manager.main_window and self.manager.main_window.dock_area in self.manager.model.roots:
             main_dock_area = self.manager.main_window.dock_area
             main_root_node = self.manager.model.roots[main_dock_area]
@@ -48,7 +47,6 @@ class LayoutSerializer:
             }
             layout_data.append(main_window_state)
 
-        # Handle floating windows
         for window, root_node in self.manager.model.roots.items():
             if window is (self.manager.main_window.dock_area if self.manager.main_window else None):
                 continue
@@ -112,7 +110,6 @@ class LayoutSerializer:
         Args:
             data: Binary layout data from save_layout_to_bytearray()
         """
-        # No longer need to check for widget_factory - we use the registry system
 
         self._clear_layout()
 
@@ -127,7 +124,6 @@ class LayoutSerializer:
         for window_state in layout_data:
             window_class = window_state['class']
 
-            # Handle main window
             if window_class == 'MainDockWindow':
                 container = self.manager.main_window.dock_area
                 geom_tuple = window_state['geometry']
@@ -140,19 +136,16 @@ class LayoutSerializer:
                 self.manager._render_layout(container)
                 continue
 
-            # Handle floating windows
-            new_window = None
+                new_window = None
             if window_class == 'DockPanel':
                 widget_data = window_state['content']['children'][0]
                 persistent_id = widget_data.get('id')
 
-                # CRITICAL FIX: Use unique cache key for floating windows too
                 cache_key = f"{persistent_id}_{id(widget_data)}_{len(loaded_widgets_cache)}"
                 
                 if cache_key in loaded_widgets_cache:
                     new_window = loaded_widgets_cache[cache_key]
                 else:
-                    # Use the DockingManager's internal panel factory from the registry
                     try:
                         new_window = self.manager._create_panel_from_key(persistent_id)
                         if new_window:
@@ -201,36 +194,26 @@ class LayoutSerializer:
         """
         Closes all managed windows and resets the model to a clean state.
         """
-        # Make a copy of the list of windows to close, as the original list will be modified
         windows_to_close = list(self.manager.model.roots.keys())
 
         for window in windows_to_close:
-            # Don't close persistent roots, just clear their content
             if self.manager._is_persistent_root(window):
-                # Clear the splitter from the persistent root
                 if hasattr(window, 'splitter') and window.splitter:
                     window.splitter.setParent(None)
                     window.splitter.deleteLater()
                     window.splitter = None
-                # Reset its model to an empty node
                 self.manager.model.roots[window] = SplitterNode(orientation=Qt.Horizontal)
-                # Re-render to show empty state
                 self.manager._render_layout(window)
                 continue
-
-            # For all other floating windows, unregister and close them
             if window in self.manager.model.roots:
                 self.manager.model.unregister_widget(window)
 
             window.setParent(None)
             window.close()
-
-        # Reset all manager state
         self.manager.widgets.clear()
         self.manager.containers.clear()
         self.manager.window_stack.clear()
         self.manager.floating_widget_count = 0
-        # Re-add the main window's dock area back to the containers list
         if self.manager.main_window:
             self.manager.containers.append(self.manager.main_window.dock_area)
             self.manager.window_stack.append(self.manager.main_window)
@@ -265,8 +248,6 @@ class LayoutSerializer:
             if not persistent_id:
                 return TabGroupNode()
 
-            # CRITICAL FIX: Create unique cache key for each widget instance
-            # This prevents multiple widgets of the same type from sharing the same instance
             cache_key = f"{persistent_id}_{id(node_data)}_{len(loaded_widgets_cache)}"
             
             if cache_key in loaded_widgets_cache:
@@ -277,7 +258,6 @@ class LayoutSerializer:
                     new_widget = self.manager._create_panel_from_key(persistent_id)
                     if new_widget:
                         loaded_widgets_cache[cache_key] = new_widget
-                        # Important: Register the widget with the manager
                         self.manager.register_widget(new_widget)
                 except ValueError as e:
                     print(f"ERROR: Cannot recreate widget '{persistent_id}': {e}")
@@ -318,14 +298,11 @@ class LayoutSerializer:
         if not isinstance(widget, QSplitter) or not isinstance(node, SplitterNode):
             return
 
-        # Save the current widget's sizes to its corresponding model node.
         node.sizes = widget.sizes()
 
-        # If the model and view have a different number of children, we can't safely recurse.
         if len(node.children) != widget.count():
             return
 
-        # Recursively save the sizes for any children that are also splitters.
         for i in range(widget.count()):
             child_widget = widget.widget(i)
             child_node = node.children[i]

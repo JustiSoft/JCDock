@@ -1,4 +1,3 @@
-# tearable_tab_widget.py
 from PySide6.QtGui import QPainter, QPen, QColor, QCursor
 from PySide6.QtWidgets import QTabWidget, QTabBar, QApplication
 from PySide6.QtCore import Qt, QPoint
@@ -35,20 +34,17 @@ class TearableTabBar(QTabBar):
 
         for i in range(self.count()):
             tab_rect = self.tabRect(i)
-            # Check the left half of the tab
             if pos.x() < tab_rect.center().x():
                 if tab_rect.contains(pos):
                     return i
-            # Check the right half of the tab
             else:
                 if tab_rect.contains(pos):
                     return i + 1
 
-        # If we are over the empty part of the tab bar, return the last index
         if self.count() > 0:
             return self.count()
 
-        return 0  # If the bar is empty
+        return 0
 
     def paintEvent(self, event):
         """
@@ -58,50 +54,43 @@ class TearableTabBar(QTabBar):
         if self._drop_indicator_index != -1:
             painter = QPainter(self)
             
-            # ENHANCED SAFETY: Validate tab bar geometry before painting
             bar_rect = self.rect()
             if bar_rect.width() <= 0 or bar_rect.height() <= 0:
-                return  # Skip indicator painting for invalid geometry
+                return
                 
-            # Constrain painting to tab bar bounds
             painter.setClipRect(bar_rect)
             
-            pen = QPen(QColor(0, 120, 215), 3)  # A distinct blue color
+            pen = QPen(QColor(0, 120, 215), 3)
             painter.setPen(pen)
 
             if self._drop_indicator_index < self.count():
                 tab_rect = self.tabRect(self._drop_indicator_index)
                 
-                # Validate tab rectangle before drawing
                 if (tab_rect.isValid() and 
                     tab_rect.left() >= 0 and 
                     tab_rect.left() <= bar_rect.width() and
                     tab_rect.intersects(bar_rect)):
                     
-                    # Constrain line coordinates to tab bar bounds
                     line_x = max(0, min(tab_rect.left(), bar_rect.width()))
                     line_top = max(0, 0)
                     line_bottom = min(self.height(), bar_rect.height())
                     
-                    if line_bottom > line_top:  # Ensure positive line length
+                    if line_bottom > line_top:
                         painter.drawLine(line_x, line_top, line_x, line_bottom)
             else:
-                # If inserting at the very end, draw line at the right of the last tab
                 if self.count() > 0:
                     tab_rect = self.tabRect(self.count() - 1)
                     
-                    # Validate last tab rectangle before drawing
                     if (tab_rect.isValid() and 
                         tab_rect.right() >= 0 and 
                         tab_rect.right() <= bar_rect.width() and
                         tab_rect.intersects(bar_rect)):
                         
-                        # Constrain line coordinates to tab bar bounds
                         line_x = max(0, min(tab_rect.right(), bar_rect.width()))
                         line_top = max(0, 0)
                         line_bottom = min(self.height(), bar_rect.height())
                         
-                        if line_bottom > line_top:  # Ensure positive line length
+                        if line_bottom > line_top:
                             painter.drawLine(line_x, line_top, line_x, line_bottom)
 
     def mousePressEvent(self, event):
@@ -136,7 +125,6 @@ class TearableTabWidget(QTabWidget):
         self.setTabBar(self.tab_bar)
         self.manager = None
         
-        # Custom drag tracking variables
         self.drag_preview = None
         self.dragged_tab_index = -1
         self.dragged_widget = None
@@ -154,10 +142,8 @@ class TearableTabWidget(QTabWidget):
         if not self.manager or self.is_custom_dragging:
             return
 
-        # 1. Identify the DockPanel associated with this tab index
         content_to_remove = self.widget(index)
 
-        # Find the DockContainer that owns this tab widget
         from .dock_container import DockContainer
 
         container = self.parent()
@@ -169,7 +155,6 @@ class TearableTabWidget(QTabWidget):
                                 None)
 
             if owner_widget:
-                # 2. Start custom drag operation
                 self._start_custom_drag(index, owner_widget)
 
     def _start_custom_drag(self, tab_index, widget):
@@ -180,23 +165,18 @@ class TearableTabWidget(QTabWidget):
         self.dragged_tab_index = tab_index
         self.dragged_widget = widget
         
-        # Set visual feedback on original tab (dim it)
         self.setTabEnabled(tab_index, False)
         
-        # Create floating preview window
         self.drag_preview = TabDragPreview(self, tab_index)
         
-        # Set manager state and initialize systems
         self.manager._set_state(DockingState.DRAGGING_TAB)
         self.manager.destroy_all_overlays()
         self.manager.hit_test_cache.build_cache(self.manager.window_stack, self.manager.containers)
         self.manager.hit_test_cache.set_drag_operation_state(True)
         
-        # Show preview at current cursor position
         cursor_pos = QCursor.pos()
         self.drag_preview.show_preview(cursor_pos)
         
-        # Capture mouse events globally
         self.grabMouse()
         self.mouse_grabbed = True
 
@@ -205,13 +185,10 @@ class TearableTabWidget(QTabWidget):
         Handle mouse movement for custom drag operations.
         """
         if self.is_custom_dragging and self.drag_preview:
-            # Update preview position
             global_pos = self.mapToGlobal(event.pos())
             self.drag_preview.update_position(global_pos)
             
-            # Update overlays for valid drop zones
             if self.manager:
-                # Set drag source ID for exclusion in hit testing
                 self.manager._drag_source_id = self.dragged_widget.persistent_id
                 self.manager.handle_qdrag_move(global_pos)
         else:
@@ -234,29 +211,22 @@ class TearableTabWidget(QTabWidget):
             return
             
         try:
-            # Get current cursor position for drop logic
             cursor_pos = QCursor.pos()
             
-            # CRITICAL: Release mouse capture BEFORE creating any new widgets
-            # Qt cannot create widgets properly while mouse is captured
             if self.mouse_grabbed:
                 try:
                     self.releaseMouse()
                     self.mouse_grabbed = False
                 except RuntimeError:
-                    # Widget may have been deleted, ignore
                     pass
             
-            # Process events to ensure mouse release takes effect
             QApplication.processEvents()
             
-            # Check if we have a valid drop target
             dock_target_info = None
             if self.manager and hasattr(self.manager, 'last_dock_target'):
                 dock_target_info = self.manager.last_dock_target
             
             if dock_target_info:
-                # Valid drop target - perform docking
                 try:
                     target, location = dock_target_info
                     success = self.manager.dock_widget_from_drag(
@@ -265,18 +235,14 @@ class TearableTabWidget(QTabWidget):
                         location
                     )
                     if not success:
-                        # Fallback to floating window if dock fails
                         self._create_floating_window_from_drag(cursor_pos)
                 except Exception as e:
                     print(f"ERROR during dock operation: {e}")
-                    # Fallback to floating window
                     self._create_floating_window_from_drag(cursor_pos)
             else:
-                # No valid drop target - create floating window
                 self._create_floating_window_from_drag(cursor_pos)
                 
         except Exception as e:
-            # Ensure mouse is released even if everything fails
             if self.mouse_grabbed:
                 try:
                     self.releaseMouse()
@@ -297,36 +263,29 @@ class TearableTabWidget(QTabWidget):
         """
         Clean up after custom drag operation.
         """
-        # Restore original tab state
         if self.dragged_tab_index >= 0:
             self.setTabEnabled(self.dragged_tab_index, True)
         
-        # Hide and cleanup preview window
         if self.drag_preview:
             self.drag_preview.hide_preview()
             self.drag_preview.deleteLater()
             self.drag_preview = None
         
-        # Release mouse capture safely - only if still grabbed
         if self.mouse_grabbed:
             try:
                 self.releaseMouse()
                 self.mouse_grabbed = False
             except RuntimeError:
-                # Widget may have been deleted, ignore
                 pass
         
-        # Process events to ensure mouse release is handled
         QApplication.processEvents()
         
-        # Reset manager state
         if self.manager:
             self.manager._set_state(DockingState.IDLE)
             self.manager.hit_test_cache.set_drag_operation_state(False)
             self.manager.destroy_all_overlays()
             self.manager._drag_source_id = None
         
-        # Reset drag variables
         self.is_custom_dragging = False
         self.dragged_tab_index = -1
         self.dragged_widget = None

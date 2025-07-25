@@ -39,7 +39,6 @@ class DragDropController:
         if tab_rect.isEmpty():
             return QPixmap()
             
-        # Create a larger pixmap to accommodate shadow and frame effects
         margin = 8
         enhanced_size = tab_rect.size()
         enhanced_size.setWidth(enhanced_size.width() + margin * 2)
@@ -51,21 +50,17 @@ class DragDropController:
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.Antialiasing, True)
         
-        # Draw subtle shadow first (behind everything)
         shadow_rect = QRect(margin + 2, margin + 2, tab_rect.width(), tab_rect.height())
         painter.fillRect(shadow_rect, QColor(0, 0, 0, 40))
         
-        # Draw a subtle window frame to indicate floating
         frame_rect = QRect(margin, margin, tab_rect.width(), tab_rect.height())
         frame_pen = QPen(QColor(100, 150, 200, 180), 2)
         painter.setPen(frame_pen)
         painter.drawRect(frame_rect)
         
-        # Draw the actual tab content with slight transparency
         painter.setOpacity(0.8)
         tab_widget.tabBar().render(painter, QPoint(margin, margin), tab_rect)
         
-        # Add small floating indicator (window icon in corner)
         painter.setOpacity(1.0)
         indicator_size = 12
         indicator_rect = QRect(frame_rect.right() - indicator_size - 2, 
@@ -73,12 +68,10 @@ class DragDropController:
                              indicator_size, 
                              indicator_size)
         
-        # Draw simple window icon (rectangle with title bar)
         painter.setPen(QPen(QColor(60, 120, 180), 2))
         painter.setBrush(QBrush(QColor(240, 240, 240, 200)))
         painter.drawRect(indicator_rect)
         
-        # Draw title bar of the mini window icon
         title_bar_rect = QRect(indicator_rect.x(), indicator_rect.y(), 
                               indicator_rect.width(), 3)
         painter.fillRect(title_bar_rect, QColor(60, 120, 180))
@@ -94,24 +87,19 @@ class DragDropController:
             source_container: The container being moved
             event: The mouse move event
         """
-        # CRITICAL FIX: Prevent dragging persistent roots
         if self.manager._is_persistent_root(source_container):
-            return  # Block all dragging of persistent roots
+            return
         
-        # Safety checks - don't show overlays during critical operations
         if self.manager.is_rendering():
             return
             
-        # Check state and fix if necessary - defensive programming
         if self.manager.state != DockingState.DRAGGING_WINDOW:
-            # If called from title bar that thinks it's moving, fix the state
             if hasattr(source_container, 'title_bar') and source_container.title_bar and source_container.title_bar.moving:
                 self.manager._set_state(DockingState.DRAGGING_WINDOW)
                 self.manager.hit_test_cache.set_drag_operation_state(True)
             else:
                 return
         
-        # Verify we have proper moving state
         if not (hasattr(source_container, 'title_bar') and source_container.title_bar and source_container.title_bar.moving):
             return
 
@@ -120,10 +108,8 @@ class DragDropController:
             self.manager.last_dock_target = None
             return
 
-        # Get the global mouse position from the event
         global_mouse_pos = event.globalPosition().toPoint()
 
-        # Step 1: Check for tab bar insertion first (highest priority)
         tab_bar_info = self.manager.hit_test_cache.find_tab_bar_at_position(global_mouse_pos)
         if tab_bar_info:
             tab_bar = tab_bar_info.tab_widget.tabBar()
@@ -135,56 +121,44 @@ class DragDropController:
                 tab_bar.set_drop_indicator_index(drop_index)
                 self.manager.last_dock_target = (tab_bar_info.tab_widget, "insert", drop_index)
                 
-                # Apply transparency when hovering over valid tab insertion point
                 if hasattr(source_container, 'set_drag_transparency'):
                     source_container.set_drag_transparency(0.4)
                 return
             else:
                 tab_bar.set_drop_indicator_index(-1)
-                # Restore opacity when not over valid tab insertion point
                 if hasattr(source_container, 'restore_normal_opacity'):
                     source_container.restore_normal_opacity()
 
-        # Step 2: Find the drop target using cached data
-        # Call HitTestCache with source_container as excluded_widget
         cached_target = self.manager.hit_test_cache.find_drop_target_at_position(global_mouse_pos, source_container)
         target_widget = cached_target.widget if cached_target else None
 
-        # Step 3: Update overlay visibility based on target
         required_overlays = set()
         if target_widget:
             target_name = getattr(target_widget, 'objectName', lambda: f"{type(target_widget).__name__}@{id(target_widget)}")()
             
-            # Check if target_widget itself is a container that should be filtered out
             if isinstance(target_widget, DockContainer):
                 source_has_simple_layout = self.manager.has_simple_layout(source_container)
                 target_has_simple_layout = self.manager.has_simple_layout(target_widget)
                 
-                # Only add container target if either source or target has complex layout
                 if not source_has_simple_layout or not target_has_simple_layout:
                     required_overlays.add(target_widget)
             else:
                 required_overlays.add(target_widget)
             parent_container = getattr(target_widget, 'parent_container', None)
             if parent_container:
-                # Only add container overlay for complex layouts
-                # Don't show container overlay only when BOTH source AND target have simple layouts
                 target_has_complex_layout = not self.manager.has_simple_layout(parent_container)
                 source_has_simple_layout = self.manager.has_simple_layout(source_container)
                 
-                # Show container overlay if target is complex OR source is complex (but not if both are simple)
                 if target_has_complex_layout or not source_has_simple_layout:
                     required_overlays.add(parent_container)
 
         current_overlays = set(self.manager.active_overlays)
         
-        # Hide overlays no longer needed
         for w in (current_overlays - required_overlays):
             if not self.manager.is_deleted(w):
                 w.hide_overlay()
             self.manager.active_overlays.remove(w)
 
-        # Show overlays for new targets
         for w in (required_overlays - current_overlays):
             try:
                 if not self.manager.is_deleted(w):
@@ -192,7 +166,6 @@ class DragDropController:
                         root_node = self.manager.model.roots.get(w)
                         is_empty = not (root_node and root_node.children)
                         is_main_dock_area = (w is (self.manager.main_window.dock_area if self.manager.main_window else None))
-                        # Import FloatingDockRoot dynamically to avoid circular import
                         from .floating_dock_root import FloatingDockRoot
                         is_floating_root = isinstance(w, FloatingDockRoot)
                         if is_empty and (is_main_dock_area or is_floating_root):
@@ -205,8 +178,6 @@ class DragDropController:
             except RuntimeError:
                 if w in self.manager.active_overlays:
                     self.manager.active_overlays.remove(w)
-
-        # Step 4: Determine final docking location
         final_target = None
         final_location = None
         if target_widget:
@@ -222,17 +193,14 @@ class DragDropController:
                         final_target = parent_container
                         final_location = parent_location
 
-        # Step 5: Update overlay previews
         for overlay_widget in self.manager.active_overlays:
             if overlay_widget is final_target:
                 overlay_widget.show_preview(final_location)
             else:
                 overlay_widget.show_preview(None)
 
-        # Store the result in self.last_dock_target
         self.manager.last_dock_target = (final_target, final_location) if (final_target and final_location) else None
         
-        # If no tab insertion target was found, restore normal opacity
         if not (tab_bar_info and tab_bar_info.tab_widget.tabBar().get_drop_index(tab_bar_info.tab_widget.tabBar().mapFromGlobal(global_mouse_pos)) != -1):
             if hasattr(source_container, 'restore_normal_opacity'):
                 source_container.restore_normal_opacity()
@@ -246,38 +214,30 @@ class DragDropController:
             dock_target_info: Information about where to dock
         """
         try:
-            # Always restore normal opacity when drag operation completes
             if hasattr(source_container, 'restore_normal_opacity'):
                 source_container.restore_normal_opacity()
             
-            # CRITICAL FIX: Prevent moving persistent roots or containers that are part of persistent roots
             if self.manager._is_persistent_root(source_container):
                 print(f"WARNING: Attempted to move persistent root {source_container}. Operation blocked.")
                 self.manager.destroy_all_overlays()
                 return
             
-            # Clean up any remaining overlays first
             self.manager.destroy_all_overlays()
             from PySide6.QtWidgets import QApplication
-            QApplication.processEvents()  # Force immediate overlay cleanup
+            QApplication.processEvents()
             
-            # Get the root_node from the source_container
             source_root_node = self.manager.model.roots.get(source_container)
             if not source_root_node:
                 print(f"ERROR: No root node found for source container {source_container}")
                 return
                 
-            # Handle different types of dock targets
             if len(dock_target_info) == 3:
-                # Tab insertion: (tab_widget, "insert", drop_index)
                 self.manager._finalize_tab_insertion(source_container, source_root_node, dock_target_info)
             elif len(dock_target_info) == 2:
-                # Regular docking: (target_widget, location)
                 self.manager._finalize_regular_docking(source_container, source_root_node, dock_target_info)
                     
         except Exception as e:
             print(f"Error during dock finalization: {e}")
-            # Ensure overlays are cleaned up even if docking fails
             self.manager.destroy_all_overlays()
 
     def start_tab_drag_operation(self, widget_persistent_id: str):
@@ -287,10 +247,8 @@ class DragDropController:
         Args:
             widget_persistent_id: The persistent ID of the widget to drag
         """
-        # Clean up any existing overlays before starting tab drag operation
         self.manager.destroy_all_overlays()
         
-        # Build the cache at the very beginning to capture current UI layout
         self.manager.hit_test_cache.build_cache(self.manager.window_stack, self.manager.containers)
         
         widget_to_drag = self.manager.find_widget_by_id(widget_persistent_id)
@@ -298,70 +256,50 @@ class DragDropController:
             print(f"ERROR: Widget with ID '{widget_persistent_id}' not found")
             return
 
-        # Find the tab widget and tab index for this widget
         tab_widget, tab_index = self._find_tab_widget_for_widget(widget_to_drag)
         if not tab_widget or tab_index == -1:
             print(f"ERROR: Could not find tab widget for widget '{widget_persistent_id}'")
             return
 
-        # Store the original tab state
         original_tab_text = tab_widget.tabText(tab_index)
         original_tab_enabled = tab_widget.isTabEnabled(tab_index)
         
-        # Temporarily hide/disable the tab
         tab_widget.setTabEnabled(tab_index, False)
         tab_widget.setTabText(tab_index, f"[Dragging] {original_tab_text}")
 
-        # Create QDrag object
         drag = QDrag(tab_widget)
         
-        # Create MIME data with the widget's persistent ID
         mime_data = QMimeData()
         mime_data.setData("application/x-jcdock-widget", widget_persistent_id.encode('utf-8'))
         drag.setMimeData(mime_data)
 
-        # Create enhanced drag pixmap with floating window indicators
         tab_rect = tab_widget.tabBar().tabRect(tab_index)
         if not tab_rect.isEmpty():
             pixmap = self._create_enhanced_drag_pixmap(tab_widget, tab_index, tab_rect)
             
             drag.setPixmap(pixmap)
-            # Adjust hot spot to account for the margin added in enhanced pixmap
             margin = 8
             drag.setHotSpot(QPoint(tab_rect.width() // 2 + margin, tab_rect.height() // 2 + margin))
 
-        # Set the drag source ID for hit-testing exclusion
         self.manager._drag_source_id = widget_persistent_id
         
-        # Set state to indicate native Qt drag operation is in progress
         self.manager._set_state(DockingState.DRAGGING_TAB)
         
         try:
-            # Execute the drag operation (this blocks until drag is complete)
-            # Only support Move action to prevent external application drops
             drop_action = drag.exec(Qt.MoveAction)
         finally:
-            # Always return to idle state when drag operation ends
             self.manager._set_state(DockingState.IDLE)
-            # Always reset the drag source ID when drag operation ends
             self.manager._drag_source_id = None
-            # Force UI to stable state and invalidate cache since layout may have changed
             QApplication.processEvents()
             self.manager.hit_test_cache.invalidate()
 
-        # Handle the result
         if drop_action == Qt.MoveAction:
-            # Successful drop - the dropEvent handler will have processed the move
             pass
         else:
-            # Drag was cancelled or dropped in invalid area
-            # Restore the original tab state
             tab_widget.setTabEnabled(tab_index, original_tab_enabled)
             tab_widget.setTabText(tab_index, original_tab_text)
 
-            # If dropped outside any valid drop target, create floating window
             if drop_action == Qt.IgnoreAction:
-                # Get final cursor position for floating window
                 cursor_pos = QCursor.pos()
                 self._create_floating_window_from_drag(widget_to_drag, cursor_pos)
 
@@ -382,43 +320,34 @@ class DragDropController:
             print(f"ERROR: Widget with ID '{widget_persistent_id}' not found")
             return False
 
-        # Find and remove the widget from its current location
         source_removed = False
         host_tab_group, host_parent_node, root_window = self.manager.model.find_host_info(widget_to_move)
         
         if host_tab_group and host_parent_node:
-            # Remove the widget from its current tab group
             widget_node_to_remove = next((wn for wn in host_tab_group.children if wn.widget is widget_to_move), None)
             if widget_node_to_remove:
                 host_tab_group.children.remove(widget_node_to_remove)
                 source_removed = True
                 
-                # Simplify and re-render the source container
                 if root_window and root_window in self.manager.model.roots:
                     self.manager._simplify_model(root_window)
                     if root_window in self.manager.model.roots:
                         self.manager._render_layout(root_window)
                     else:
-                        # If container was removed from roots, still update its title
                         root_window.update_dynamic_title()
 
-        # Now create a temporary floating state for the widget so dock_widget can find it
         if source_removed:
-            # Create a temporary root entry for the widget
             widget_node = WidgetNode(widget_to_move)
             tab_group_node = TabGroupNode(children=[widget_node])
             self.manager.model.roots[widget_to_move] = tab_group_node
             
-            # Reset parent container since it's now floating
             widget_to_move.parent_container = None
 
-        # Now perform the docking operation
         try:
             self.manager.dock_widget(widget_to_move, target_entity, dock_location)
             return True
         except Exception as e:
             print(f"ERROR: Failed to dock widget during drag operation: {e}")
-            # If docking failed and we removed it from source, try to restore it
             if source_removed and widget_to_move in self.manager.model.roots:
                 self.manager.model.unregister_widget(widget_to_move)
             return False
@@ -431,7 +360,6 @@ class DragDropController:
         Args:
             global_mouse_pos: Current global mouse position
         """
-        # Step 1: Check for tab bar insertion first (highest priority)
         tab_bar_info = self.manager.hit_test_cache.find_tab_bar_at_position(global_mouse_pos)
         if tab_bar_info:
             tab_bar = tab_bar_info.tab_widget.tabBar()
@@ -446,66 +374,53 @@ class DragDropController:
             else:
                 tab_bar.set_drop_indicator_index(-1)
 
-        # Step 2: Find the drop target using cached data
-        # Get the source widget being dragged to exclude it from hit-testing
         excluded_widget = None
         if self.manager._drag_source_id:
             excluded_widget = self.manager.find_widget_by_id(self.manager._drag_source_id)
         
         cached_target = self.manager.hit_test_cache.find_drop_target_at_position(global_mouse_pos, excluded_widget)
         target_widget = cached_target.widget if cached_target else None
-
-        # Step 3: Update overlay visibility based on target
         required_overlays = set()
         if target_widget:
             target_name = getattr(target_widget, 'objectName', lambda: f"{type(target_widget).__name__}@{id(target_widget)}")()
             
-            # Check if target_widget itself is a container that should be filtered out
             if isinstance(target_widget, DockContainer):
                 source_has_simple_layout = self.manager.has_simple_layout(excluded_widget) if excluded_widget else False
                 target_has_simple_layout = self.manager.has_simple_layout(target_widget)
                 
-                # Only add container target if either source or target has complex layout
                 if not source_has_simple_layout or not target_has_simple_layout:
                     required_overlays.add(target_widget)
             else:
                 required_overlays.add(target_widget)
             parent_container = getattr(target_widget, 'parent_container', None)
             if parent_container:
-                # Only add container overlay for complex layouts
-                # Don't show container overlay only when BOTH source AND target have simple layouts
                 target_has_complex_layout = not self.manager.has_simple_layout(parent_container)
                 source_has_simple_layout = self.manager.has_simple_layout(excluded_widget) if excluded_widget else False
                 
-                # Show container overlay if target is complex OR source is complex (but not if both are simple)
                 if target_has_complex_layout or not source_has_simple_layout:
                     required_overlays.add(parent_container)
 
         current_overlays = set(self.manager.active_overlays)
         
-        # Hide overlays no longer needed
         for w in (current_overlays - required_overlays):
             if not self.manager.is_deleted(w):
                 w.hide_overlay()
             self.manager.active_overlays.remove(w)
 
-        # Show overlays that are now needed
         for w in (required_overlays - current_overlays):
             if not self.manager.is_deleted(w):
                 if hasattr(w, 'show_overlay'):
                     if isinstance(w, DockContainer):
-                        w.show_overlay()  # DockContainer.show_overlay() takes no position parameter
+                        w.show_overlay()
                     else:
-                        w.show_overlay()  # DockPanel.show_overlay() takes no parameters
+                        w.show_overlay()
             self.manager.active_overlays.append(w)
 
-        # Update positions of all active overlays
         for w in required_overlays:
             if not self.manager.is_deleted(w):
                 if hasattr(w, 'update_overlay_position'):
                     w.update_overlay_position(global_mouse_pos)
 
-        # Store the target for potential drop
         if target_widget:
             self.manager.last_dock_target = (target_widget, "center", None)
         else:
@@ -519,17 +434,14 @@ class DragDropController:
             widget_to_undock: The widget to undock
             global_mouse_pos: Current mouse position for window placement
         """
-        # Clean up any existing overlays
         self.manager.destroy_all_overlays()
         
-        # Find the widget's current location
         host_tab_group, host_parent_node, root_window = self.manager.model.find_host_info(widget_to_undock)
         
         if not (host_tab_group and host_parent_node and root_window):
             print("ERROR: Could not find widget location for tear operation")
             return None
 
-        # Remove the widget from its current tab group
         widget_node_to_remove = next((wn for wn in host_tab_group.children if wn.widget is widget_to_undock), None)
         if not widget_node_to_remove:
             print("ERROR: Could not find widget node in tab group")
@@ -537,17 +449,13 @@ class DragDropController:
 
         host_tab_group.children.remove(widget_node_to_remove)
 
-        # Simplify the source model
         self.manager._simplify_model(root_window)
         
-        # Re-render the source container if it still exists
         if root_window in self.manager.model.roots:
             self.manager._render_layout(root_window)
 
-        # Create floating window for the undocked widget
         floating_window = self._create_floating_window_from_drag(widget_to_undock, global_mouse_pos)
         
-        # Emit signals
         self.manager.signals.widget_undocked.emit(widget_to_undock)
         self.manager.signals.layout_changed.emit()
         
@@ -565,59 +473,46 @@ class DragDropController:
         Returns:
             DockContainer: The newly created floating window
         """
-        # First, remove the widget from its current location if it's docked
         if self.manager.is_widget_docked(widget):
             host_tab_group, parent_node, root_window = self.manager.model.find_host_info(widget)
             if host_tab_group:
-                # Remove the widget from its current tab group
                 widget_node_to_remove = next((wn for wn in host_tab_group.children if wn.widget is widget), None)
                 if widget_node_to_remove:
                     host_tab_group.children.remove(widget_node_to_remove)
                     
-                    # Simplify and re-render the source container
                     if root_window and root_window in self.manager.model.roots:
                         self.manager.layout_renderer.simplify_model(root_window)
                         if root_window in self.manager.model.roots:
                             self.manager.layout_renderer.render_layout(root_window)
-                            # Force visual refresh after layout rendering
                             root_window.update()
                             root_window.repaint()
                             from PySide6.QtWidgets import QApplication
                             QApplication.processEvents()
                         else:
-                            # If container was removed from roots, still update its title
                             root_window.update_dynamic_title()
         
-        # Calculate geometry for new floating window
         from PySide6.QtCore import QSize, QRect, QPoint
         widget_size = widget.content_container.size() if widget.content_container.size().isValid() else QSize(350, 250)
-        title_height = 30  # Approximate title bar height
+        title_height = 30
         
-        # Position the window so the cursor is on the title bar
         window_pos = cursor_pos - QPoint(widget_size.width() // 2, title_height // 2)
         window_geometry = QRect(window_pos, widget_size + QSize(0, title_height))
         
-        # Validate geometry
         window_geometry = self.manager._validate_window_geometry(window_geometry)
         
-        # Use the existing create_floating_window method
         floating_window = self.manager.create_floating_window([widget], window_geometry)
         
         if floating_window:
-            # Emit signals for the undocking and layout change
             self.manager.signals.widget_undocked.emit(widget)
             self.manager.signals.layout_changed.emit()
             
-            # Ensure proper window activation and focus
             floating_window.show()
             floating_window.raise_()
             floating_window.activateWindow()
             
-            # Process events to ensure window is properly activated
             from PySide6.QtWidgets import QApplication
             QApplication.processEvents()
             
-            # Schedule a delayed title refresh for all containers to ensure visual consistency
             from PySide6.QtCore import QTimer
             QTimer.singleShot(100, self.manager._refresh_all_container_titles)
         
@@ -633,12 +528,10 @@ class DragDropController:
         Returns:
             tuple: (QTabWidget, tab_index) or (None, -1) if not found
         """
-        # Use the comprehensive approach that searches all containers
         for container in self.manager.containers:
             if self.manager.is_deleted(container):
                 continue
             
-            # Use findChildren to get all QTabWidget instances in the container
             from PySide6.QtWidgets import QTabWidget
             tab_widgets = container.findChildren(QTabWidget)
             for tab_widget in tab_widgets:
@@ -659,7 +552,6 @@ class DragDropController:
         """
         target_widget, dock_location, extra_data = dock_target_info
         
-        # Determine target container
         if hasattr(target_widget, 'parent_container') and target_widget.parent_container:
             target_container = target_widget.parent_container
         elif isinstance(target_widget, DockContainer):
@@ -667,13 +559,11 @@ class DragDropController:
         else:
             return
 
-        # Get target node
         if target_container not in self.manager.model.roots:
             return
             
         target_root_node = self.manager.model.roots[target_container]
 
-        # Perform the docking using the model
         self.manager._dock_to_floating_widget_with_nodes(
             source_container, source_root_node, target_widget, dock_location)
 
@@ -688,7 +578,6 @@ class DragDropController:
         """
         target_tab_widget, dock_location, insert_index = dock_target_info
         
-        # Find the container that hosts this tab widget
         target_container = None
         for container in self.manager.containers:
             if hasattr(container, 'tearable_tab_widget') and container.tearable_tab_widget is target_tab_widget:
@@ -698,8 +587,5 @@ class DragDropController:
         if not target_container:
             return
             
-        # Handle tab insertion logic here
-        # This would involve updating the model to insert at the specific index
-        # For now, fall back to regular docking
         self._finalize_regular_docking(source_container, source_root_node, 
                                      (target_container, "center", None))

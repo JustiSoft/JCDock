@@ -6,15 +6,14 @@ from PySide6.QtWidgets import QWidget, QTabWidget, QSplitter
 
 @dataclass
 class CachedDropTarget:
-    """
-    Cached information about a potential drop target.
+    """Cached information about a potential drop target.
     Note: global_rect is calculated dynamically to avoid stale coordinates.
     """
     widget: QWidget
-    target_type: str  # 'widget', 'tab_widget', 'container'
+    target_type: str
     parent_container: Optional[QWidget] = None
     tab_index: int = -1
-    z_order: int = 0  # Higher values = on top
+    z_order: int = 0
     
     @property
     def global_rect(self) -> QRect:
@@ -22,27 +21,21 @@ class CachedDropTarget:
         Dynamically calculates the global rectangle to avoid stale coordinates.
         The method of calculation depends on whether the widget is docked or floating.
         """
-        # Determine the actual visible widget to measure
         if self.parent_container and hasattr(self.widget, 'content_container'):
-            # Widget is docked, use its visible content_container
             visible_part = self.widget.content_container
         else:
-            # Widget is floating, use the widget itself
             visible_part = self.widget
 
         if not visible_part or not visible_part.isVisible():
             return QRect()
 
         try:
-            # Additional safety check for widget validity
             if hasattr(visible_part, 'isValid') and callable(getattr(visible_part, 'isValid')):
                 if not visible_part.isValid():
                     return QRect()
 
             global_pos = visible_part.mapToGlobal(QPoint(0, 0))
             size = visible_part.size()
-
-            # Validate the calculated rectangle - reject obviously invalid coordinates
             if (global_pos.x() < -50000 or global_pos.y() < -50000 or
                 global_pos.x() > 50000 or global_pos.y() > 50000 or
                 size.width() <= 0 or size.height() <= 0):
@@ -55,8 +48,7 @@ class CachedDropTarget:
 
 @dataclass
 class CachedTabBarInfo:
-    """
-    Cached information about tab bars for fast hit-testing.
+    """Cached information about tab bars for fast hit-testing.
     Note: tab_bar_rect is calculated dynamically to avoid stale coordinates.
     """
     tab_widget: QTabWidget
@@ -73,15 +65,12 @@ class CachedTabBarInfo:
         if not tab_bar or not tab_bar.isVisible():
             return QRect()
         try:
-            # Additional safety check for widget validity
             if hasattr(tab_bar, 'isValid') and callable(getattr(tab_bar, 'isValid')):
                 if not tab_bar.isValid():
                     return QRect()
             
             global_pos = tab_bar.mapToGlobal(QPoint(0, 0))
             size = tab_bar.size()
-            
-            # Validate the calculated rectangle - reject obviously invalid coordinates
             if (global_pos.x() < -50000 or global_pos.y() < -50000 or 
                 global_pos.x() > 50000 or global_pos.y() > 50000 or
                 size.width() <= 0 or size.height() <= 0):
@@ -93,8 +82,7 @@ class CachedTabBarInfo:
 
 
 class HitTestCache:
-    """
-    High-performance caching system for drag operation hit-testing.
+    """High-performance caching system for drag operation hit-testing.
     
     Dramatically reduces CPU usage during drag operations by caching
     widget geometries and drop target information.
@@ -149,10 +137,8 @@ class HitTestCache:
                     
                 self._window_rects[window] = (global_rect, z_index)
         
-        # Cache drop targets from all containers
         for container in dock_containers:
             if container and container.isVisible():
-                # Find the z-order of this container's top-level window
                 container_z_order = 0
                 for window, (rect, z_index) in self._window_rects.items():
                     if window is container or (hasattr(window, 'dock_area') and window.dock_area is container):
@@ -160,13 +146,10 @@ class HitTestCache:
                         break
                 self._cache_container_targets(container, container_z_order)
         
-        # Cache drop targets from floating DockPanels in window_stack
         for z_index, window in enumerate(window_stack):
             if window and window.isVisible():
-                # Check if this is a floating DockPanel (not a container)
                 from .dock_panel import DockPanel
                 if isinstance(window, DockPanel) and not window.parent_container:
-                    # This is a floating widget - cache it as a drop target
                     self._drop_targets.append(CachedDropTarget(
                         widget=window,
                         target_type='widget',
@@ -191,10 +174,8 @@ class HitTestCache:
             return
 
         if isinstance(current_widget, QTabWidget):
-            # Only cache the currently visible tab as a drop target
             current_tab_content = current_widget.currentWidget()
             if current_tab_content:
-                # Use the stored property to get the DockPanel
                 dockable_widget = current_tab_content.property("dockable_widget")
                 if dockable_widget:
                     self._drop_targets.append(CachedDropTarget(
@@ -204,10 +185,8 @@ class HitTestCache:
                         z_order=z_order
                     ))
 
-            # Cache the tab bar for insertion checks
             tab_bar = current_widget.tabBar()
             if tab_bar and tab_bar.isVisible():
-                # The immediate parent of the QTabWidget is the correct container for hit-testing
                 immediate_parent_container = current_widget.parentWidget()
                 if immediate_parent_container:
                     self._tab_bars.append(CachedTabBarInfo(
@@ -216,7 +195,6 @@ class HitTestCache:
                     ))
 
         elif isinstance(current_widget, QSplitter):
-            # Recurse into splitter children
             for i in range(current_widget.count()):
                 child_widget = current_widget.widget(i)
                 self._cache_traversal_targets(container, child_widget, z_order)
@@ -227,7 +205,6 @@ class HitTestCache:
         Fast lookup of top-level window at position using cached rectangles.
         Respects z-order by checking windows from top to bottom.
         """
-        # Find all windows that contain the position
         candidates = []
         for window, (rect, z_index) in self._window_rects.items():
             if window is excluded_widget or not window.isVisible():
@@ -235,7 +212,6 @@ class HitTestCache:
             if rect.contains(global_pos):
                 candidates.append((window, z_index))
         
-        # Return the topmost window (highest z_index)
         if candidates:
             return max(candidates, key=lambda x: x[1])[0]
         return None
@@ -246,39 +222,30 @@ class HitTestCache:
         Returns the target with highest z-order, then most specific (smallest area).
         Excludes the specified widget to prevent self-docking.
         """
-        # Check if we can reuse the last result for nearby positions
         if (self._last_mouse_pos and self._last_hit_result and 
             self._positions_close(global_pos, self._last_mouse_pos)):
-            # Return cached result for performance, but check exclusion
             widget, target_type = self._last_hit_result
             if excluded_widget and widget is excluded_widget:
-                # Cached result is excluded, need to search again
                 pass
             else:
                 for target in self._drop_targets:
                     if target.widget is widget and target.target_type == target_type:
                         return target
                     
-        # Find all matching targets, excluding the specified widget
         matching_targets = []
         for target in self._drop_targets:
             if target.global_rect.contains(global_pos):
-                # Exclude the specified widget to prevent self-docking
                 if excluded_widget and target.widget is excluded_widget:
                     continue
                 matching_targets.append(target)
                 
         if matching_targets:
-            # Sort by widget-level priority first, then z-order, then by specificity (smallest area)
-            # Widget-level targets should be preferred over container-level targets
             def target_priority(t):
-                # Priority order: widget > tab_widget > container
                 type_priority = {'widget': 2, 'tab_widget': 1, 'container': 0}[t.target_type]
                 return (type_priority, t.z_order, -t.global_rect.width() * t.global_rect.height())
             
             best_target = max(matching_targets, key=target_priority)
             
-            # Cache the result
             self._last_mouse_pos = global_pos
             self._last_hit_result = (best_target.widget, best_target.target_type)
             

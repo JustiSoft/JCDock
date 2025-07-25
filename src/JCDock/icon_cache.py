@@ -32,7 +32,6 @@ class IconCache:
         pen = QPen(color, 1.2)
         painter.setPen(pen)
 
-        # Center the drawing in a 10x10 area inside the pixmap
         margin = (size - 10) // 2
         rect = QRect(margin, margin, 10, 10)
 
@@ -41,9 +40,7 @@ class IconCache:
         elif icon_type == "maximize":
             painter.drawRect(rect)
         elif icon_type == "restore":
-            # Draw back window
             painter.drawRect(rect.adjusted(0, 2, -2, 0))
-            # Draw front window by erasing the intersection and then drawing the new rect
             front_rect = rect.adjusted(2, 0, 0, -2)
             erase_path = QPainterPath()
             erase_path.addRect(QRectF(front_rect))
@@ -81,37 +78,29 @@ class IconCache:
         if icon_type == "restore":
             pen = QPen(color, 1.0)
             painter.setPen(pen)
-            # Centered in a 10x10 area, shifted up by 1px for vertical alignment
             margin_x = (size - 10) // 2
             margin_y = (size - 10) // 2 - 1
             rect = QRect(margin_x, margin_y, 10, 10)
 
-            # Draw back window
             painter.drawRect(rect.adjusted(0, 2, -2, 0))
 
-            # Draw front window by erasing the intersection and then drawing the new rect
             front_rect = rect.adjusted(2, 0, 0, -2)
             erase_path = QPainterPath()
             erase_path.addRect(QRectF(front_rect))
 
-            # Use CompositionMode_Clear to "erase" the area under the front window
             painter.setCompositionMode(QPainter.CompositionMode_Clear)
             painter.fillPath(erase_path, Qt.transparent)
 
-            # Switch back to normal drawing mode and draw the front window's outline
             painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
             painter.drawRect(front_rect)
 
         elif icon_type == "close":
-            # A 1.2px pen gives the anti-aliaser enough information to create a smooth line
             pen = QPen(color, 1.2)
             painter.setPen(pen)
 
-            # A 10x10 drawing rect, perfectly centered on the canvas
             margin = (size - 10) // 2
             rect = QRect(margin, margin, 10, 10)
 
-            # Draw the two diagonal lines using the integer corners of the rectangle
             painter.drawLine(rect.topLeft(), rect.bottomRight())
             painter.drawLine(rect.topRight(), rect.bottomLeft())
 

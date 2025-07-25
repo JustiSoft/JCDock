@@ -22,21 +22,17 @@ class MainDockWindow(QMainWindow):
         self.setWindowTitle("Docking Application")
         self.setGeometry(300, 300, 800, 600)
 
-        # The central docking area for the main window.
         self.dock_area = DockContainer(manager=self.manager, create_shadow=False, show_title_bar=False)
         self.dock_area.setObjectName("MainDockArea")
-        self.dock_area.set_persistent_root(True)  # Mark as persistent root
+        self.dock_area.set_persistent_root(True)
         self.setCentralWidget(self.dock_area)
 
-        # Set initial margins for the main content area.
         self.centralWidget().layout().setContentsMargins(5, 5, 5, 5)
 
-        # Register the main window and its dock area with the docking manager.
         if self.manager:
             self.manager.register_dock_area(self.dock_area)
             self.manager.set_main_window(self)
 
-        # Install an event filter to manage window stacking order.
         self.installEventFilter(self)
 
     def closeEvent(self, event):

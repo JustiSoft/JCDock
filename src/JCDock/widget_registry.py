@@ -46,7 +46,6 @@ class WidgetRegistry:
         return list(self._registry.keys())
 
 
-# Global registry instance
 _global_registry = WidgetRegistry()
 
 

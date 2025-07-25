@@ -56,18 +56,15 @@ class DockingOverlay(QWidget):
         the overlay and all its child components. This is the ultimate cleanup method.
         """
         try:
-            # CRITICAL: Capture parent and geometry BEFORE any destruction to force repaint
             parent = self.parentWidget()
-            geom = self.geometry()  # Get the geometry BEFORE reparenting
+            geom = self.geometry()
             
-            # First, explicitly hide and destroy the preview widget (the blue area)
             if hasattr(self, 'preview_overlay') and self.preview_overlay:
                 self.preview_overlay.hide()
                 self.preview_overlay.setParent(None)
                 self.preview_overlay.deleteLater()
                 self.preview_overlay = None
                 
-            # Hide and destroy all dock icons
             if hasattr(self, 'dock_icons'):
                 for icon in self.dock_icons.values():
                     if icon:
@@ -76,22 +73,17 @@ class DockingOverlay(QWidget):
                         icon.deleteLater()
                 self.dock_icons.clear()
                 
-            # Hide the main overlay widget itself
             self.hide()
             
-            # Critical: Remove from parent before deletion to prevent orphaning
             self.setParent(None)
             
-            # Schedule for deletion by Qt's event loop
             self.deleteLater()
             
-            # FORCE REPAINT: Tell the original parent to repaint the area we occupied
             if parent and not (hasattr(parent, 'isDeleted') and parent.isDeleted()):
-                parent.update(geom)  # Repaint specific area
-                parent.repaint()     # Force immediate repaint
+                parent.update(geom)
+                parent.repaint()
             
         except RuntimeError:
-            # Widget may already be deleted - this is acceptable
             pass
 
     def reposition_icons(self):
@@ -105,7 +97,6 @@ class DockingOverlay(QWidget):
         center_y = overlay_rect.center().y()
 
         if self.style == 'cluster':
-            # Positions icons in a balanced cluster around the center.
             spacing = 5
             center_icon_x = center_x - icon_size / 2
             center_icon_y = center_y - icon_size / 2
@@ -118,8 +109,7 @@ class DockingOverlay(QWidget):
                                                                        center_icon_y)
             if "right" in self.dock_icons: self.dock_icons["right"].move(center_icon_x + icon_size + spacing,
                                                                          center_icon_y)
-        else:  # 'spread' style
-            # Positions icons near the edges of the overlay.
+        else:
             if "top" in self.dock_icons: self.dock_icons["top"].move(center_x - icon_size / 2, 10)
             if "left" in self.dock_icons: self.dock_icons["left"].move(10, center_y - icon_size / 2)
             if "bottom" in self.dock_icons: self.dock_icons["bottom"].move(center_x - icon_size / 2,
@@ -130,7 +120,7 @@ class DockingOverlay(QWidget):
                                                                            center_y - icon_size / 2)
 
     def resizeEvent(self, event):
-        """ Called when the overlay is resized. Repositions the icons. """
+        """Called when the overlay is resized. Repositions the icons."""
         self.reposition_icons()
         super().resizeEvent(event)
 

@@ -52,14 +52,13 @@ class DockPanel(QWidget):
 
         self.is_tabbed = False
         self.setMouseTracking(True)
-        # Event filter removed: Global filter handles coordination
 
     def set_title_bar_color(self, new_color: QColor):
         """
         Sets the background color of the widget's title bar.
         """
         self._title_bar_color = new_color
-        self.update()  # Trigger a repaint to show the new color
+        self.update()
         
             
             
@@ -76,7 +75,6 @@ class DockPanel(QWidget):
     def _reinstall_content_filters(self):
         """Lightweight filter setup - global filter handles coordination."""
         if self.content_widget:
-            # Just ensure mouse tracking is enabled for event generation
             self.content_widget.setMouseTracking(True)
             if hasattr(self.content_widget, 'viewport'):
                 viewport = self.content_widget.viewport()
@@ -89,7 +87,6 @@ class DockPanel(QWidget):
             self._reinstall_content_filters()
         super().changeEvent(event)
 
-    # eventFilter removed: Global filter handles all event coordination
 
 
     def setContent(self, widget, margin_size=5):
@@ -104,7 +101,6 @@ class DockPanel(QWidget):
         self.content_layout.addWidget(widget)
         if self.content_widget:
             self.content_widget.setMouseTracking(True)
-            # Global filter handles coordination, no need for local filter
             if hasattr(widget, 'viewport'):
                 viewport = widget.viewport()
                 if viewport:
@@ -118,12 +114,9 @@ class DockPanel(QWidget):
         simplified from a container, as its event handling needs to be refreshed.
         """
         self._reinstall_content_filters()
-        # The existing show() method in the provided code handles auto-positioning.
-        # We call the superclass's showEvent to ensure default Qt behavior.
         super().showEvent(event)
 
     def show_overlay(self):
-        # Always destroy old overlay if parent changes
         overlay_parent = self.parent_container if self.parent_container else self
         if self.overlay and self.overlay.parent() is not overlay_parent:
             self.overlay.destroy_overlay()
@@ -134,7 +127,7 @@ class DockPanel(QWidget):
             try:
                 self.overlay = DockingOverlay(overlay_parent)
             except (SystemError, RuntimeError):
-                return  # Skip showing overlay if creation fails
+                return
             
         global_pos = visible_widget.mapToGlobal(QPoint(0, 0))
         parent_local_pos = overlay_parent.mapFromGlobal(global_pos)
@@ -143,8 +136,7 @@ class DockPanel(QWidget):
         self.overlay.raise_()
 
     def hide_overlay(self):
-        if self.overlay: 
-            # Explicitly hide the preview overlay first to prevent stuck blue areas
+        if self.overlay:
             if hasattr(self.overlay, 'preview_overlay'):
                 self.overlay.preview_overlay.hide()
             self.overlay.hide()
@@ -168,7 +160,6 @@ class DockPanel(QWidget):
         if self.title_bar:
             self.title_bar.title_label.setText(new_title)
 
-    # Close event no longer needs to handle a separate shadow
     def closeEvent(self, event):
         if self.manager:
             if self in self.manager.model.roots:
