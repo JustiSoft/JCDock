@@ -111,14 +111,6 @@ class DockPanel(QWidget):
                     viewport.setMouseTracking(True)
         self.update()
 
-    def getContent(self) -> QWidget | None:
-        """
-        Returns the content widget that is displayed inside this dock panel.
-        This provides a consistent API with Qt's QDockWidget.
-        """
-        return getattr(self, 'content_widget', None)
-
-
     def showEvent(self, event):
         """
         On show, reinstall the event filters on the content widget. This is

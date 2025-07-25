@@ -246,17 +246,6 @@ class DockContainer(QWidget):
         
         return content_width > 50 and content_height > 50
 
-    def _update_rounded_mask(self):
-        """
-        Rounded masking is no longer needed with the new architecture.
-        CSS border-radius on content_wrapper handles corner appearance.
-        """
-        # Clear any existing mask - not needed with new architecture
-        self.clearMask()
-        
-        # For floating windows with content_wrapper, let CSS handle the rounded corners
-        # For docked containers, also let CSS handle the appearance
-
     def set_drag_transparency(self, opacity=0.4):
         """
         Apply temporary transparency during drag operations to make drop targets more visible.
@@ -287,8 +276,6 @@ class DockContainer(QWidget):
             self._is_maximized = False
             # Change icon back to 'maximize'
             self.title_bar.maximize_button.setIcon(self.title_bar._create_control_icon("maximize"))
-            # Update mask for restored state
-            self._update_rounded_mask()
         else:
             # Maximize the window
             self._normal_geometry = self.geometry()  # Save current geometry
@@ -302,17 +289,12 @@ class DockContainer(QWidget):
             self._is_maximized = True
             # Change icon to 'restore'
             self.title_bar.maximize_button.setIcon(self.title_bar._create_control_icon("restore"))
-            # Update mask for maximized state (removes rounded corners)
-            self._update_rounded_mask()
 
     def resizeEvent(self, event):
         """
         Enhanced resize event handler with shadow geometry validation.
         """
         super().resizeEvent(event)
-        
-        # Update rounded mask after resize
-        self._update_rounded_mask()
         
         # ENHANCED SAFETY: Validate shadow geometry after resize
         if self._shadow_effect and not self._validate_shadow_geometry():
@@ -539,9 +521,6 @@ class DockContainer(QWidget):
         """
         self.update_content_event_filters()
         super().showEvent(event)
-        
-        # Apply rounded corners mask after widget is shown
-        self._update_rounded_mask()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         """

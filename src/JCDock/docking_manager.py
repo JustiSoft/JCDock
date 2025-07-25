@@ -94,7 +94,16 @@ class DockingManager(QObject):
         return self.state in [DockingState.DRAGGING_WINDOW, DockingState.RESIZING_WINDOW, DockingState.DRAGGING_TAB]
 
     def _is_persistent_root(self, container: DockContainer) -> bool:
-        """Check if the container is a persistent root (MainDockWindow dock area or FloatingDockRoot)."""
+        """
+        Check if the container is a persistent root (should never be closed).
+        
+        This is the authoritative method for checking persistent root status.
+        It first checks the container's is_persistent_root property (if set),
+        then falls back to type-based checks for MainDockWindow and FloatingDockRoot.
+        
+        Use this method rather than checking container.is_persistent_root directly
+        to ensure all persistent root types are properly identified.
+        """
         # First check the container's own persistent root flag
         if hasattr(container, 'is_persistent_root') and container.is_persistent_root:
             return True
@@ -144,20 +153,26 @@ class DockingManager(QObject):
         """Delegate to LayoutSerializer."""
         return self.layout_serializer.save_layout_to_bytearray()
 
+    # Layout Serialization Delegation Methods
+    # These methods provide a unified API through DockingManager for layout operations
+    # that are implemented in separate specialized classes (LayoutSerializer, LayoutRenderer).
+    # This delegation pattern allows external components to interact with layout functionality
+    # through the central DockingManager without needing direct references to internal classes.
+    
     def _serialize_node(self, node: AnyNode) -> dict:
-        """Delegate to LayoutSerializer."""
+        """Delegate to LayoutSerializer. Used internally by layout persistence."""
         return self.layout_serializer._serialize_node(node)
 
     def load_layout_from_bytearray(self, data: bytearray):
-        """Delegate to LayoutSerializer."""
+        """Delegate to LayoutSerializer. Public API for loading layouts."""
         return self.layout_serializer.load_layout_from_bytearray(data)
 
     def _clear_layout(self):
-        """Delegate to LayoutSerializer."""
+        """Delegate to LayoutSerializer. Internal method for clearing layouts."""
         return self.layout_serializer._clear_layout()
 
     def _deserialize_node(self, node_data: dict, loaded_widgets_cache: dict) -> AnyNode:
-        """Delegate to LayoutSerializer."""
+        """Delegate to LayoutSerializer. Used internally by layout restoration."""
         return self.layout_serializer._deserialize_node(node_data, loaded_widgets_cache)
 
     def _find_first_tab_group_node(self, node: AnyNode) -> TabGroupNode | None:
@@ -430,16 +445,6 @@ class DockingManager(QObject):
 
         return all_widgets
 
-    def get_floating_widgets(self) -> list[DockPanel]:
-        """
-        Returns a list of all DockPanels that are currently top-level floating windows.
-        """
-        floating_widgets = []
-        for root_window in self.model.roots.keys():
-            if isinstance(root_window, DockPanel):
-                floating_widgets.append(root_window)
-        return floating_widgets
-
     def is_widget_docked(self, widget: DockPanel) -> bool:
         """
         Checks if a specific DockPanel is currently docked in a container.
@@ -527,11 +532,11 @@ class DockingManager(QObject):
         self.model.unregister_widget(widget_to_remove)
 
     def _render_layout(self, container: DockContainer, widget_to_activate: DockPanel = None):
-        """Delegate to LayoutRenderer."""
+        """Delegate to LayoutRenderer. Used by drag_drop_controller and layout_serializer."""
         return self.layout_renderer.render_layout(container, widget_to_activate)
 
     def _update_tab_bar_visibility(self, container: DockContainer):
-        """Delegate to LayoutRenderer."""
+        """Delegate to LayoutRenderer. Internal method for tab bar management."""
         return self.layout_renderer._update_tab_bar_visibility(container)
 
 
@@ -579,7 +584,7 @@ class DockingManager(QObject):
         return last_active_widget
 
     def _render_node(self, node: AnyNode, container: DockContainer, inside_splitter: bool = False, widget_to_activate: DockPanel = None) -> QWidget:
-        """Delegate to LayoutRenderer."""
+        """Delegate to LayoutRenderer. Internal method for rendering layout nodes."""
         return self.layout_renderer._render_node(node, container, inside_splitter, widget_to_activate)
 
     def add_widget_handlers(self, widget):
@@ -935,22 +940,6 @@ class DockingManager(QObject):
         
         # Invalidate hit test cache after layout change
         self.hit_test_cache.invalidate()
-
-
-    def raise_all_floating_widgets(self):
-        """Brings all true 'floating layer' widgets to the top of the stacking order..."""
-        
-        # SAFETY GUARD: Prevent window stacking during drag/resize operations
-        if self.is_user_interacting():
-            return
-
-        for window in self.window_stack:
-            if not window:
-                continue
-
-            is_base_window = (window is self.main_window) or isinstance(window, FloatingDockRoot)
-            if not is_base_window:
-                window.raise_()
 
     def create_release_handler(self, widget):
         original_release_event = widget.title_bar.mouseReleaseEvent

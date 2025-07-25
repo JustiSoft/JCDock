@@ -121,6 +121,19 @@ if __name__ == "__main__":
     sys.exit(app.exec())
 ```
 
+## Complete Examples
+
+For a comprehensive demonstration of JCDock's capabilities and different API usage patterns, refer to the complete example script at `src/JCDock/Examples/dock_test.py`. This script showcases:
+
+- **Registry-based widget creation** using `@dockable` decorators
+- **Both API paths**: "By Type" (registry-based) and "By Instance" (existing widgets)
+- **Layout persistence** with save/load functionality
+- **Comprehensive testing functions** for all API methods including widget finding, listing, docking operations, and state management
+- **Signal system usage** with event listeners for layout changes
+- **Interactive menu system** for testing different features and operations
+
+This example serves as both a testing framework and a reference implementation, showing various ways to integrate JCDock into your applications.
+
 ## Advanced Features
 
 ### Layout Persistence

@@ -166,12 +166,3 @@ class DockingOverlay(QWidget):
             self.preview_overlay.show()
         else:
             self.preview_overlay.hide()
-
-    def hide_preview(self):
-        if self.preview_overlay and self.preview_overlay.isVisible():
-            self.preview_overlay.hide()
-            parent = self.parentWidget()
-            if parent and not (hasattr(parent, 'isDeleted') and parent.isDeleted()):
-                # Force immediate repaint to remove blue preview artifacts
-                parent.update()
-                parent.repaint()

@@ -222,19 +222,6 @@ class HitTestCache:
                 self._cache_traversal_targets(container, child_widget, z_order)
                 
                         
-    def _get_global_rect(self, widget) -> QRect:
-        """
-        Efficiently calculates global rectangle for a widget.
-        """
-        if not widget or not widget.isVisible():
-            return QRect()
-            
-        try:
-            global_pos = widget.mapToGlobal(QPoint(0, 0))
-            return QRect(global_pos, widget.size())
-        except:
-            return QRect()
-            
     def find_window_at_position(self, global_pos: QPoint, excluded_widget=None) -> Optional[QWidget]:
         """
         Fast lookup of top-level window at position using cached rectangles.
@@ -315,18 +302,6 @@ class HitTestCache:
         dx = abs(pos1.x() - pos2.x())
         dy = abs(pos1.y() - pos2.y())
         return dx <= threshold and dy <= threshold
-        
-    def get_cached_targets_count(self) -> int:
-        """
-        Returns the number of cached drop targets for monitoring.
-        """
-        return len(self._drop_targets)
-        
-    def get_cached_tab_bars_count(self) -> int:
-        """
-        Returns the number of cached tab bars for monitoring.
-        """
-        return len(self._tab_bars)
         
     def is_cache_valid(self) -> bool:
         """
