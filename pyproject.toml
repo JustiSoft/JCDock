@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 name = "JCDock"
 
 # Start with an initial version. Increment this as you make changes.
-version = "0.1.0"
+version = "1.0.0"
 
 authors = [
   # Replace with your name and email.
@@ -28,7 +28,7 @@ license = { file="LICENSE" }
 # Your project's main dependency. Pip will automatically install this
 # when someone installs your package.
 dependencies = [
-    "PySide6==6.9.0",
+    "PySide6>=6.5.0,<7.0.0",
 ]
 
 # Keywords to help others find your package.
@@ -36,7 +36,7 @@ keywords = ["pyside", "qt", "docking", "gui", "widget"]
 
 # Classifiers help users find your project by browsing categories on PyPI.
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License", # Choose the license you prefer
     "Operating System :: OS Independent",
@@ -49,6 +49,12 @@ classifiers = [
     "Topic :: Software Development :: User Interfaces",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+
+[project.urls]
+"Homepage" = "https://github.com/JustiSoft/JCDock"
+"Repository" = "https://github.com/JustiSoft/JCDock"
+"Issues" = "https://github.com/JustiSoft/JCDock/issues"
+"Documentation" = "https://github.com/JustiSoft/JCDock#readme"
 
 [tool.setuptools.packages.find]
 # This tells the build system to find all packages under the 'src' directory.
