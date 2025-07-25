@@ -6,12 +6,12 @@ from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QBrush, Q
     QPalette, QDragEnterEvent, QDragMoveEvent, QDragLeaveEvent, QDropEvent
 from PySide6.QtWidgets import QTableWidget, QTreeWidget, QListWidget, QTextEdit, QPlainTextEdit, QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QSlider, QScrollBar
 
-from .docking_state import DockingState
+from ..core.docking_state import DockingState
 from .tearable_tab_widget import TearableTabWidget
 from .title_bar import TitleBar
 from .dock_panel import DockPanel
-from .docking_overlay import DockingOverlay
-from .icon_cache import IconCache
+from ..interaction.docking_overlay import DockingOverlay
+from ..utils.icon_cache import IconCache
 
 
 class DockContainer(QWidget):

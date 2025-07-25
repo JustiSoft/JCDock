@@ -1,10 +1,10 @@
 from PySide6.QtWidgets import QSplitter, QTabWidget
 from PySide6.QtCore import Qt
 
-from .docking_state import DockingState
+from ..core.docking_state import DockingState
 from .dock_model import AnyNode, SplitterNode, TabGroupNode, WidgetNode
-from .dock_panel import DockPanel
-from .dock_container import DockContainer
+from ..widgets.dock_panel import DockPanel
+from ..widgets.dock_container import DockContainer
 
 
 class LayoutRenderer:

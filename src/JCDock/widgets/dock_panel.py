@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QPushButton, QHBoxLa
 from PySide6.QtCore import Qt, QPoint, QRect, QEvent, QRectF
 from PySide6.QtGui import QColor, QPainter, QBrush, QMouseEvent, QPainterPath, QPalette, QRegion, QPen, QIcon, QPixmap
 
-from .docking_overlay import DockingOverlay
+from ..interaction.docking_overlay import DockingOverlay
 from .title_bar import TitleBar
 
 

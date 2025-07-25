@@ -148,7 +148,7 @@ class HitTestCache:
         
         for z_index, window in enumerate(window_stack):
             if window and window.isVisible():
-                from .dock_panel import DockPanel
+                from ..widgets.dock_panel import DockPanel
                 if isinstance(window, DockPanel) and not window.parent_container:
                     self._drop_targets.append(CachedDropTarget(
                         widget=window,

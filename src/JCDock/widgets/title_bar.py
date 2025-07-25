@@ -4,8 +4,8 @@ from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QPushButton, QHBoxLa
 from PySide6.QtCore import Qt, QPoint, QRect, QEvent, QRectF
 from PySide6.QtGui import QColor, QPainter, QBrush, QMouseEvent, QPainterPath, QPalette, QRegion, QPen, QIcon, QPixmap
 
-from .docking_state import DockingState
-from .icon_cache import IconCache
+from ..core.docking_state import DockingState
+from ..utils.icon_cache import IconCache
 
 
 class TitleBar(QWidget):

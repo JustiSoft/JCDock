@@ -6,19 +6,19 @@ from PySide6.QtCore import Qt, QRect, QEvent, QPoint, QRectF, QSize, QTimer, Sig
 from PySide6.QtGui import QColor, QDrag, QPixmap, QPainter, QCursor
 
 from .docking_state import DockingState
-from .floating_dock_root import FloatingDockRoot
-from .main_dock_window import MainDockWindow
-from .dock_model import LayoutModel, AnyNode, SplitterNode, TabGroupNode, WidgetNode
-from .dock_panel import DockPanel
-from .dock_container import DockContainer
-from .hit_test_cache import HitTestCache
-from .layout_serializer import LayoutSerializer
-from .drag_drop_controller import DragDropController
-from .layout_renderer import LayoutRenderer
-from .widget_factory import WidgetFactory
-from .window_manager import WindowManager
-from .overlay_manager import OverlayManager
-from .model_update_engine import ModelUpdateEngine
+from ..widgets.floating_dock_root import FloatingDockRoot
+from ..widgets.main_dock_window import MainDockWindow
+from ..model.dock_model import LayoutModel, AnyNode, SplitterNode, TabGroupNode, WidgetNode
+from ..widgets.dock_panel import DockPanel
+from ..widgets.dock_container import DockContainer
+from ..utils.hit_test_cache import HitTestCache
+from ..model.layout_serializer import LayoutSerializer
+from ..interaction.drag_drop_controller import DragDropController
+from ..model.layout_renderer import LayoutRenderer
+from ..factories.widget_factory import WidgetFactory
+from ..factories.window_manager import WindowManager
+from ..interaction.overlay_manager import OverlayManager
+from ..factories.model_update_engine import ModelUpdateEngine
 from .widget_registry import get_registry
 
 class DockingSignals(QObject):
@@ -389,7 +389,7 @@ class DockingManager(QObject):
         if action != "insert":
             return
             
-        from .tearable_tab_widget import TearableTabWidget
+        from ..widgets.tearable_tab_widget import TearableTabWidget
         if not isinstance(tab_widget, TearableTabWidget) or not tab_widget.count():
             return
             
@@ -893,7 +893,7 @@ class DockingManager(QObject):
         return source_node_to_move
 
     def _handle_insert_docking(self, source_node_to_move, target_entity, source_widget):
-        from .tearable_tab_widget import TearableTabWidget
+        from ..widgets.tearable_tab_widget import TearableTabWidget
         insertion_index = target_entity
         target_tab_widget = self.last_dock_target[0]
 

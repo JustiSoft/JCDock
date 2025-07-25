@@ -1,7 +1,7 @@
 from PySide6.QtCore import QRect
 from PySide6.QtWidgets import QApplication
 
-from .floating_dock_root import FloatingDockRoot
+from ..widgets.floating_dock_root import FloatingDockRoot
 
 
 class WindowManager:

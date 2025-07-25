@@ -2,8 +2,8 @@ from PySide6.QtGui import QPainter, QPen, QColor, QCursor
 from PySide6.QtWidgets import QTabWidget, QTabBar, QApplication
 from PySide6.QtCore import Qt, QPoint
 
-from .tab_drag_preview import TabDragPreview
-from .docking_state import DockingState
+from ..interaction.tab_drag_preview import TabDragPreview
+from ..core.docking_state import DockingState
 
 
 class TearableTabBar(QTabBar):

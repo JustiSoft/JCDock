@@ -5,10 +5,10 @@ from PySide6.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, Q
 from PySide6.QtCore import Qt, QObject, QEvent, Slot, QSize, QPoint, QRect
 from PySide6.QtGui import QColor
 
-from JCDock.docking_manager import DockingManager
-from JCDock.dock_panel import DockPanel
-from JCDock.main_dock_window import MainDockWindow
-from JCDock.dock_container import DockContainer
+from JCDock.core.docking_manager import DockingManager
+from JCDock.widgets.dock_panel import DockPanel
+from JCDock.widgets.main_dock_window import MainDockWindow
+from JCDock.widgets.dock_container import DockContainer
 from JCDock import dockable
 
 

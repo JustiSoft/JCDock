@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Union
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QWidget
-from .dock_panel import DockPanel
+from ..widgets.dock_panel import DockPanel
 
 AnyNode = Union['SplitterNode', 'TabGroupNode', 'WidgetNode']
 

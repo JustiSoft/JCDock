@@ -126,7 +126,7 @@ class OverlayManager:
         self.manager.active_overlays.clear()
 
         # Clear all tab bar drop indicators
-        from .tearable_tab_widget import TearableTabBar
+        from ..widgets.tearable_tab_widget import TearableTabBar
         for container in self.manager.containers:
             if not self.manager.is_deleted(container):
                 for tab_bar in container.findChildren(TearableTabBar):
@@ -204,8 +204,8 @@ class OverlayManager:
         Audits and heals the active_overlays list by removing invalid entries
         and destroying orphaned overlay widgets found in the application.
         """
-        from .dock_panel import DockPanel
-        from .dock_container import DockContainer
+        from ..widgets.dock_panel import DockPanel
+        from ..widgets.dock_container import DockContainer
         
         items_to_remove = []
         

@@ -3,8 +3,8 @@ from PySide6.QtWidgets import QSplitter
 from PySide6.QtCore import QRect, Qt
 
 from .dock_model import LayoutModel, AnyNode, SplitterNode, TabGroupNode, WidgetNode
-from .dock_container import DockContainer
-from .floating_dock_root import FloatingDockRoot
+from ..widgets.dock_container import DockContainer
+from ..widgets.floating_dock_root import FloatingDockRoot
 
 
 class LayoutSerializer:

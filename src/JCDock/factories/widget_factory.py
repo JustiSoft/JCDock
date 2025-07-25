@@ -1,10 +1,10 @@
 from PySide6.QtCore import QPoint, QRect, QSize
 from PySide6.QtWidgets import QWidget
 
-from .dock_panel import DockPanel
-from .dock_container import DockContainer
-from .dock_model import WidgetNode, TabGroupNode
-from .widget_registry import get_registry
+from ..widgets.dock_panel import DockPanel
+from ..widgets.dock_container import DockContainer
+from ..model.dock_model import WidgetNode, TabGroupNode
+from ..core.widget_registry import get_registry
 
 
 class WidgetFactory:

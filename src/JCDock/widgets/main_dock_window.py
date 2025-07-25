@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QMainWindow, QApplication
 from .dock_container import DockContainer
 
 if TYPE_CHECKING:
-    from .docking_manager import DockingManager
+    from ..core.docking_manager import DockingManager
 
 class MainDockWindow(QMainWindow):
     """

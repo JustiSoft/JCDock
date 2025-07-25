@@ -2,10 +2,10 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt, QPoint, QTimer, QMimeData, QRect
 from PySide6.QtGui import QDrag, QPixmap, QPainter, QCursor, QPen, QBrush, QColor
 
-from .docking_state import DockingState
-from .dock_model import WidgetNode, TabGroupNode, SplitterNode
-from .dock_panel import DockPanel
-from .dock_container import DockContainer
+from ..core.docking_state import DockingState
+from ..model.dock_model import WidgetNode, TabGroupNode, SplitterNode
+from ..widgets.dock_panel import DockPanel
+from ..widgets.dock_container import DockContainer
 
 
 class DragDropController:
@@ -166,7 +166,7 @@ class DragDropController:
                         root_node = self.manager.model.roots.get(w)
                         is_empty = not (root_node and root_node.children)
                         is_main_dock_area = (w is (self.manager.main_window.dock_area if self.manager.main_window else None))
-                        from .floating_dock_root import FloatingDockRoot
+                        from ..widgets.floating_dock_root import FloatingDockRoot
                         is_floating_root = isinstance(w, FloatingDockRoot)
                         if is_empty and (is_main_dock_area or is_floating_root):
                             w.show_overlay(preset='main_empty')

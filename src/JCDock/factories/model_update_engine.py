@@ -1,9 +1,9 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QSplitter
 
-from .dock_model import SplitterNode, TabGroupNode, WidgetNode
-from .dock_panel import DockPanel
-from .dock_container import DockContainer
+from ..model.dock_model import SplitterNode, TabGroupNode, WidgetNode
+from ..widgets.dock_panel import DockPanel
+from ..widgets.dock_container import DockContainer
 
 
 class ModelUpdateEngine:
