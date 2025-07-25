@@ -2810,6 +2810,12 @@ class DockingManager(QObject):
         Centralized event filter that intercepts all application events.
         Routes mouse events through the HitTestCache system for efficient handling.
         """
+        # Type safety check - ensure we received a proper QEvent object
+        if not hasattr(event, 'type'):
+            if self.debug_mode:
+                print(f"DockingManager.eventFilter: Invalid event object type: {type(event)} from {type(obj)}")
+            return False
+        
         # Ignore events during layout rendering to prevent phantom overlays
         if self.is_rendering():
             return False
