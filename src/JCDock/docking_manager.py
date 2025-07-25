@@ -15,6 +15,10 @@ from .hit_test_cache import HitTestCache
 from .layout_serializer import LayoutSerializer
 from .drag_drop_controller import DragDropController
 from .layout_renderer import LayoutRenderer
+from .widget_factory import WidgetFactory
+from .window_manager import WindowManager
+from .overlay_manager import OverlayManager
+from .model_update_engine import ModelUpdateEngine
 from .widget_registry import get_registry
 
 class DockingSignals(QObject):
@@ -52,6 +56,10 @@ class DockingManager(QObject):
         self.layout_serializer = LayoutSerializer(self)
         self.drag_drop_controller = DragDropController(self)
         self.layout_renderer = LayoutRenderer(self)
+        self.widget_factory = WidgetFactory(self)
+        self.window_manager = WindowManager(self)
+        self.overlay_manager = OverlayManager(self)
+        self.model_update_engine = ModelUpdateEngine(self)
         
         if self.debug_mode:
             self.signals.layout_changed.connect(self._debug_report_layout_state)
@@ -162,184 +170,25 @@ class DockingManager(QObject):
 
 
     def _create_panel_from_key(self, key: str) -> DockPanel:
-        """
-        Internal factory method that creates a fully-wrapped DockPanel from a registered key.
-        This is the single, internal authority for creating DockPanels from the registry.
-        
-        Args:
-            key: String key for the registered widget type
-            
-        Returns:
-            Fully prepared DockPanel with the widget instance inside
-            
-        Raises:
-            ValueError: If the key is not registered
-        """
-        registry = get_registry()
-        registration = registry.get_registration(key)
-        
-        if registration is None:
-            raise ValueError(f"Widget key '{key}' is not registered. Use @dockable decorator to register widget types.")
-        
-        widget_instance = registration.widget_class()
-        
-        panel = DockPanel(registration.default_title, parent=None, manager=self)
-        
-        panel.setContent(widget_instance)
-        
-        panel.persistent_id = key
-        
-        return panel
+        """Delegate to WidgetFactory for panel creation."""
+        return self.widget_factory.create_panel_from_key(key)
 
     def create_floating_widget_from_key(self, key: str, position=None, size=None) -> DockContainer:
-        """
-        Create a floating widget from a registered key (By Type path).
-        This is the first public API for the simplified widget creation system.
-        
-        Args:
-            key: String key for the registered widget type
-            position: Optional position for the floating window (defaults to cascaded position)
-            size: Optional size for the floating window (defaults to 400x300)
-            
-        Returns:
-            DockContainer containing the new widget
-            
-        Raises:
-            ValueError: If the key is not registered
-        """
-        panel = self._create_panel_from_key(key)
-        
-        if size is None:
-            size = QSize(400, 300)
-        elif not isinstance(size, QSize):
-            if hasattr(size, '__iter__') and len(size) >= 2:
-                size = QSize(int(size[0]), int(size[1]))
-            else:
-                size = QSize(400, 300)
-            
-        if position is None:
-            count = self.floating_widget_count
-            if self.main_window:
-                main_pos = self.main_window.pos()
-                position = QPoint(main_pos.x() + 150 + (count % 7) * 40,
-                                main_pos.y() + 150 + (count % 7) * 40)
-            else:
-                position = QPoint(150 + (count % 7) * 40, 150 + (count % 7) * 40)
-        elif not isinstance(position, QPoint):
-            if hasattr(position, '__iter__') and len(position) >= 2:
-                position = QPoint(int(position[0]), int(position[1]))
-            else:
-                count = self.floating_widget_count
-                if self.main_window:
-                    main_pos = self.main_window.pos()
-                    position = QPoint(main_pos.x() + 150 + (count % 7) * 40,
-                                    main_pos.y() + 150 + (count % 7) * 40)
-                else:
-                    position = QPoint(150 + (count % 7) * 40, 150 + (count % 7) * 40)
-        
-        title_height = 30
-        adjusted_size = QSize(size.width(), size.height() + title_height)
-        
-        geometry = QRect(position, adjusted_size)
-        
-        container = self.create_floating_window([panel], geometry)
-        
-        self.register_widget(panel)
-        
-        self.floating_widget_count += 1
-        
-        return container
+        """Delegate to WidgetFactory for floating widget creation."""
+        return self.widget_factory.create_floating_widget_from_key(key, position, size)
 
     def add_as_floating_widget(self, widget_instance: QWidget, persistent_key: str, title: str = None, 
                               position=None, size=None) -> DockContainer:
-        """
-        Make an existing widget instance dockable as a floating window (By Instance path).
-        This is the second public API for the simplified widget creation system.
-        
-        Args:
-            widget_instance: The existing widget object to make dockable
-            persistent_key: Key that must exist in the registry for layout persistence
-            title: Optional title for the widget (uses registry default if not provided)
-            position: Optional position for the floating window (defaults to cascaded position)  
-            size: Optional size for the floating window (defaults to 400x300)
-            
-        Returns:
-            DockContainer containing the dockable widget
-            
-        Raises:
-            ValueError: If the persistent_key is not registered
-        """
-        registry = get_registry()
-        if not registry.is_registered(persistent_key):
-            raise ValueError(f"Persistent key '{persistent_key}' is not registered. "
-                           f"The system must know how to recreate this widget type for layout loading. "
-                           f"Use @dockable decorator to register the widget type first.")
-        
-        registration = registry.get_registration(persistent_key)
-        if title is None:
-            title = registration.default_title
-        
-        panel = DockPanel(title, parent=None, manager=self)
-        
-        panel.setContent(widget_instance)
-        
-        panel.persistent_id = persistent_key
-        
-        if size is None:
-            size = QSize(400, 300)
-        elif not isinstance(size, QSize):
-            if hasattr(size, '__iter__') and len(size) >= 2:
-                size = QSize(int(size[0]), int(size[1]))
-            else:
-                size = QSize(400, 300)
-            
-        if position is None:
-            count = self.floating_widget_count
-            if self.main_window:
-                main_pos = self.main_window.pos()
-                position = QPoint(main_pos.x() + 150 + (count % 7) * 40,
-                                main_pos.y() + 150 + (count % 7) * 40)
-            else:
-                position = QPoint(150 + (count % 7) * 40, 150 + (count % 7) * 40)
-        elif not isinstance(position, QPoint):
-            if hasattr(position, '__iter__') and len(position) >= 2:
-                position = QPoint(int(position[0]), int(position[1]))
-            else:
-                count = self.floating_widget_count
-                if self.main_window:
-                    main_pos = self.main_window.pos()
-                    position = QPoint(main_pos.x() + 150 + (count % 7) * 40,
-                                    main_pos.y() + 150 + (count % 7) * 40)
-                else:
-                    position = QPoint(150 + (count % 7) * 40, 150 + (count % 7) * 40)
-        
-        title_height = 30
-        adjusted_size = QSize(size.width(), size.height() + title_height)
-        
-        geometry = QRect(position, adjusted_size)
-        
-        container = self.create_floating_window([panel], geometry)
-        
-        self.register_widget(panel)
-        
-        self.floating_widget_count += 1
-        
-        return container
+        """Delegate to WidgetFactory for floating widget creation from instance."""
+        return self.widget_factory.add_as_floating_widget(widget_instance, persistent_key, title, position, size)
 
     def bring_to_front(self, widget):
-        """Brings a window to the top of our manual stack."""
-
-        self.window_stack = [w for w in self.window_stack if w is not widget]
-        self.window_stack.append(widget)
+        """Delegate to WindowManager for window stacking."""
+        return self.window_manager.bring_to_front(widget)
 
     def sync_window_activation(self, activated_widget):
-        """
-        Synchronizes window_stack when a window is activated through Qt's native system.
-        This ensures Z-order tracking stays consistent with actual window stacking.
-        """
-        if activated_widget in self.window_stack:
-            self.bring_to_front(activated_widget)
-            self.hit_test_cache.invalidate()
+        """Delegate to WindowManager for window activation synchronization."""
+        return self.window_manager.sync_window_activation(activated_widget)
 
     def move_widget_to_container(self, widget_to_move: DockPanel, target_container: DockContainer) -> bool:
         """
@@ -591,178 +440,209 @@ class DockingManager(QObject):
         target_widget, location = dock_target_info
         
         if isinstance(target_widget, DockContainer):
-            destination_container = target_widget
-            destination_root_node = self.model.roots.get(destination_container)
-            if not destination_root_node:
-                print(f"ERROR: No root node found for destination container {destination_container}")
+            destination_container = self._handle_container_target_docking(target_widget, source_root_node, location)
+        else:
+            destination_container = self._handle_widget_target_docking(target_widget, source_root_node, location, source_container)
+            if not destination_container:
                 return
-                
-            if location == 'center':
-                if isinstance(destination_root_node, TabGroupNode):
-                    all_source_widgets = self.model.get_all_widgets_from_node(source_root_node)
-                    destination_root_node.children.extend(all_source_widgets)
-                else:
-                    destination_tab_group = TabGroupNode()
-                    if isinstance(destination_root_node, WidgetNode):
-                        destination_tab_group.children.append(destination_root_node)
-                    else:
-                        dest_widgets = self.model.get_all_widgets_from_node(destination_root_node)
-                        destination_tab_group.children.extend(dest_widgets)
-                        
-                    source_widgets = self.model.get_all_widgets_from_node(source_root_node)
-                    destination_tab_group.children.extend(source_widgets)
-                    self._update_container_root(destination_container, destination_tab_group)
+        
+        self._complete_regular_docking(source_container, source_root_node, destination_container)
+
+    def _handle_container_target_docking(self, destination_container, source_root_node, location):
+        destination_root_node = self.model.roots.get(destination_container)
+        if not destination_root_node:
+            print(f"ERROR: No root node found for destination container {destination_container}")
+            return None
+            
+        if location == 'center':
+            self._perform_center_docking_to_container(destination_container, destination_root_node, source_root_node)
+        else:
+            self._perform_directional_docking_to_container(destination_container, destination_root_node, source_root_node, location)
+        
+        return destination_container
+
+    def _perform_center_docking_to_container(self, destination_container, destination_root_node, source_root_node):
+        if isinstance(destination_root_node, TabGroupNode):
+            all_source_widgets = self.model.get_all_widgets_from_node(source_root_node)
+            destination_root_node.children.extend(all_source_widgets)
+        else:
+            destination_tab_group = TabGroupNode()
+            if isinstance(destination_root_node, WidgetNode):
+                destination_tab_group.children.append(destination_root_node)
             else:
                 dest_widgets = self.model.get_all_widgets_from_node(destination_root_node)
-                if self._is_persistent_root(destination_container) and not dest_widgets:
-                    if isinstance(source_root_node, SplitterNode):
-                        self._update_container_root(destination_container, source_root_node)
-                    else:
-                        source_widgets = self.model.get_all_widgets_from_node(source_root_node)
-                        new_tab_group = TabGroupNode()
-                        new_tab_group.children.extend(source_widgets)
-                        self._update_container_root(destination_container, new_tab_group)
-                else:
-                    if self._is_persistent_root(destination_container):
-                        orientation = Qt.Orientation.Vertical if location in ["top", "bottom"] else Qt.Orientation.Horizontal
-                        new_splitter = SplitterNode(orientation=orientation)
-                        
-                        if isinstance(destination_root_node, WidgetNode):
-                            dest_tab_group = TabGroupNode()
-                            dest_tab_group.children.append(destination_root_node)
-                        elif isinstance(destination_root_node, TabGroupNode):
-                            dest_tab_group = destination_root_node
-                        else:
-                            dest_tab_group = destination_root_node
-                        
-                        if isinstance(source_root_node, SplitterNode):
-                            source_node = source_root_node
-                        else:
-                            source_widgets = self.model.get_all_widgets_from_node(source_root_node)
-                            source_node = TabGroupNode()
-                            source_node.children.extend(source_widgets)
-                        
-                        if location in ["top", "left"]:
-                            new_splitter.children = [source_node, dest_tab_group]
-                        else:
-                            new_splitter.children = [dest_tab_group, source_node]
-                            
-                        self._update_container_root(destination_container, new_splitter)
-                    else:
-                        orientation = Qt.Orientation.Vertical if location in ["top", "bottom"] else Qt.Orientation.Horizontal
-                        new_splitter = SplitterNode(orientation=orientation)
-                        
-                        if location in ["top", "left"]:
-                            new_splitter.children = [source_root_node, destination_root_node]
-                        else:
-                            new_splitter.children = [destination_root_node, source_root_node]
-                            
-                        self._update_container_root(destination_container, new_splitter)
+                destination_tab_group.children.extend(dest_widgets)
                 
-        else:
-            destination_container = target_widget.parent_container
-            if not destination_container:
-                return self._dock_to_floating_widget(source_container, target_widget, location)
-            
-            destination_root_node = self.model.roots.get(destination_container)
-            if destination_root_node:
-                all_widgets_in_dest = self.model.get_all_widgets_from_node(destination_root_node)
-                
-                if (len(all_widgets_in_dest) == 1 and 
-                    all_widgets_in_dest[0].widget == target_widget and 
-                    not self._is_persistent_root(destination_container)):
-                    return self._dock_to_floating_widget_with_nodes(source_container, source_root_node, target_widget, location)
-            
-                
-            container_root_node = self.model.roots.get(destination_container)
-            if not container_root_node:
-                print(f"ERROR: No root node found for destination container {destination_container}")
-                return
-                
-            target_widget_node, parent_node = self.model.find_widget_node_with_parent(container_root_node, target_widget)
-            if not target_widget_node:
-                print(f"ERROR: Could not find widget node for {target_widget}")
-                return
-                
-            ancestry_path = self.model._find_node_with_ancestry(container_root_node, target_widget_node)
-            if len(ancestry_path) < 2:
-                print(f"ERROR: Could not find proper ancestry for target widget")
-                return
-                
-                
-            if location == 'center':
-                source_widgets = self.model.get_all_widgets_from_node(source_root_node)
-                if isinstance(parent_node, TabGroupNode):
-                    parent_node.children.extend(source_widgets)
-                else:
-                    new_tab_group = TabGroupNode()
-                    new_tab_group.children.append(target_widget_node)
-                    new_tab_group.children.extend(source_widgets)
-                    
-                    if parent_node:
-                        self.model.replace_node_in_tree(container_root_node, target_widget_node, new_tab_group)
-                    else:
-                        self._update_container_root(destination_container, new_tab_group)
+            source_widgets = self.model.get_all_widgets_from_node(source_root_node)
+            destination_tab_group.children.extend(source_widgets)
+            self._update_container_root(destination_container, destination_tab_group)
+
+    def _perform_directional_docking_to_container(self, destination_container, destination_root_node, source_root_node, location):
+        dest_widgets = self.model.get_all_widgets_from_node(destination_root_node)
+        if self._is_persistent_root(destination_container) and not dest_widgets:
+            if isinstance(source_root_node, SplitterNode):
+                self._update_container_root(destination_container, source_root_node)
             else:
-                orientation = Qt.Orientation.Vertical if location in ["top", "bottom"] else Qt.Orientation.Horizontal
-                new_splitter = SplitterNode(orientation=orientation)
-                
-                if isinstance(source_root_node, SplitterNode):
-                    source_node = source_root_node
-                else:
-                    source_widgets = self.model.get_all_widgets_from_node(source_root_node)
-                    if len(source_widgets) == 1:
-                        source_node = TabGroupNode()
-                        source_node.children.append(source_widgets[0])
-                    else:
-                        source_node = TabGroupNode()
-                        source_node.children.extend(source_widgets)
-                
-                if len(ancestry_path) >= 3:
-                    grandparent_node = ancestry_path[-3]
-                    parent_tab_group = ancestry_path[-2]
-                    
-                    
-                    if isinstance(grandparent_node, SplitterNode) and isinstance(parent_tab_group, TabGroupNode):
-                        try:
-                            parent_index = grandparent_node.children.index(parent_tab_group)
-                            
-                            
-                            if location in ["top", "left"]:
-                                new_splitter.children = [source_node, parent_tab_group]
-                            else:
-                                new_splitter.children = [parent_tab_group, source_node]
-                               
-                            grandparent_node.children[parent_index] = new_splitter              
-                            
-                        except ValueError:
-                            print(f"ERROR: Could not find parent TabGroupNode in grandparent's children")
-                            return
-                    else:
-                        print(f"ERROR: Unexpected ancestry structure for directional docking")
-                        return
-                        
-                elif len(ancestry_path) == 2:
-                    root_node = ancestry_path[0]
-                    
-                    if isinstance(root_node, TabGroupNode):
-                        target_tab_group = root_node
-                    else:
-                        target_tab_group = TabGroupNode()
-                        target_tab_group.children.append(target_widget_node)
-                    
-                    if location in ["top", "left"]:
-                        new_splitter.children = [source_node, target_tab_group]
-                    else:
-                        new_splitter.children = [target_tab_group, source_node]
-                    
-                    self._update_container_root(destination_container, new_splitter)
-                else:
-                    print(f"ERROR: Invalid ancestry path length for directional docking")
-                    return
-                    
+                source_widgets = self.model.get_all_widgets_from_node(source_root_node)
+                new_tab_group = TabGroupNode()
+                new_tab_group.children.extend(source_widgets)
+                self._update_container_root(destination_container, new_tab_group)
+        else:
+            orientation = Qt.Orientation.Vertical if location in ["top", "bottom"] else Qt.Orientation.Horizontal
+            new_splitter = SplitterNode(orientation=orientation)
             
+            if self._is_persistent_root(destination_container):
+                dest_tab_group = self._prepare_destination_node_for_splitting(destination_root_node)
+                source_node = self._prepare_source_node_for_splitting(source_root_node)
+                
+                if location in ["top", "left"]:
+                    new_splitter.children = [source_node, dest_tab_group]
+                else:
+                    new_splitter.children = [dest_tab_group, source_node]
+                    
+                self._update_container_root(destination_container, new_splitter)
+            else:
+                if location in ["top", "left"]:
+                    new_splitter.children = [source_root_node, destination_root_node]
+                else:
+                    new_splitter.children = [destination_root_node, source_root_node]
+                    
+                self._update_container_root(destination_container, new_splitter)
+
+    def _prepare_destination_node_for_splitting(self, destination_root_node):
+        if isinstance(destination_root_node, WidgetNode):
+            dest_tab_group = TabGroupNode()
+            dest_tab_group.children.append(destination_root_node)
+            return dest_tab_group
+        elif isinstance(destination_root_node, TabGroupNode):
+            return destination_root_node
+        else:
+            return destination_root_node
+
+    def _prepare_source_node_for_splitting(self, source_root_node):
+        if isinstance(source_root_node, SplitterNode):
+            return source_root_node
+        else:
+            source_widgets = self.model.get_all_widgets_from_node(source_root_node)
+            source_node = TabGroupNode()
+            source_node.children.extend(source_widgets)
+            return source_node
+
+    def _handle_widget_target_docking(self, target_widget, source_root_node, location, source_container):
+        destination_container = target_widget.parent_container
+        if not destination_container:
+            self._dock_to_floating_widget(source_container, target_widget, location)
+            return None
+        
+        destination_root_node = self.model.roots.get(destination_container)
+        if destination_root_node:
+            all_widgets_in_dest = self.model.get_all_widgets_from_node(destination_root_node)
             
+            if (len(all_widgets_in_dest) == 1 and 
+                all_widgets_in_dest[0].widget == target_widget and 
+                not self._is_persistent_root(destination_container)):
+                self._dock_to_floating_widget_with_nodes(source_container, source_root_node, target_widget, location)
+                return None
+        
+        container_root_node = self.model.roots.get(destination_container)
+        if not container_root_node:
+            print(f"ERROR: No root node found for destination container {destination_container}")
+            return None
+            
+        target_widget_node, parent_node = self.model.find_widget_node_with_parent(container_root_node, target_widget)
+        if not target_widget_node:
+            print(f"ERROR: Could not find widget node for {target_widget}")
+            return None
+            
+        ancestry_path = self.model._find_node_with_ancestry(container_root_node, target_widget_node)
+        if len(ancestry_path) < 2:
+            print(f"ERROR: Could not find proper ancestry for target widget")
+            return None
+        
+        if location == 'center':
+            self._perform_center_docking_to_widget(parent_node, target_widget_node, source_root_node, container_root_node, destination_container)
+        else:
+            self._perform_directional_docking_to_widget(ancestry_path, target_widget_node, source_root_node, location, destination_container)
+        
+        return destination_container
+
+    def _perform_center_docking_to_widget(self, parent_node, target_widget_node, source_root_node, container_root_node, destination_container):
+        source_widgets = self.model.get_all_widgets_from_node(source_root_node)
+        if isinstance(parent_node, TabGroupNode):
+            parent_node.children.extend(source_widgets)
+        else:
+            new_tab_group = TabGroupNode()
+            new_tab_group.children.append(target_widget_node)
+            new_tab_group.children.extend(source_widgets)
+            
+            if parent_node:
+                self.model.replace_node_in_tree(container_root_node, target_widget_node, new_tab_group)
+            else:
+                self._update_container_root(destination_container, new_tab_group)
+
+    def _perform_directional_docking_to_widget(self, ancestry_path, target_widget_node, source_root_node, location, destination_container):
+        orientation = Qt.Orientation.Vertical if location in ["top", "bottom"] else Qt.Orientation.Horizontal
+        new_splitter = SplitterNode(orientation=orientation)
+        
+        source_node = self._prepare_source_node_for_widget_docking(source_root_node)
+        
+        if len(ancestry_path) >= 3:
+            self._handle_complex_ancestry_docking(ancestry_path, new_splitter, source_node, location)
+        elif len(ancestry_path) == 2:
+            self._handle_simple_ancestry_docking(ancestry_path, target_widget_node, new_splitter, source_node, location, destination_container)
+        else:
+            print(f"ERROR: Invalid ancestry path length for directional docking")
+
+    def _prepare_source_node_for_widget_docking(self, source_root_node):
+        if isinstance(source_root_node, SplitterNode):
+            return source_root_node
+        else:
+            source_widgets = self.model.get_all_widgets_from_node(source_root_node)
+            if len(source_widgets) == 1:
+                source_node = TabGroupNode()
+                source_node.children.append(source_widgets[0])
+            else:
+                source_node = TabGroupNode()
+                source_node.children.extend(source_widgets)
+            return source_node
+
+    def _handle_complex_ancestry_docking(self, ancestry_path, new_splitter, source_node, location):
+        grandparent_node = ancestry_path[-3]
+        parent_tab_group = ancestry_path[-2]
+        
+        if isinstance(grandparent_node, SplitterNode) and isinstance(parent_tab_group, TabGroupNode):
+            try:
+                parent_index = grandparent_node.children.index(parent_tab_group)
+                
+                if location in ["top", "left"]:
+                    new_splitter.children = [source_node, parent_tab_group]
+                else:
+                    new_splitter.children = [parent_tab_group, source_node]
+                   
+                grandparent_node.children[parent_index] = new_splitter              
+                
+            except ValueError:
+                print(f"ERROR: Could not find parent TabGroupNode in grandparent's children")
+        else:
+            print(f"ERROR: Unexpected ancestry structure for directional docking")
+
+    def _handle_simple_ancestry_docking(self, ancestry_path, target_widget_node, new_splitter, source_node, location, destination_container):
+        root_node = ancestry_path[0]
+        
+        if isinstance(root_node, TabGroupNode):
+            target_tab_group = root_node
+        else:
+            target_tab_group = TabGroupNode()
+            target_tab_group.children.append(target_widget_node)
+        
+        if location in ["top", "left"]:
+            new_splitter.children = [source_node, target_tab_group]
+        else:
+            new_splitter.children = [target_tab_group, source_node]
+        
+        self._update_container_root(destination_container, new_splitter)
+
+    def _complete_regular_docking(self, source_container, source_root_node, destination_container):
         source_widgets = self.model.get_all_widgets_from_node(source_root_node)
         widget_to_activate = source_widgets[0].widget if source_widgets else None
         
@@ -820,133 +700,20 @@ class DockingManager(QObject):
 
         return release_handler
 
-    def _validate_window_geometry(self, geometry: QRect) -> QRect:
-        """
-        Validates and corrects window geometry to prevent rendering errors.
-        """
-        min_width = 150
-        min_height = 100
-        max_width = 3000
-        max_height = 2000
-        
-        width = max(min_width, min(geometry.width(), max_width))
-        height = max(min_height, min(geometry.height(), max_height))
-        
-        x = max(0, geometry.x())
-        y = max(0, geometry.y())
-        
-        from PySide6.QtWidgets import QApplication
-        screen = QApplication.primaryScreen()
-        if screen:
-            screen_geom = screen.availableGeometry()
-            
-            if x + width > screen_geom.right():
-                x = max(0, screen_geom.right() - width)
-            if y + height > screen_geom.bottom():
-                y = max(0, screen_geom.bottom() - height)
-        
-        return QRect(x, y, width, height)
 
     def _validate_window_geometry(self, geometry: QRect) -> QRect:
-        """
-        Validates and corrects a window's geometry to ensure it's visible on a screen.
-        
-        :param geometry: The proposed window geometry
-        :return: A corrected QRect that ensures the window is visible on a screen
-        """
-        screen = QApplication.screenAt(geometry.topLeft())
-        if not screen:
-            screen = QApplication.primaryScreen()
-        
-        available_geometry = screen.availableGeometry()
-        validated_geometry = QRect(geometry)
-        
-        min_width = max(200, validated_geometry.width())
-        min_height = max(150, validated_geometry.height())
-        validated_geometry.setWidth(min_width)
-        validated_geometry.setHeight(min_height)
-        
-        max_width = min(validated_geometry.width(), available_geometry.width())
-        max_height = min(validated_geometry.height(), available_geometry.height())
-        validated_geometry.setWidth(max_width)
-        validated_geometry.setHeight(max_height)
-        
-        if validated_geometry.right() > available_geometry.right():
-            validated_geometry.moveRight(available_geometry.right())
-        if validated_geometry.bottom() > available_geometry.bottom():
-            validated_geometry.moveBottom(available_geometry.bottom())
-        if validated_geometry.left() < available_geometry.left():
-            validated_geometry.moveLeft(available_geometry.left())
-        if validated_geometry.top() < available_geometry.top():
-            validated_geometry.moveTop(available_geometry.top())
-        
-        return validated_geometry
+        """Delegate to WindowManager for geometry validation."""
+        return self.window_manager.validate_window_geometry(geometry)
 
     def create_simple_floating_widget(self, content_widget: QWidget, title: str = "Widget", 
                                      x: int = 300, y: int = 300, width: int = 400, height: int = 300) -> tuple[DockContainer, DockPanel]:
-        """
-        Create a simple floating widget without requiring registry registration or QRect.
-        This is the simplest possible API for basic use cases.
-        
-        Args:
-            content_widget: The widget to make dockable
-            title: Title for the widget window
-            x, y: Position of the floating window  
-            width, height: Size of the floating window
-            
-        Returns:
-            Tuple of (DockContainer, DockPanel) - container and the dockable panel for further operations
-        """
-        panel = DockPanel(title, manager=self, persistent_id=f"simple_{id(content_widget)}")
-        panel.setContent(content_widget)
-        
-        self.register_widget(panel)
-        
-        geometry = QRect(x, y, width, height)
-        container = self.create_floating_window([panel], geometry)
-        
-        return container, panel
+        """Delegate to WidgetFactory for simple floating widget creation."""
+        return self.widget_factory.create_simple_floating_widget(content_widget, title, x, y, width, height)
 
     def create_floating_window(self, widgets: list[DockPanel], geometry: QRect, was_maximized=False,
                                normal_geometry=None):
-        if not widgets: return None
-        
-        validated_geometry = self._validate_window_geometry(geometry)
-        
-        new_container = DockContainer(manager=self, parent=None)
-        new_container.setGeometry(validated_geometry)
-        
-        new_container.enable_shadow()
-
-        if was_maximized:
-            new_container._is_maximized = True
-            if normal_geometry:
-                validated_normal_geometry = self._validate_window_geometry(normal_geometry)
-                new_container._normal_geometry = validated_normal_geometry
-            new_container.main_layout.setContentsMargins(0, 0, 0, 0)
-            new_container.title_bar.maximize_button.setIcon(
-                new_container.title_bar._create_control_icon("restore")
-            )
-
-        widget_nodes = [WidgetNode(w) for w in widgets]
-        tab_group_node = TabGroupNode(children=widget_nodes)
-        self.model.roots[new_container] = tab_group_node
-        
-        for widget in widgets:
-            widget.parent_container = new_container
-            
-        self.add_widget_handlers(new_container)
-        self.containers.append(new_container)
-        self.bring_to_front(new_container)
-        self._render_layout(new_container)
-        
-        if not was_maximized:
-            new_container._setup_shadow_effect()
-            
-        new_container.show()
-        new_container.raise_()
-        new_container.activateWindow()
-        return new_container
+        """Delegate to WidgetFactory for floating window creation."""
+        return self.widget_factory.create_floating_window(widgets, geometry, was_maximized, normal_geometry)
 
 
     def undock_widget(self, widget_to_undock: DockPanel, global_pos: QPoint = None) -> DockContainer | None:
@@ -1072,9 +839,26 @@ class DockingManager(QObject):
         self.signals.layout_changed.emit()
 
     def dock_widgets(self, source_widget, target_entity, dock_location):
+        source_node_to_move = self._prepare_source_for_docking(source_widget)
+        if not source_node_to_move:
+            return
+
+        if dock_location == "insert":
+            return self._handle_insert_docking(source_node_to_move, target_entity, source_widget)
+
+        container_to_modify, target_node, target_parent = self._resolve_dock_target(target_entity, source_widget, dock_location)
+        if not container_to_modify:
+            return
+
+        if target_node and not target_node.children:
+            return self._handle_empty_container_docking(container_to_modify, source_node_to_move, source_widget)
+
+        self._perform_docking_operation(container_to_modify, source_node_to_move, target_node, target_parent, dock_location)
+        self._finalize_docking(container_to_modify, source_widget)
+
+    def _prepare_source_for_docking(self, source_widget):
         self.destroy_all_overlays()
         QApplication.processEvents()
-        
         
         source_node_to_move = self.model.roots.get(source_widget)
         
@@ -1099,52 +883,43 @@ class DockingManager(QObject):
                         self._simplify_model(root_window, currently_active_widget)
                 else:
                     print(f"ERROR: Could not find widget node for '{source_widget.windowTitle()}' in its container.")
-                    return
+                    return None
             else:
                 print(f"ERROR: Source '{source_widget.windowTitle()}' not found in model.")
-                return
+                return None
 
         self.model.unregister_widget(source_widget)
         source_widget.hide()
+        return source_node_to_move
 
-        if dock_location == "insert":
-            from .tearable_tab_widget import TearableTabWidget
-            insertion_index = target_entity
-            target_tab_widget = self.last_dock_target[0]
+    def _handle_insert_docking(self, source_node_to_move, target_entity, source_widget):
+        from .tearable_tab_widget import TearableTabWidget
+        insertion_index = target_entity
+        target_tab_widget = self.last_dock_target[0]
 
-            if not isinstance(target_tab_widget, TearableTabWidget): return
-            if not target_tab_widget.count(): return
-
-            first_content_widget = target_tab_widget.widget(0)
-            owner_widget = next((w for w in self.widgets if w.content_container is first_content_widget), None)
-            if not owner_widget: return
-
-            target_group, _, root_window = self.model.find_host_info(owner_widget)
-            if not target_group: return
-
-            all_source_widgets = self.model.get_all_widgets_from_node(source_node_to_move)
-
-            for i, widget_node in enumerate(all_source_widgets):
-                target_group.children.insert(insertion_index + i, widget_node)
-
-            self._render_layout(root_window, source_widget)
-            root_window.update()
-            root_window.repaint()
-            
-            QApplication.processEvents()
-            
-            self.signals.widget_docked.emit(source_widget, root_window)
-            self.destroy_all_overlays()
-            
-            root_window.update()
-            root_window.repaint()
-            QApplication.processEvents()
-            
-            self.hit_test_cache.invalidate()
-            
-            QTimer.singleShot(10, lambda: self._cleanup_container_overlays(root_window))
+        if not isinstance(target_tab_widget, TearableTabWidget): 
+            return
+        if not target_tab_widget.count(): 
             return
 
+        first_content_widget = target_tab_widget.widget(0)
+        owner_widget = next((w for w in self.widgets if w.content_container is first_content_widget), None)
+        if not owner_widget: 
+            return
+
+        target_group, _, root_window = self.model.find_host_info(owner_widget)
+        if not target_group: 
+            return
+
+        all_source_widgets = self.model.get_all_widgets_from_node(source_node_to_move)
+
+        for i, widget_node in enumerate(all_source_widgets):
+            target_group.children.insert(insertion_index + i, widget_node)
+
+        self._render_layout(root_window, source_widget)
+        self._complete_docking_operation(root_window, source_widget)
+
+    def _resolve_dock_target(self, target_entity, source_widget, dock_location):
         container_to_modify = None
         target_node = None
         target_parent = None
@@ -1153,39 +928,26 @@ class DockingManager(QObject):
             target_node, target_parent, container_to_modify = self.model.find_host_info(target_entity)
             
             if isinstance(container_to_modify, DockPanel):
-                return self._dock_to_floating_widget(source_widget, container_to_modify, dock_location)
+                self._dock_to_floating_widget(source_widget, container_to_modify, dock_location)
+                return None, None, None
 
         elif isinstance(target_entity, DockContainer):
             container_to_modify = target_entity
             target_node = self.model.roots.get(container_to_modify)
-
-            if target_node and not target_node.children:
-                self._update_container_root(container_to_modify, source_node_to_move)
-                self._render_layout(container_to_modify, source_widget)
-                container_to_modify.update()
-                container_to_modify.repaint()
-                
-                QApplication.processEvents()
-                
-                self.signals.widget_docked.emit(source_widget, container_to_modify)
-                self.destroy_all_overlays()
-                
-                container_to_modify.update()
-                container_to_modify.repaint()
-                QApplication.processEvents()
-                
-                self.hit_test_cache.invalidate()
-                
-                QTimer.singleShot(10, lambda: self._cleanup_container_overlays(container_to_modify))
-                return
-
             target_parent = None
 
         if not container_to_modify:
             print(f"ERROR: Could not resolve a container to dock into.")
-            return
+            return None, None, None
 
-        
+        return container_to_modify, target_node, target_parent
+
+    def _handle_empty_container_docking(self, container_to_modify, source_node_to_move, source_widget):
+        self._update_container_root(container_to_modify, source_node_to_move)
+        self._render_layout(container_to_modify, source_widget)
+        self._complete_docking_operation(container_to_modify, source_widget)
+
+    def _perform_docking_operation(self, container_to_modify, source_node_to_move, target_node, target_parent, dock_location):
         self._save_splitter_sizes_to_model(container_to_modify.splitter, self.model.roots[container_to_modify])
 
         if dock_location == 'center' and isinstance(target_node, TabGroupNode):
@@ -1193,8 +955,6 @@ class DockingManager(QObject):
             target_node.children.extend(all_source_widgets)
         else:
             actual_target_node = target_node
-            if isinstance(target_entity, DockPanel) and isinstance(target_node, TabGroupNode) and len(target_node.children) > 1:
-                actual_target_node = target_node
             
             orientation = Qt.Orientation.Vertical if dock_location in ["top", "bottom"] else Qt.Orientation.Horizontal
             new_splitter = SplitterNode(orientation=orientation)
@@ -1213,66 +973,32 @@ class DockingManager(QObject):
                     print("ERROR: Consistency error during model update.")
                     self._update_container_root(container_to_modify, new_splitter)
 
+    def _finalize_docking(self, container_to_modify, source_widget):
         if hasattr(container_to_modify, 'overlay') and container_to_modify.overlay:
             container_to_modify.overlay.destroy_overlay()
             container_to_modify.overlay = None
             
         self._render_layout(container_to_modify, source_widget)
+        self._complete_docking_operation(container_to_modify, source_widget)
+
+    def _complete_docking_operation(self, container, source_widget):
+        container.update()
+        container.repaint()
+        QApplication.processEvents()
         
-        container_to_modify.update()
-        container_to_modify.repaint()
-        
-        final_root = self.model.roots.get(container_to_modify)
-        
-        if final_root:
-            all_widgets_in_container = self.model.get_all_widgets_from_node(final_root)
-            for i, widget_node in enumerate(all_widgets_in_container):
-                widget_title = widget_node.widget.windowTitle() if widget_node.widget else "Unknown"
-                widget_visible = widget_node.widget.isVisible() if widget_node.widget else "Unknown"
-        
-        
-        self.signals.widget_docked.emit(source_widget, container_to_modify)
+        self.signals.widget_docked.emit(source_widget, container)
         self.destroy_all_overlays()
         
-        container_to_modify.update()
-        container_to_modify.repaint()
+        container.update()
+        container.repaint()
         QApplication.processEvents()
         
         self.hit_test_cache.invalidate()
-        
-        QTimer.singleShot(10, lambda: self._cleanup_container_overlays(container_to_modify))
+        QTimer.singleShot(10, lambda: self._cleanup_container_overlays(container))
 
     def _cleanup_container_overlays(self, container):
-        """
-        Targeted cleanup of overlays specifically on a container and its children.
-        """
-        if not container or self.is_deleted(container):
-            return
-            
-        if hasattr(container, 'overlay') and container.overlay:
-            container.overlay.destroy_overlay()
-            container.overlay = None
-            
-        for child in container.findChildren(QWidget):
-            if hasattr(child, 'overlay') and child.overlay:
-                child.overlay.destroy_overlay()
-                child.overlay = None
-                
-        def force_repaint_recursive(widget):
-            if widget and not self.is_deleted(widget):
-                widget.update()
-                widget.repaint()
-                for child in widget.findChildren(QWidget):
-                    if not self.is_deleted(child):
-                        try:
-                            child.update()
-                            child.repaint()
-                        except TypeError:
-                            pass
-        
-        force_repaint_recursive(container)
-        
-        QApplication.processEvents()
+        """Delegate to OverlayManager for container overlay cleanup."""
+        return self.overlay_manager.cleanup_container_overlays(container)
 
     def _dock_to_floating_widget(self, source_widget, target_widget, dock_location):
         """
@@ -1493,26 +1219,8 @@ class DockingManager(QObject):
         QTimer.singleShot(10, lambda: self._cleanup_container_overlays(new_container))
 
     def _update_model_after_close(self, widget_to_close: DockPanel):
-        host_tab_group, parent_node, root_window = self.model.find_host_info(widget_to_close)
-
-        self.signals.widget_closed.emit(widget_to_close.persistent_id)
-
-        if widget_to_close in self.model.roots:
-            self.model.unregister_widget(widget_to_close)
-
-        elif host_tab_group and isinstance(root_window, DockContainer):
-            currently_active_widget = self._get_currently_active_widget(root_window)
-            if currently_active_widget == widget_to_close:
-                currently_active_widget = None
-            
-            widget_node_to_remove = next((wn for wn in host_tab_group.children if wn.widget is widget_to_close), None)
-            if widget_node_to_remove:
-                host_tab_group.children.remove(widget_node_to_remove)
-            self._simplify_model(root_window, currently_active_widget)
-            if root_window in self.model.roots:
-                self._render_layout(root_window)
-
-        self.signals.layout_changed.emit()
+        """Delegate to ModelUpdateEngine for model cleanup after widget close."""
+        return self.model_update_engine.update_model_after_close(widget_to_close)
 
     def request_close_widget(self, widget_to_close: DockPanel):
         """
@@ -1592,77 +1300,8 @@ class DockingManager(QObject):
         container_to_close.close()
 
     def _simplify_model(self, root_window: QWidget, widget_to_activate: DockPanel = None):
-        """Delegate to LayoutRenderer for model simplification and re-render layout."""
-        self.layout_renderer.simplify_model(root_window)
-
-        if root_window in self.model.roots:
-            self._render_layout(root_window, widget_to_activate)
-        else:
-            if hasattr(root_window, 'close'):
-                root_window.close()
-
-        is_persistent_root = self._is_persistent_root(root_window)
-
-        try:
-            while True:
-                made_changes = False
-                root_node = self.model.roots.get(root_window)
-                if not root_node: break
-
-                nodes_to_check = [(root_node, None)]
-                while nodes_to_check:
-                    current_node, parent_node = nodes_to_check.pop(0)
-                    if isinstance(current_node, SplitterNode):
-                        original_child_count = len(current_node.children)
-                        current_node.children = [c for c in current_node.children if
-                                                 not (isinstance(c, TabGroupNode) and not c.children)]
-                        if len(current_node.children) != original_child_count:
-                            made_changes = True
-                            break
-                        if len(current_node.children) == 1:
-                            child_to_promote = current_node.children[0]
-                            if parent_node is None:
-                                if not is_persistent_root:
-                                    self.model.roots[root_window] = child_to_promote
-                                    made_changes = True
-                                    break
-                            elif isinstance(parent_node, SplitterNode):
-                                try:
-                                    idx = parent_node.children.index(current_node)
-                                    parent_node.children[idx] = child_to_promote
-                                    made_changes = True
-                                    break
-                                except ValueError:
-                                    print("ERROR: Consistency error during model simplification.")
-                        for child in current_node.children:
-                            nodes_to_check.append((child, current_node))
-
-                if made_changes:
-                    self._render_layout(root_window, widget_to_activate)
-                    continue
-
-                root_node = self.model.roots.get(root_window)
-                if not root_node:
-                    break
-
-                if (isinstance(root_node, (SplitterNode, TabGroupNode)) and not root_node.children):
-                    if not is_persistent_root:
-                        if hasattr(root_window, 'overlay') and root_window.overlay:
-                            root_window.overlay.destroy_overlay()
-                            root_window.overlay = None
-                        self.model.unregister_widget(root_window)
-                        root_window.close()
-                    else:
-                        self.model.roots[root_window] = SplitterNode(orientation=Qt.Orientation.Horizontal)
-                        self._render_layout(root_window, widget_to_activate)
-                    return  
-
-
-                break
-        finally:
-            if not self.is_deleted(root_window):
-                root_window.setUpdatesEnabled(True)
-                root_window.update()
+        """Delegate to ModelUpdateEngine for model simplification."""
+        return self.model_update_engine.simplify_model(root_window, widget_to_activate)
 
     def close_tab_group(self, tab_widget: QTabWidget):
         if not tab_widget: return
@@ -1763,143 +1402,13 @@ class DockingManager(QObject):
             QTimer.singleShot(200, self.force_cleanup_stuck_overlays)
 
     def destroy_all_overlays(self):
-        """
-        Ultimate brute-force cleanup of ALL overlay widgets in the application.
-        This method uses QApplication.allWidgets() to find and destroy every single
-        DockingOverlay instance, regardless of where it came from or whether it's orphaned.
-        """
-        overlays_destroyed = 0
-        
-        from .docking_overlay import DockingOverlay
-        
-        try:
-            all_widgets = QApplication.allWidgets()
-            for widget in all_widgets:
-                if isinstance(widget, DockingOverlay) and not self.is_deleted(widget):
-                    try:
-                        widget.hide()
-                        widget.close()
-                        widget.setParent(None)
-                        widget.deleteLater()
-                        overlays_destroyed += 1
-                    except RuntimeError:
-                        pass
-                        
-        except RuntimeError:
-            pass
-        
-        try:
-            all_widgets = QApplication.allWidgets()
-            for widget in all_widgets:
-                widget_class_name = widget.__class__.__name__
-                if ('DockingOverlay' in widget_class_name or 
-                    'Overlay' in widget_class_name) and not self.is_deleted(widget):
-                    try:
-                        widget.hide()
-                        widget.setParent(None)
-                        widget.deleteLater()
-                        overlays_destroyed += 1
-                    except RuntimeError:
-                        pass
-                        
-        except RuntimeError:
-            pass
-            
-        try:
-            all_widgets = QApplication.allWidgets()
-            for widget in all_widgets:
-                if not self.is_deleted(widget) and (
-                    widget.objectName() == "preview_overlay" or 
-                    (hasattr(widget, 'styleSheet') and widget.styleSheet() and 
-                     ('rgba(0, 0, 255, 128)' in widget.styleSheet() or 
-                      'lightgray' in widget.styleSheet() or  
-                      'lightblue' in widget.styleSheet() or 
-                      'lightgreen' in widget.styleSheet())) or
-                    (widget.parentWidget() is None and 
-                     hasattr(widget, 'styleSheet') and widget.styleSheet() and
-                     'rgba(' in widget.styleSheet())):
-                    try:
-                        widget.hide()
-                        widget.setParent(None)
-                        widget.deleteLater()
-                        overlays_destroyed += 1
-                    except RuntimeError:
-                        pass
-                        
-        except RuntimeError:
-            pass
-        
-        for item in list(self.widgets) + list(self.containers):
-            if not self.is_deleted(item) and hasattr(item, 'overlay'):
-                item.overlay = None
-        
-        self.active_overlays.clear()
-
-        from .tearable_tab_widget import TearableTabBar
-        for container in self.containers:
-            if not self.is_deleted(container):
-                for tab_bar in container.findChildren(TearableTabBar):
-                    try:
-                        tab_bar.set_drop_indicator_index(-1)
-                    except RuntimeError:
-                        pass
+        """Delegate to OverlayManager for comprehensive overlay cleanup."""
+        return self.overlay_manager.destroy_all_overlays()
                         
 
     def force_cleanup_stuck_overlays(self):
-        """
-        Emergency cleanup method to find and destroy any stuck overlay widgets
-        that may have been missed by normal cleanup processes.
-        """
-        stuck_overlays_found = 0
-        
-        try:
-            all_widgets = QApplication.allWidgets()
-            for widget in all_widgets:
-                should_clean = False
-                
-                from .docking_overlay import DockingOverlay
-                if isinstance(widget, DockingOverlay):
-                    should_clean = True
-                
-                elif (hasattr(widget, 'styleSheet') and widget.styleSheet() and 
-                      ('rgba(0, 0, 255, 128)' in widget.styleSheet() or 
-                       'rgba(0,0,255,128)' in widget.styleSheet().replace(' ', ''))):
-                    should_clean = True
-                
-                elif (hasattr(widget, 'text') and 
-                      hasattr(widget, 'styleSheet') and 
-                      widget.styleSheet() and
-                      widget.text() in ['▲', '◀', '▼', '▶', '⧉'] and
-                      ('lightgray' in widget.styleSheet() or 
-                       'lightblue' in widget.styleSheet() or 
-                       'lightgreen' in widget.styleSheet())):
-                    should_clean = True
-                
-                elif (hasattr(widget, 'testAttribute') and 
-                      widget.testAttribute(Qt.WA_TransparentForMouseEvents) and
-                      hasattr(widget, 'styleSheet') and widget.styleSheet() and
-                      'rgba(' in widget.styleSheet()):
-                    should_clean = True
-                
-                if should_clean and not self.is_deleted(widget):
-                    try:
-                        if hasattr(widget, 'preview_overlay') and widget.preview_overlay:
-                            widget.preview_overlay.hide()
-                            widget.preview_overlay.setParent(None)
-                            widget.preview_overlay.deleteLater()
-                        
-                        widget.hide()
-                        widget.setParent(None)
-                        widget.deleteLater()
-                        stuck_overlays_found += 1
-                    except RuntimeError:
-                        pass
-                        
-        except RuntimeError:
-            pass
-            
-        
-        return stuck_overlays_found
+        """Delegate to OverlayManager for emergency overlay cleanup."""
+        return self.overlay_manager.force_cleanup_stuck_overlays()
 
     def _debug_report_layout_state(self):
         """
@@ -1911,21 +1420,8 @@ class DockingManager(QObject):
         self.model.pretty_print(manager=self)
 
     def _save_splitter_sizes_to_model(self, widget, node):
-        """Delegate to LayoutSerializer."""
-        return self.layout_serializer._save_splitter_sizes_to_model(widget, node)
-        """Recursively saves the current sizes of QSplitters into the layout model."""
-        if not isinstance(widget, QSplitter) or not isinstance(node, SplitterNode):
-            return
-
-        node.sizes = widget.sizes()
-
-        if len(node.children) != widget.count():
-            return
-
-        for i in range(widget.count()):
-            child_widget = widget.widget(i)
-            child_node = node.children[i]
-            self._save_splitter_sizes_to_model(child_widget, child_node)
+        """Delegate to ModelUpdateEngine for splitter size persistence."""
+        return self.model_update_engine.save_splitter_sizes_to_model(widget, node)
 
     def is_deleted(self, q_object):
         """Debug helper to check if a Qt object's C++ part is deleted."""
@@ -1956,21 +1452,24 @@ class DockingManager(QObject):
             return False
 
     def create_new_floating_root(self):
-        """
-        Creates, registers, and shows a new floating root window that can
-        act as a secondary main docking area.
-        """
-        new_root_window = FloatingDockRoot(manager=self)
-
-        self.register_dock_area(new_root_window)
-
-        new_root_window.show()
-
-        new_root_window.raise_()
-        new_root_window.activateWindow()
-        self.bring_to_front(new_root_window)
+        """Delegate to WindowManager for floating root creation."""
+        return self.window_manager.create_new_floating_root()
 
     def undock_single_widget_by_tear(self, widget_to_undock: DockPanel, global_mouse_pos: QPoint):
+        host_info = self._prepare_for_undocking(widget_to_undock)
+        if not host_info:
+            return
+        
+        host_tab_group, parent_node, root_window, currently_active_widget = host_info
+        widget_node_to_remove = self._remove_widget_from_model(widget_to_undock, host_tab_group, root_window)
+        
+        if widget_node_to_remove:
+            new_geometry = self._calculate_floating_window_geometry(widget_to_undock, global_mouse_pos)
+            newly_floated_window = self.create_floating_window([widget_to_undock], new_geometry)
+            
+            self._finalize_undocking(root_window, currently_active_widget, newly_floated_window, global_mouse_pos)
+
+    def _prepare_for_undocking(self, widget_to_undock):
         self.destroy_all_overlays()
         QApplication.processEvents()
         self.last_dock_target = None
@@ -1981,7 +1480,7 @@ class DockingManager(QObject):
             
         host_tab_group, parent_node, root_window = self.model.find_host_info(widget_to_undock)
         if not host_tab_group:
-            return
+            return None
 
         currently_active_widget = None
         if isinstance(root_window, DockContainer):
@@ -1992,51 +1491,53 @@ class DockingManager(QObject):
         if hasattr(root_window, 'overlay') and root_window.overlay:
             root_window.overlay.destroy_overlay()
             root_window.overlay = None
-            
+        
+        return host_tab_group, parent_node, root_window, currently_active_widget
+
+    def _remove_widget_from_model(self, widget_to_undock, host_tab_group, root_window):
         widget_node_to_remove = next((wn for wn in host_tab_group.children if wn.widget is widget_to_undock), None)
         if widget_node_to_remove:
             if not self.is_deleted(root_window):
                 root_window.setUpdatesEnabled(False)
-
             host_tab_group.children.remove(widget_node_to_remove)
+        return widget_node_to_remove
 
+    def _calculate_floating_window_geometry(self, widget_to_undock, global_mouse_pos):
+        if widget_to_undock.content_container.isVisible():
+            new_window_size = widget_to_undock.content_container.size()
+        else:
+            new_window_size = QSize(300, 200)
 
-            if widget_to_undock.content_container.isVisible():
-                new_window_size = widget_to_undock.content_container.size()
-            else:
-                new_window_size = QSize(300, 200)
+        title_height = widget_to_undock.title_bar.height()
+        new_window_size.setHeight(new_window_size.height() + title_height)
 
-            title_height = widget_to_undock.title_bar.height()
-            new_window_size.setHeight(new_window_size.height() + title_height)
+        offset_y = title_height // 2
+        offset_x = 50
 
-            offset_y = title_height // 2
-            offset_x = 50
+        new_window_pos = global_mouse_pos - QPoint(offset_x, offset_y)
+        return QRect(new_window_pos, new_window_size)
 
-            new_window_pos = global_mouse_pos - QPoint(offset_x, offset_y)
-            new_geometry = QRect(new_window_pos, new_window_size)
-
-            newly_floated_window = self.create_floating_window([widget_to_undock], new_geometry)
-
-            if not self.is_deleted(root_window):
-                self._simplify_model(root_window, currently_active_widget)
-                if root_window in self.model.roots:
-                    root_window.update()
-                    root_window.repaint()
-                else:
-                    root_window.update_dynamic_title()
-                root_window.setUpdatesEnabled(True)
+    def _finalize_undocking(self, root_window, currently_active_widget, newly_floated_window, global_mouse_pos):
+        if not self.is_deleted(root_window):
+            self._simplify_model(root_window, currently_active_widget)
+            if root_window in self.model.roots:
                 root_window.update()
-                
-                if root_window in self.model.roots:
-                    QTimer.singleShot(10, lambda: self._cleanup_container_overlays(root_window))
+                root_window.repaint()
+            else:
+                root_window.update_dynamic_title()
+            root_window.setUpdatesEnabled(True)
+            root_window.update()
+            
+            if root_window in self.model.roots:
+                QTimer.singleShot(10, lambda: self._cleanup_container_overlays(root_window))
 
-            if newly_floated_window:
-                newly_floated_window.on_activation_request()
+        if newly_floated_window:
+            newly_floated_window.on_activation_request()
 
-                title_bar = newly_floated_window.title_bar
-                title_bar.moving = True
-                title_bar.offset = global_mouse_pos - newly_floated_window.pos()
-                title_bar.grabMouse()
+            title_bar = newly_floated_window.title_bar
+            title_bar.moving = True
+            title_bar.offset = global_mouse_pos - newly_floated_window.pos()
+            title_bar.grabMouse()
 
     def start_tab_drag_operation(self, widget_persistent_id: str):
         """
@@ -2435,62 +1936,5 @@ class DockingManager(QObject):
         return False
         
     def _clean_orphaned_overlays(self):
-        """
-        Audits and heals the active_overlays list by removing invalid entries
-        and destroying orphaned overlay widgets found in the application.
-        """
-        items_to_remove = []
-        
-        for item in self.active_overlays[:]:
-            should_remove = False
-            
-            if self.is_deleted(item):
-                should_remove = True
-            elif hasattr(item, 'overlay'):
-                if not item.overlay or self.is_deleted(item.overlay):
-                    should_remove = True
-                else:
-                    try:
-                        overlay_parent = item.overlay.parentWidget()
-                        
-                        if isinstance(item, DockPanel):
-                            if item.parent_container:
-                                if overlay_parent != item.parent_container:
-                                    should_remove = True
-                            else:
-                                if overlay_parent != item:
-                                    should_remove = True
-                        elif isinstance(item, DockContainer):
-                            if overlay_parent != item:
-                                should_remove = True
-                                
-                    except RuntimeError:
-                        should_remove = True
-            else:
-                should_remove = True
-                
-            if should_remove:
-                items_to_remove.append(item)
-                
-        for item in items_to_remove:
-            if item in self.active_overlays:
-                self.active_overlays.remove(item)
-            if hasattr(item, 'overlay') and item.overlay:
-                try:
-                    if not self.is_deleted(item.overlay):
-                        item.overlay.destroy_overlay()
-                    item.overlay = None
-                except RuntimeError:
-                    pass
-                    
-        from .docking_overlay import DockingOverlay
-        try:
-            for widget in QApplication.allWidgets():
-                if isinstance(widget, DockingOverlay) and not self.is_deleted(widget):
-                    if widget.parentWidget() is None:
-                        try:
-                            widget.destroy_overlay()
-                        except RuntimeError:
-                            pass
-        except RuntimeError:
-            pass
+        """Delegate to OverlayManager for orphaned overlay cleanup."""
+        return self.overlay_manager.clean_orphaned_overlays()
