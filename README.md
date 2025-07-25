@@ -51,10 +51,27 @@ JCDock uses a unified window model where all floating windows are `DockContainer
 - **TearableTabWidget**: Enhanced tab widget supporting drag-out operations with visual feedback
 
 ### Specialized Systems
-- **LayoutSerializer**: Handles serialization and deserialization of dock layout state
-- **DragDropController**: Manages drag-and-drop operations and visual feedback
-- **LayoutRenderer**: Handles layout rendering and state transitions
+
+#### Core (`core/`)
 - **WidgetRegistry**: Registry system for widget types enabling automatic layout persistence
+- **DockingState**: State machine enum defining operational states
+
+#### Model (`model/`)
+- **LayoutSerializer**: Handles serialization and deserialization of dock layout state
+- **LayoutRenderer**: Handles layout rendering and state transitions
+- **LayoutModel**: Core data structures for layout representation
+
+#### Interaction (`interaction/`)
+- **DragDropController**: Manages drag-and-drop operations and visual feedback
+- **OverlayManager**: Manages visual overlay system during drag operations
+- **DockingOverlay**: Visual feedback overlays for drop zones
+
+#### Factories (`factories/`)
+- **WidgetFactory**: Creates and manages widget instances
+- **WindowManager**: Handles window creation and management
+- **ModelUpdateEngine**: Manages model state updates
+
+#### Utils (`utils/`)
 - **HitTestCache**: Performance optimization for overlay hit-testing during drag operations
 - **IconCache**: LRU cache system for icon rendering performance optimization
 
@@ -67,7 +84,7 @@ import sys
 from PySide6.QtWidgets import QApplication, QLabel
 from PySide6.QtCore import Qt
 
-from JCDock.docking_manager import DockingManager
+from JCDock import DockingManager
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
@@ -92,8 +109,8 @@ import sys
 from PySide6.QtWidgets import QApplication, QLabel, QTextEdit
 from PySide6.QtCore import Qt
 
-from JCDock.docking_manager import DockingManager
-from JCDock.main_dock_window import MainDockWindow
+from JCDock import DockingManager
+from JCDock.widgets.main_dock_window import MainDockWindow
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
