@@ -1739,7 +1739,7 @@ class DockingManager(QObject):
                 newly_floated_window.activateWindow()
                 self.bring_to_front(newly_floated_window)
 
-			for widget in widgets_to_move:
+            for widget in widgets_to_move:
                 self.signals.widget_undocked.emit(widget)
 
             self.signals.layout_changed.emit()
