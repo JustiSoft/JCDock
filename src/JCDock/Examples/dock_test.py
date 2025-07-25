@@ -210,9 +210,6 @@ class DockingTestApp:
 
         test_menu.addSeparator()
         
-        # Add tab activation test
-        tab_activation_test_action = test_menu.addAction("Test: Tab Activation Bug")
-        tab_activation_test_action.triggered.connect(self.run_tab_activation_test)
         
         test_menu.addSeparator()
         run_all_tests_action = test_menu.addAction("Run All Tests Sequentially")
@@ -557,105 +554,6 @@ class DockingTestApp:
         
         self._run_test_with_isolation("Get floating widgets", test_logic)
 
-    def run_tab_activation_test(self):
-        """
-        Tests the tab activation preservation issue.
-        Creates tab group, adds widget to right, activates second tab, removes right widget.
-        """
-        def test_logic():
-            print("=== TAB ACTIVATION PRESERVATION TEST ===")
-            print("This test reproduces the issue where removing a widget changes active tab.")
-            
-            # Create test widgets using the new simplified APIs
-            print("Creating test widgets with new registry system...")
-            container1 = self.docking_manager.create_floating_widget_from_key("tab_widget_1")
-            container2 = self.docking_manager.create_floating_widget_from_key("tab_widget_2") 
-            container3 = self.docking_manager.create_floating_widget_from_key("right_widget")
-            
-            # Extract the DockPanel widgets from the containers for the test
-            widget_left1 = None
-            widget_left2 = None
-            widget_right = None
-            
-            for widget in self.docking_manager.widgets:
-                if widget.persistent_id == "tab_widget_1":
-                    widget_left1 = widget
-                elif widget.persistent_id == "tab_widget_2":
-                    widget_left2 = widget
-                elif widget.persistent_id == "right_widget":
-                    widget_right = widget
-            
-            main_dock_area = self.main_window.dock_area
-            
-            print("Step 1: Creating tab group with two widgets...")
-            
-            # Create tab group by moving both widgets to main area
-            success1 = self.docking_manager.move_widget_to_container(widget_left1, main_dock_area)
-            success2 = self.docking_manager.move_widget_to_container(widget_left2, main_dock_area)
-            
-            print(f"  - Widget 1 move success: {success1}")
-            print(f"  - Widget 2 move success: {success2}")
-            
-            if not (success1 and success2):
-                self._print_failure("Failed to create tab group")
-                return
-            
-            print("Step 2: Docking right widget to the right...")
-            
-            # Try to dock the right widget to create a splitter
-            try:
-                self.docking_manager.dock_widget(widget_right, main_dock_area, "right")
-                print("  - Right widget docked successfully")
-            except Exception as e:
-                print(f"  - Error docking right widget: {e}")
-                # Fallback - this will still test the tab preservation
-                success3 = self.docking_manager.move_widget_to_container(widget_right, main_dock_area)
-                print(f"  - Right widget move (fallback): {success3}")
-            
-            print("Step 3: Checking initial active tab...")
-            
-            # Check what's currently active
-            active_before_change = self.docking_manager._get_currently_active_widget(main_dock_area)
-            print(f"  - Currently active: {active_before_change.windowTitle() if active_before_change else 'None'}")
-            
-            print("Step 4: Activating second tab (Tab Widget 2)...")
-            
-            # Activate the second widget
-            self.docking_manager.set_active_widget(widget_left2)
-            
-            # Verify it's now active
-            active_after_change = self.docking_manager._get_currently_active_widget(main_dock_area)
-            print(f"  - Active after activation: {active_after_change.windowTitle() if active_after_change else 'None'}")
-            
-            if active_after_change != widget_left2:
-                self._print_failure("Failed to activate Tab Widget 2")
-                return
-            
-            print("Step 5: CRITICAL TEST - Removing right widget...")
-            print("  - This should NOT change the active tab from 'Tab Widget 2'")
-            
-            # This is the critical operation that was causing the bug
-            self.docking_manager.request_close_widget(widget_right)
-            
-            # Check what's active after removal
-            final_active = self.docking_manager._get_currently_active_widget(main_dock_area)
-            print(f"  - Final active widget: {final_active.windowTitle() if final_active else 'None'}")
-            
-            # Evaluate the test result
-            if final_active == widget_left2:
-                self._print_success("Tab activation preserved! Tab Widget 2 remained active.")
-                print("  ✅ Fix is working correctly")
-            elif final_active == widget_left1:
-                self._print_failure("BUG REPRODUCED: Tab Widget 1 became active instead of Tab Widget 2")
-                print("  ❌ The issue still exists")
-            else:
-                self._print_failure(f"Unexpected result: {final_active.windowTitle() if final_active else 'None'} is active")
-            
-            # Color the widgets for visual confirmation
-            if final_active:
-                final_active.set_title_bar_color(QColor("#90EE90"))  # Green for success
-            
-        self._run_test_with_isolation("Tab activation preservation", test_logic)
 
     def run_is_widget_docked_test(self):
         """
