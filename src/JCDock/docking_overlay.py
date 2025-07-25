@@ -24,10 +24,10 @@ class DockingOverlay(QWidget):
         self.dock_icons = {}
 
         icon_properties = {
-            "top": {"text": "▲", "font-size": "20px"},
-            "left": {"text": "◀", "font-size": "24px"},
-            "bottom": {"text": "▼", "font-size": "20px"},
-            "right": {"text": "▶", "font-size": "24px"},
+            "top": {"text": "⬒", "font-size": "24px"},
+            "left": {"text": "◧", "font-size": "35px"},
+            "bottom": {"text": "⬓", "font-size": "24px"},
+            "right": {"text": "◨", "font-size": "35px"},
             "center": {"text": "⧉", "font-size": "20px"},
         }
 
