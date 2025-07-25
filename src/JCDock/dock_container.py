@@ -257,6 +257,25 @@ class DockContainer(QWidget):
         # For floating windows with content_wrapper, let CSS handle the rounded corners
         # For docked containers, also let CSS handle the appearance
 
+    def set_drag_transparency(self, opacity=0.4):
+        """
+        Apply temporary transparency during drag operations to make drop targets more visible.
+        
+        Args:
+            opacity: Opacity level (0.0 = fully transparent, 1.0 = fully opaque)
+        """
+        if not hasattr(self, '_original_opacity'):
+            self._original_opacity = self.windowOpacity()
+        self.setWindowOpacity(opacity)
+
+    def restore_normal_opacity(self):
+        """
+        Restore the container's original opacity after drag operations.
+        """
+        if hasattr(self, '_original_opacity'):
+            self.setWindowOpacity(self._original_opacity)
+            delattr(self, '_original_opacity')
+
     def toggle_maximize(self):
         """Toggles the window between a maximized and normal state."""
         if self._is_maximized:
@@ -745,7 +764,9 @@ class DockContainer(QWidget):
 
         # This is the main container widget for the corner controls.
         corner_widget = QWidget()
-        corner_widget.setStyleSheet("background: transparent;")
+        # <<< FIX: Set a solid background color to match the tab bar. >>>
+        # This gives tooltips an opaque surface to render on, fixing the black box issue.
+        corner_widget.setStyleSheet("background: #F0F0F0;")
 
         # A vertical layout is used to manage the vertical alignment.
         centering_layout = QVBoxLayout(corner_widget)

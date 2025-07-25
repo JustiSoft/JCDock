@@ -134,9 +134,16 @@ class DragDropController:
                 self.manager.destroy_all_overlays()
                 tab_bar.set_drop_indicator_index(drop_index)
                 self.manager.last_dock_target = (tab_bar_info.tab_widget, "insert", drop_index)
+                
+                # Apply transparency when hovering over valid tab insertion point
+                if hasattr(source_container, 'set_drag_transparency'):
+                    source_container.set_drag_transparency(0.4)
                 return
             else:
                 tab_bar.set_drop_indicator_index(-1)
+                # Restore opacity when not over valid tab insertion point
+                if hasattr(source_container, 'restore_normal_opacity'):
+                    source_container.restore_normal_opacity()
 
         # Step 2: Find the drop target using cached data
         # Call HitTestCache with source_container as excluded_widget
@@ -224,6 +231,11 @@ class DragDropController:
 
         # Store the result in self.last_dock_target
         self.manager.last_dock_target = (final_target, final_location) if (final_target and final_location) else None
+        
+        # If no tab insertion target was found, restore normal opacity
+        if not (tab_bar_info and tab_bar_info.tab_widget.tabBar().get_drop_index(tab_bar_info.tab_widget.tabBar().mapFromGlobal(global_mouse_pos)) != -1):
+            if hasattr(source_container, 'restore_normal_opacity'):
+                source_container.restore_normal_opacity()
 
     def finalize_dock_from_live_move(self, source_container, dock_target_info):
         """
@@ -234,6 +246,10 @@ class DragDropController:
             dock_target_info: Information about where to dock
         """
         try:
+            # Always restore normal opacity when drag operation completes
+            if hasattr(source_container, 'restore_normal_opacity'):
+                source_container.restore_normal_opacity()
+            
             # CRITICAL FIX: Prevent moving persistent roots or containers that are part of persistent roots
             if self.manager._is_persistent_root(source_container):
                 print(f"WARNING: Attempted to move persistent root {source_container}. Operation blocked.")

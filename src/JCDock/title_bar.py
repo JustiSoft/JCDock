@@ -219,6 +219,10 @@ class TitleBar(QWidget):
                         manager.hit_test_cache.set_drag_operation_state(False)
                     # Return to idle state to allow window stacking again
                     manager._set_state(DockingState.IDLE)
+                
+                # Always restore normal opacity when drag completes
+                if hasattr(self._top_level_widget, 'restore_normal_opacity'):
+                    self._top_level_widget.restore_normal_opacity()
 
             # Reset resizing flags on the parent (only for DockContainer windows).
             if hasattr(self._top_level_widget, 'resizing') and self._top_level_widget.resizing:
