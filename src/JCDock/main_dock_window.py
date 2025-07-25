@@ -50,15 +50,6 @@ class MainDockWindow(QMainWindow):
 
     def eventFilter(self, watched, event):
         """
-        Filters events to correctly manage the stacking order of floating windows
-        relative to the main window.
-        """
-        if watched is self:
-            # When the window frame is clicked, ensure all floating panels are raised.
-            if event.type() == QEvent.Type.NonClientAreaMouseButtonPress:
-                if self.manager:
-                    self.manager.raise_all_floating_widgets()
-                return super().eventFilter(watched, event)
-
-
+        Filters events for the main window.
+        """  
         return super().eventFilter(watched, event)

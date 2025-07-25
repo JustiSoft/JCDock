@@ -104,27 +104,18 @@ class FloatingDockRoot(DockContainer):
 
         # Step 2: Add our special behavior.
         # Make activation immediate and synchronous to eliminate race conditions.
-        if self.manager:
-            self.manager.raise_all_floating_widgets()
+        # (Auto-raise functionality removed)
 
     def eventFilter(self, watched, event):
         """
         Handles activation events to ensure consistent stacking with the main window.
         """
         if watched is self:
-            # Case 1: The title bar or window frame is clicked.
-            if event.type() == QEvent.Type.NonClientAreaMouseButtonPress:
-                if self.manager:
-                    self.manager.raise_all_floating_widgets()
-                return super().eventFilter(watched, event)
-                
-            # Case 2: Window activated through Qt's native system
-            elif event.type() == QEvent.Type.WindowActivate:
+            # Case 1: Window activated through Qt's native system
+            if event.type() == QEvent.Type.WindowActivate:
                 if self.manager:
                     # Sync Z-order tracking with Qt's window activation
                     self.manager.sync_window_activation(self)
-                    # Also ensure consistent stacking with other floating widgets
-                    self.manager.raise_all_floating_widgets()
                 return super().eventFilter(watched, event)
 
 
