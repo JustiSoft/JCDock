@@ -1054,6 +1054,34 @@ class DockingManager(QObject):
         
         return validated_geometry
 
+    def create_simple_floating_widget(self, content_widget: QWidget, title: str = "Widget", 
+                                     x: int = 300, y: int = 300, width: int = 400, height: int = 300) -> tuple[DockContainer, DockPanel]:
+        """
+        Create a simple floating widget without requiring registry registration or QRect.
+        This is the simplest possible API for basic use cases.
+        
+        Args:
+            content_widget: The widget to make dockable
+            title: Title for the widget window
+            x, y: Position of the floating window  
+            width, height: Size of the floating window
+            
+        Returns:
+            Tuple of (DockContainer, DockPanel) - container and the dockable panel for further operations
+        """
+        # Create a DockPanel to wrap the content
+        panel = DockPanel(title, manager=self, persistent_id=f"simple_{id(content_widget)}")
+        panel.setContent(content_widget)
+        
+        # Register the widget
+        self.register_widget(panel)
+        
+        # Create floating window with simple parameters
+        geometry = QRect(x, y, width, height)
+        container = self.create_floating_window([panel], geometry)
+        
+        return container, panel
+
     def create_floating_window(self, widgets: list[DockPanel], geometry: QRect, was_maximized=False,
                                normal_geometry=None):
         if not widgets: return None

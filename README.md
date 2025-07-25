@@ -9,7 +9,7 @@ JCDock allows you to create complex user interfaces where widgets can be docked 
 * **Advanced Docking**: Dock widgets to the top, bottom, left, right, or center of other widgets and containers with visual overlay guides.
 * **Floating Windows**: Undock any widget or group of widgets into its own floating window with native-like appearance including drop shadows and proper window management.
 * **Tearable Tabs**: Users can tear individual tabs away from a tab group to instantly create new floating windows with smooth visual feedback.
-* **Persistent Layouts**: Save and restore complete application layouts with automatic widget recreation through factory patterns.
+* **Persistent Layouts**: Save and restore complete application layouts with automatic widget recreation through the registry system.
 * **Nested Splitters**: Automatically create and manage complex nested horizontal and vertical splitter layouts.
 * **Multi-Monitor Support**: Full support for dragging and docking across multiple monitors with proper coordinate handling.
 * **Performance Optimized**: Built-in caching systems for icons and hit-testing to ensure smooth performance even with complex layouts.
@@ -26,7 +26,7 @@ To use JCDock in your project, you'll need to clone the source code and install 
 
 ```bash
 # 1. Clone the repository from GitHub
-git clone https://github.com/jcook5376/JCDock.git
+git clone https://github.com/JustiSoft/JCDock.git
 
 # 2. Navigate into the cloned directory
 cd JCDock
@@ -40,37 +40,34 @@ Using the `-e` or `--editable` flag is recommended. It installs the package by c
 ***
 ## Architecture Overview
 
-JCDock uses a unified window model where all floating windows are `DockContainer` instances. The key components are:
+JCDock uses a unified window model where all floating windows are `DockContainer` instances. The architecture is built around a central state machine with specialized components:
 
+### Core Components
 - **DockingManager**: Central orchestrator managing all docking operations, widget registration, and layout persistence
+- **DockingState**: State machine defining operational states (IDLE, RENDERING, DRAGGING_WINDOW, RESIZING_WINDOW, DRAGGING_TAB)
 - **DockPanel**: Wrapper for any QWidget to make it dockable with title bars and controls  
 - **DockContainer**: Advanced host containers with drag-and-drop capabilities and tab/splitter management
 - **MainDockWindow**: Main application window with built-in central dock area
 - **TearableTabWidget**: Enhanced tab widget supporting drag-out operations with visual feedback
 
+### Specialized Systems
+- **LayoutSerializer**: Handles serialization and deserialization of dock layout state
+- **DragDropController**: Manages drag-and-drop operations and visual feedback
+- **LayoutRenderer**: Handles layout rendering and state transitions
+- **WidgetRegistry**: Registry system for widget types enabling automatic layout persistence
+- **HitTestCache**: Performance optimization for overlay hit-testing during drag operations
+- **IconCache**: LRU cache system for icon rendering performance optimization
+
 ## Basic Usage
 
-Here's a simple example showing how to create a docking application:
+Here's the simplest possible example showing how to create a floating dockable widget:
 
 ```python
 import sys
-from PySide6.QtWidgets import QApplication, QLabel, QTextEdit
+from PySide6.QtWidgets import QApplication, QLabel
 from PySide6.QtCore import Qt
 
 from JCDock.docking_manager import DockingManager
-from JCDock.dock_panel import DockPanel
-from JCDock.main_dock_window import MainDockWindow
-
-def create_sample_content(name):
-    """Create sample content for demonstration."""
-    if "text" in name.lower():
-        widget = QTextEdit()
-        widget.setPlaceholderText(f"Content for {name}")
-        return widget
-    else:
-        label = QLabel(f"{name} Content")
-        label.setAlignment(Qt.AlignCenter)
-        return label
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
@@ -78,42 +75,47 @@ if __name__ == "__main__":
     # 1. Create the Docking Manager
     manager = DockingManager()
     
-    # 2. Create the Main Window (includes central dock area)
+    # 2. Create content and make it a floating dockable widget
+    content = QLabel("Hello, JCDock!")
+    content.setAlignment(Qt.AlignCenter)
+    manager.create_simple_floating_widget(content, "My Widget")
+
+    sys.exit(app.exec())
+```
+
+### Creating a Main Window with Docking
+
+For a more complete application with a main window and multiple dockable widgets:
+
+```python
+import sys
+from PySide6.QtWidgets import QApplication, QLabel, QTextEdit
+from PySide6.QtCore import Qt
+
+from JCDock.docking_manager import DockingManager
+from JCDock.main_dock_window import MainDockWindow
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+
+    # 1. Create the Docking Manager
+    manager = DockingManager()
+    
+    # 2. Create the Main Window (automatically handles registration)
     main_window = MainDockWindow(manager)
-    manager.set_main_window(main_window)
-    manager.register_dock_area(main_window.dock_area)
 
-    # 3. Create DockPanel widgets with content
-    notes_panel = DockPanel("Notes", manager=manager, persistent_id="notes_widget")
-    notes_panel.setContent(create_sample_content("Text Editor"))
-    manager.register_widget(notes_panel)
+    # 3. Create simple floating widgets
+    project_content = QLabel("Project Explorer")
+    _, project_panel = manager.create_simple_floating_widget(project_content, "Project")
 
-    project_panel = DockPanel("Project Files", manager=manager, persistent_id="project_widget")  
-    project_panel.setContent(create_sample_content("Project Explorer"))
-    manager.register_widget(project_panel)
+    editor_content = QTextEdit("Your code here...")
+    _, editor_panel = manager.create_simple_floating_widget(editor_content, "Editor")
 
-    console_panel = DockPanel("Console", manager=manager, persistent_id="console_widget")
-    console_panel.setContent(create_sample_content("Console Output"))
-    manager.register_widget(console_panel)
-
-    # 4. Create floating windows for the widgets first
-    from PySide6.QtCore import QRect
-    manager.create_floating_window([project_panel], QRect(100, 100, 400, 300))
-    manager.create_floating_window([notes_panel], QRect(520, 100, 400, 300))  
-    manager.create_floating_window([console_panel], QRect(100, 420, 400, 200))
-
-    # 5. Now dock them to create the layout
+    # 4. Dock widgets to create layout
     manager.dock_widget(project_panel, main_window.dock_area, "left")
-    manager.dock_widget(notes_panel, project_panel, "center")  # Creates tab group
-    manager.dock_widget(console_panel, main_window.dock_area, "bottom")
+    manager.dock_widget(editor_panel, project_panel, "right")
 
-    # 6. Optional: Connect to signals for layout change notifications
-    def on_layout_changed():
-        print("Layout changed!")
-        
-    manager.signals.layout_changed.connect(on_layout_changed)
-
-    main_window.setGeometry(100, 100, 1200, 800)
+    main_window.setGeometry(100, 100, 1000, 600)
     main_window.show()
 
     sys.exit(app.exec())
@@ -121,29 +123,38 @@ if __name__ == "__main__":
 
 ## Advanced Features
 
-### Widget Factory for Layout Persistence
+### Layout Persistence
 
-To support saving and restoring layouts, provide a widget factory function:
+JCDock automatically supports saving and restoring layouts when you use the registry system with `@dockable` decorated widgets:
 
 ```python
-def widget_factory(node_data: dict) -> DockPanel:
-    """Factory function to recreate widgets during layout restoration."""
-    persistent_id = node_data.get('id')
-    title = node_data.get('title', 'Restored Widget')
-    
-    # Create widget based on persistent_id
-    widget = DockPanel(title, manager=manager, persistent_id=persistent_id)
-    widget.setContent(create_sample_content(title))
-    
-    return widget
+from JCDock import dockable
 
-# Register the factory with the manager
-manager.set_widget_factory(widget_factory)
+# Register widget types for automatic layout persistence
+@dockable("project_explorer", "Project Explorer")
+class ProjectWidget(QLabel):
+    def __init__(self):
+        super().__init__()
+        self.setText("Project Files")
 
-# Save and restore layouts
-manager.save_layout("my_layout.json")
-manager.load_layout("my_layout.json")
+@dockable("code_editor", "Code Editor")
+class EditorWidget(QTextEdit):
+    def __init__(self):
+        super().__init__()
+        self.setPlainText("# Your code here")
+
+# Create widgets using registry keys
+manager.create_floating_widget_from_key("project_explorer")
+manager.create_floating_widget_from_key("code_editor")
+
+# Save and restore layouts (binary format)
+layout_data = manager.save_layout_to_bytearray()
+
+# Later, restore the exact same layout
+manager.load_layout_from_bytearray(layout_data)
 ```
+
+The registry system automatically handles widget recreation during layout restoration - no manual factory functions needed!
 
 ### Signal System
 
@@ -159,7 +170,16 @@ manager.signals.widget_undocked.connect(lambda widget:
     
 manager.signals.widget_closed.connect(lambda persistent_id: 
     print(f"Widget '{persistent_id}' closed"))
+
+manager.signals.layout_changed.connect(lambda: 
+    print("Layout changed - save state, update UI, etc."))
 ```
+
+**Available Signals:**
+- `widget_docked(widget, container)` - Widget docked into a container
+- `widget_undocked(widget)` - Widget undocked to floating window  
+- `widget_closed(persistent_id)` - Widget closed and removed
+- `layout_changed()` - Any layout modification occurred
 
 ***
 ## License
