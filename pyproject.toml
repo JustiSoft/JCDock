@@ -10,10 +10,9 @@ build-backend = "setuptools.build_meta"
 name = "JCDock"
 
 # Start with an initial version. Increment this as you make changes.
-version = "1.0.0"
+version = "1.0.1"
 
 authors = [
-  # Replace with your name and email.
   { name="Justin Cook", email="jcook5376@gmail.com" },
 ]
 

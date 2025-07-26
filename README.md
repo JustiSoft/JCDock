@@ -20,9 +20,21 @@ JCDock allows you to create complex user interfaces where widgets can be docked 
 ***
 ## Installation
 
-**Note:** This library is currently under active development and has not been published to a package repository like PyPI. The only way to install it is directly from GitHub.
+JCDock is available on PyPI and can be installed using pip. Choose the installation method that best fits your needs:
 
-To use JCDock in your project, you'll need to clone the source code and install it locally using pip.
+### Option 1: Install from PyPI (Recommended for Users)
+
+For most users who want to use JCDock in their applications:
+
+```bash
+pip install JCDock
+```
+
+This installs the latest stable release directly from PyPI.
+
+### Option 2: Install from Source (For Development)
+
+For developers who want to contribute to JCDock or need the latest development features:
 
 ```bash
 # 1. Clone the repository from GitHub
@@ -35,7 +47,7 @@ cd JCDock
 pip install -e .
 ```
 
-Using the `-e` or `--editable` flag is recommended. It installs the package by creating a link to the source code, so any future updates you pull from the git repository will be immediately reflected in your environment.
+Using the `-e` or `--editable` flag is recommended for development. It installs the package by creating a link to the source code, so any changes you make to the code will be immediately reflected in your environment.
 
 ***
 ## Architecture Overview
