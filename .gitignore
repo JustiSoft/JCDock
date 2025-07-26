@@ -26,3 +26,7 @@ CLAUDE.md
 GEMINI.md
 version_info.txt
 .claude/
+
+# Branch protection management files
+*protection*.json
+clean_protection_backup.py
