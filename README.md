@@ -154,6 +154,9 @@ if __name__ == "__main__":
 
 For a comprehensive demonstration of JCDock's capabilities and different API usage patterns, refer to the complete example script at `src/JCDock/Examples/dock_test.py`. This script showcases:
 
+![JCDock Demo](src/JCDock/Examples/sample.png)
+*Example of JCDock in action showing floating windows, docked panels, and tearable tabs*
+
 - **Registry-based widget creation** using `@dockable` decorators
 - **Both API paths**: "By Type" (registry-based) and "By Instance" (existing widgets)
 - **Layout persistence** with save/load functionality
