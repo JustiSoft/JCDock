@@ -285,6 +285,24 @@ manager.set_debug_mode(True)  # Shows "STATE: idle -> rendering" etc.
 
 ### Branch Protection Management for Repository Owner
 
+**Option 1: Direct Push (Simplest for Admin)**
+As repository owner, you can push directly to master without PRs:
+
+```bash
+# 1. Temporarily disable protection
+"C:\Program Files\GitHub CLI\gh.exe" api repos/JustiSoft/JCDock/branches/master/protection --method DELETE
+
+# 2. Make your changes and commit normally
+git add . && git commit -m "Your changes"
+
+# 3. Push directly to master
+git push origin master
+
+# 4. Restore protection
+"C:\Program Files\GitHub CLI\gh.exe" api repos/JustiSoft/JCDock/branches/master/protection --method PUT --input minimal_protection.json
+```
+
+**Option 2: PR Workflow (When you want code review process)**
 When you need to merge your own PR as the repository owner (since GitHub prevents PR authors from approving their own PRs):
 
 **Step 1: Save current protection settings**
