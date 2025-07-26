@@ -289,17 +289,41 @@ manager.set_debug_mode(True)  # Shows "STATE: idle -> rendering" etc.
 As repository owner, you can push directly to master without PRs:
 
 ```bash
-# 1. Temporarily disable protection
+# 1. FIRST: Backup current protection settings
+"C:\Program Files\GitHub CLI\gh.exe" api repos/JustiSoft/JCDock/branches/master/protection --method GET > protection_backup.json
+
+# 2. Temporarily disable protection
 "C:\Program Files\GitHub CLI\gh.exe" api repos/JustiSoft/JCDock/branches/master/protection --method DELETE
 
-# 2. Make your changes and commit normally
+# 3. Make your changes and commit normally
 git add . && git commit -m "Your changes"
 
-# 3. Push directly to master
+# 4. Push directly to master
 git push origin master
 
-# 4. Restore protection
-"C:\Program Files\GitHub CLI\gh.exe" api repos/JustiSoft/JCDock/branches/master/protection --method PUT --input minimal_protection.json
+# 5. Restore full protection settings
+"C:\Program Files\GitHub CLI\gh.exe" api repos/JustiSoft/JCDock/branches/master/protection --method PUT --input full_protection_restore.json
+```
+
+**Required file: `full_protection_restore.json`**
+```json
+{
+  "required_status_checks": null,
+  "enforce_admins": true,
+  "required_pull_request_reviews": {
+    "dismiss_stale_reviews": true,
+    "require_code_owner_reviews": true,
+    "required_approving_review_count": 1,
+    "require_last_push_approval": false
+  },
+  "restrictions": null,
+  "required_linear_history": true,
+  "allow_force_pushes": false,
+  "allow_deletions": false,
+  "required_conversation_resolution": false,
+  "lock_branch": false,
+  "allow_fork_syncing": false
+}
 ```
 
 **Option 2: PR Workflow (When you want code review process)**
