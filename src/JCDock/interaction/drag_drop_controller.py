@@ -6,6 +6,7 @@ from ..core.docking_state import DockingState
 from ..model.dock_model import WidgetNode, TabGroupNode, SplitterNode
 from ..widgets.dock_panel import DockPanel
 from ..widgets.dock_container import DockContainer
+from .drag_proxy import DragProxy
 
 
 class DragDropController:
@@ -22,6 +23,112 @@ class DragDropController:
             manager: Reference to the DockingManager instance
         """
         self.manager = manager
+        self._overlay_update_timer = None
+        self._pending_overlay_update = None
+        self._drag_proxy = None
+
+    def _debounced_overlay_update(self, required_overlays, final_target, final_location):
+        """
+        Debounced overlay update to prevent rapid creation/destruction cycles.
+        Uses a timer to batch overlay updates during fast mouse movement.
+        """
+        from PySide6.QtCore import QTimer
+        
+        # Store the pending update
+        self._pending_overlay_update = (required_overlays, final_target, final_location)
+        
+        # Cancel existing timer if running
+        if self._overlay_update_timer:
+            self._overlay_update_timer.stop()
+            self._overlay_update_timer = None
+        
+        # Start new timer for debounced update
+        self._overlay_update_timer = QTimer()
+        self._overlay_update_timer.setSingleShot(True)
+        self._overlay_update_timer.timeout.connect(self._apply_overlay_update)
+        self._overlay_update_timer.start(16)  # ~60fps update rate
+    
+    def _apply_overlay_update(self):
+        """
+        Applies the pending overlay update after debounce timer expires.
+        """
+        if not self._pending_overlay_update:
+            return
+            
+        required_overlays, final_target, final_location = self._pending_overlay_update
+        self._pending_overlay_update = None
+        
+        # Apply the actual overlay updates
+        current_overlays = set(self.manager.active_overlays)
+        
+        # Remove overlays no longer needed
+        for w in (current_overlays - required_overlays):
+            if not self.manager.is_deleted(w):
+                w.hide_overlay()
+            self.manager.active_overlays.remove(w)
+
+        # Add new overlays needed
+        for w in (required_overlays - current_overlays):
+            try:
+                if not self.manager.is_deleted(w):
+                    if isinstance(w, DockContainer):
+                        root_node = self.manager.model.roots.get(w)
+                        is_empty = not (root_node and root_node.children)
+                        is_main_dock_area = (w is (self.manager.main_window.dock_area if self.manager.main_window else None))
+                        from ..widgets.floating_dock_root import FloatingDockRoot
+                        is_floating_root = isinstance(w, FloatingDockRoot)
+                        if is_empty and (is_main_dock_area or is_floating_root):
+                            w.show_overlay(preset='main_empty')
+                        else:
+                            w.show_overlay(preset='standard')
+                    else:
+                        w.show_overlay()
+                    self.manager.active_overlays.append(w)
+            except RuntimeError:
+                if w in self.manager.active_overlays:
+                    self.manager.active_overlays.remove(w)
+
+        # Update preview overlays
+        for overlay_widget in self.manager.active_overlays:
+            if overlay_widget is final_target:
+                overlay_widget.show_preview(final_location)
+            else:
+                overlay_widget.show_preview(None)
+
+    def _create_drag_proxy(self, source_container):
+        """
+        Creates a drag proxy widget for the source container.
+        
+        Args:
+            source_container: The container to create a proxy for
+            
+        Returns:
+            DragProxy: The created proxy widget
+        """
+        if self._drag_proxy:
+            self._cleanup_drag_proxy()
+            
+        self._drag_proxy = DragProxy(source_container)
+        return self._drag_proxy
+    
+    def _update_drag_proxy_position(self, global_pos):
+        """
+        Updates the drag proxy position to follow the mouse.
+        
+        Args:
+            global_pos: Current global mouse position
+        """
+        if self._drag_proxy:
+            self._drag_proxy.update_position(global_pos)
+    
+    def _cleanup_drag_proxy(self):
+        """
+        Cleans up and destroys the current drag proxy.
+        """
+        if self._drag_proxy:
+            self._drag_proxy.cleanup()
+            self._drag_proxy.deleteLater()
+            self._drag_proxy = None
 
     def _create_enhanced_drag_pixmap(self, tab_widget, tab_index, tab_rect):
         """
@@ -93,10 +200,20 @@ class DragDropController:
         if self.manager.is_rendering():
             return
             
+        # Increment drag operation counter
+        self.manager.performance_monitor.increment_counter('drag_operations')
+            
         if self.manager.state != DockingState.DRAGGING_WINDOW:
             if hasattr(source_container, 'title_bar') and source_container.title_bar and source_container.title_bar.moving:
                 self.manager._set_state(DockingState.DRAGGING_WINDOW)
-                self.manager.hit_test_cache.set_drag_operation_state(True)
+                self.manager.hit_test_cache.set_drag_operation_state(True, source_container)
+                
+                # Create and show drag proxy
+                self._create_drag_proxy(source_container)
+                if self._drag_proxy:
+                    # Hide the original container during drag
+                    source_container.setWindowOpacity(0.1)  # Nearly invisible
+                    self._drag_proxy.show_proxy()
             else:
                 return
         
@@ -109,6 +226,9 @@ class DragDropController:
             return
 
         global_mouse_pos = event.globalPosition().toPoint()
+
+        # Update drag proxy position
+        self._update_drag_proxy_position(global_mouse_pos)
 
         tab_bar_info = self.manager.hit_test_cache.find_tab_bar_at_position(global_mouse_pos)
         if tab_bar_info:
@@ -133,7 +253,7 @@ class DragDropController:
         target_widget = cached_target.widget if cached_target else None
 
         required_overlays = set()
-        if target_widget:
+        if target_widget and target_widget is not source_container:
             target_name = getattr(target_widget, 'objectName', lambda: f"{type(target_widget).__name__}@{id(target_widget)}")()
             
             if isinstance(target_widget, DockContainer):
@@ -145,39 +265,14 @@ class DragDropController:
             else:
                 required_overlays.add(target_widget)
             parent_container = getattr(target_widget, 'parent_container', None)
-            if parent_container:
+            if parent_container and parent_container is not source_container:
                 target_has_complex_layout = not self.manager.has_simple_layout(parent_container)
                 source_has_simple_layout = self.manager.has_simple_layout(source_container)
                 
                 if target_has_complex_layout or not source_has_simple_layout:
                     required_overlays.add(parent_container)
 
-        current_overlays = set(self.manager.active_overlays)
-        
-        for w in (current_overlays - required_overlays):
-            if not self.manager.is_deleted(w):
-                w.hide_overlay()
-            self.manager.active_overlays.remove(w)
-
-        for w in (required_overlays - current_overlays):
-            try:
-                if not self.manager.is_deleted(w):
-                    if isinstance(w, DockContainer):
-                        root_node = self.manager.model.roots.get(w)
-                        is_empty = not (root_node and root_node.children)
-                        is_main_dock_area = (w is (self.manager.main_window.dock_area if self.manager.main_window else None))
-                        from ..widgets.floating_dock_root import FloatingDockRoot
-                        is_floating_root = isinstance(w, FloatingDockRoot)
-                        if is_empty and (is_main_dock_area or is_floating_root):
-                            w.show_overlay(preset='main_empty')
-                        else:
-                            w.show_overlay(preset='standard')
-                    else:
-                        w.show_overlay()
-                    self.manager.active_overlays.append(w)
-            except RuntimeError:
-                if w in self.manager.active_overlays:
-                    self.manager.active_overlays.remove(w)
+        # Determine final target and location
         final_target = None
         final_location = None
         if target_widget:
@@ -193,11 +288,9 @@ class DragDropController:
                         final_target = parent_container
                         final_location = parent_location
 
-        for overlay_widget in self.manager.active_overlays:
-            if overlay_widget is final_target:
-                overlay_widget.show_preview(final_location)
-            else:
-                overlay_widget.show_preview(None)
+        # Use debounced overlay update to prevent flashing
+        self.manager.performance_monitor.increment_counter('overlay_updates')
+        self._debounced_overlay_update(required_overlays, final_target, final_location)
 
         self.manager.last_dock_target = (final_target, final_location) if (final_target and final_location) else None
         
@@ -214,6 +307,10 @@ class DragDropController:
             dock_target_info: Information about where to dock
         """
         try:
+            # Clean up drag proxy and restore container visibility
+            self._cleanup_drag_proxy()
+            source_container.setWindowOpacity(1.0)  # Restore full opacity
+            
             if hasattr(source_container, 'restore_normal_opacity'):
                 source_container.restore_normal_opacity()
             
@@ -381,7 +478,7 @@ class DragDropController:
         cached_target = self.manager.hit_test_cache.find_drop_target_at_position(global_mouse_pos, excluded_widget)
         target_widget = cached_target.widget if cached_target else None
         required_overlays = set()
-        if target_widget:
+        if target_widget and target_widget is not excluded_widget:
             target_name = getattr(target_widget, 'objectName', lambda: f"{type(target_widget).__name__}@{id(target_widget)}")()
             
             if isinstance(target_widget, DockContainer):
@@ -393,7 +490,7 @@ class DragDropController:
             else:
                 required_overlays.add(target_widget)
             parent_container = getattr(target_widget, 'parent_container', None)
-            if parent_container:
+            if parent_container and parent_container is not excluded_widget:
                 target_has_complex_layout = not self.manager.has_simple_layout(parent_container)
                 source_has_simple_layout = self.manager.has_simple_layout(excluded_widget) if excluded_widget else False
                 

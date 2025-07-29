@@ -160,7 +160,7 @@ class TitleBar(QWidget):
                     manager = self._top_level_widget.manager
                     manager.hit_test_cache.build_cache(manager.window_stack, manager.containers)
                     manager._set_state(DockingState.DRAGGING_WINDOW)
-                    manager.hit_test_cache.set_drag_operation_state(True)
+                    manager.hit_test_cache.set_drag_operation_state(True, self._top_level_widget)
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -173,6 +173,12 @@ class TitleBar(QWidget):
                     manager.finalize_dock_from_live_move(self._top_level_widget, manager.last_dock_target)
                 
                 if manager:
+                    # Clean up drag proxy if no dock target
+                    if not (hasattr(manager, 'last_dock_target') and manager.last_dock_target):
+                        if hasattr(manager, 'drag_drop_controller') and manager.drag_drop_controller._drag_proxy:
+                            manager.drag_drop_controller._cleanup_drag_proxy()
+                            self._top_level_widget.setWindowOpacity(1.0)  # Restore visibility
+                    
                     if hasattr(manager, 'last_dock_target'):
                         manager.last_dock_target = None
                     if hasattr(manager, 'destroy_all_overlays'):

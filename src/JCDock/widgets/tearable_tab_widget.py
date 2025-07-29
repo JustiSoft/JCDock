@@ -172,7 +172,13 @@ class TearableTabWidget(QTabWidget):
         self.manager._set_state(DockingState.DRAGGING_TAB)
         self.manager.destroy_all_overlays()
         self.manager.hit_test_cache.build_cache(self.manager.window_stack, self.manager.containers)
-        self.manager.hit_test_cache.set_drag_operation_state(True)
+        
+        # Find parent container to exclude from overlay targets
+        parent_container = self.parent()
+        while parent_container and not hasattr(parent_container, 'tearable_tab_widget'):
+            parent_container = parent_container.parent()
+        
+        self.manager.hit_test_cache.set_drag_operation_state(True, parent_container)
         
         cursor_pos = QCursor.pos()
         self.drag_preview.show_preview(cursor_pos)

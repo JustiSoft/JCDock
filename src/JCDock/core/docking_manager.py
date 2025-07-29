@@ -12,6 +12,7 @@ from ..model.dock_model import LayoutModel, AnyNode, SplitterNode, TabGroupNode,
 from ..widgets.dock_panel import DockPanel
 from ..widgets.dock_container import DockContainer
 from ..utils.hit_test_cache import HitTestCache
+from ..utils.performance_monitor import PerformanceMonitor
 from ..model.layout_serializer import LayoutSerializer
 from ..interaction.drag_drop_controller import DragDropController
 from ..model.layout_renderer import LayoutRenderer
@@ -52,6 +53,7 @@ class DockingManager(QObject):
         self._is_updating_focus = False
         self.hit_test_cache = HitTestCache()
         self._drag_source_id = None
+        self.performance_monitor = PerformanceMonitor()
         
         self.layout_serializer = LayoutSerializer(self)
         self.drag_drop_controller = DragDropController(self)
@@ -61,10 +63,35 @@ class DockingManager(QObject):
         self.overlay_manager = OverlayManager(self)
         self.model_update_engine = ModelUpdateEngine(self)
         
+        # Connect performance monitor to hit test cache
+        self.hit_test_cache.set_performance_monitor(self.performance_monitor)
+        
         if self.debug_mode:
             self.signals.layout_changed.connect(self._debug_report_layout_state)
         
         self._install_global_event_filter()
+
+    def enable_performance_monitoring(self):
+        """Enable performance monitoring for debugging and optimization."""
+        self.performance_monitor.enable()
+    
+    def disable_performance_monitoring(self):
+        """Disable performance monitoring."""
+        self.performance_monitor.disable()
+    
+    def get_performance_stats(self) -> dict:
+        """Get current performance statistics."""
+        stats = self.performance_monitor.get_overall_stats()
+        
+        # Add cache-specific stats
+        if hasattr(self.hit_test_cache, 'get_geometry_cache_stats'):
+            stats['hit_test_cache'] = self.hit_test_cache.get_geometry_cache_stats()
+        
+        return stats
+    
+    def clear_performance_metrics(self):
+        """Clear all performance metrics."""
+        self.performance_monitor.clear_metrics()
 
     def _install_global_event_filter(self) -> None:
         """Install a global event filter on QApplication for centralized event handling."""

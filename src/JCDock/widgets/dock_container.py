@@ -19,6 +19,9 @@ class DockContainer(QWidget):
                  show_title_bar=True, title_bar_color=None):
         super().__init__(parent)
 
+        # Initialize tracking set early before any addWidget calls that trigger childEvent
+        self._tracked_widgets = set()
+        
         self._should_draw_shadow = create_shadow and show_title_bar
         self._shadow_effect = None
         self._shadow_padding = 25
@@ -430,8 +433,8 @@ class DockContainer(QWidget):
 
     def update_content_event_filters(self):
         """
-        Lightweight event filter setup now that global filtering handles most coordination.
-        Only installs filters where component-specific behavior is needed.
+        Cached event filter setup to prevent redundant operations.
+        Only processes widgets that haven't been tracked before.
         """
         self.installEventFilter(self)
         
@@ -439,11 +442,18 @@ class DockContainer(QWidget):
         
         for widget_type in viewport_widget_types:
             for widget in self.findChildren(widget_type):
+                # Skip widgets we've already processed
+                if widget in self._tracked_widgets:
+                    continue
+                    
                 widget.setMouseTracking(True)
+                self._tracked_widgets.add(widget)
+                
                 if hasattr(widget, 'viewport'):
                     viewport = widget.viewport()
-                    if viewport:
+                    if viewport and viewport not in self._tracked_widgets:
                         viewport.setMouseTracking(True)
+                        self._tracked_widgets.add(viewport)
 
     def showEvent(self, event):
         """
@@ -507,18 +517,20 @@ class DockContainer(QWidget):
 
     def _install_event_filter_recursive(self, widget):
         """
-        Lightweight filter installation now that global filtering handles coordination.
-        Only ensures mouse tracking is enabled for event generation.
+        Cached filter installation to prevent redundant operations.
+        Only processes widgets that haven't been tracked before.
         """
-        if not widget:
+        if not widget or widget in self._tracked_widgets:
             return
 
         widget.setMouseTracking(True)
+        self._tracked_widgets.add(widget)
 
         if hasattr(widget, 'viewport'):
             viewport = widget.viewport()
-            if viewport:
+            if viewport and viewport not in self._tracked_widgets:
                 viewport.setMouseTracking(True)
+                self._tracked_widgets.add(viewport)
 
     def on_activation_request(self):
         """

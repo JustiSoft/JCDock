@@ -7,19 +7,24 @@ from PySide6.QtWidgets import QWidget, QTabWidget, QSplitter
 @dataclass
 class CachedDropTarget:
     """Cached information about a potential drop target.
-    Note: global_rect is calculated dynamically to avoid stale coordinates.
+    Uses cached geometry for better performance during drag operations.
     """
     widget: QWidget
     target_type: str
     parent_container: Optional[QWidget] = None
     tab_index: int = -1
     z_order: int = 0
+    _hit_test_cache: Optional['HitTestCache'] = None
+    
+    def set_hit_test_cache(self, cache: 'HitTestCache'):
+        """Set reference to hit test cache for geometry lookups."""
+        self._hit_test_cache = cache
     
     @property
     def global_rect(self) -> QRect:
         """
-        Dynamically calculates the global rectangle to avoid stale coordinates.
-        The method of calculation depends on whether the widget is docked or floating.
+        Gets the global rectangle using cached geometry when possible.
+        Falls back to dynamic calculation if cache is not available.
         """
         if self.parent_container and hasattr(self.widget, 'content_container'):
             visible_part = self.widget.content_container
@@ -29,6 +34,13 @@ class CachedDropTarget:
         if not visible_part or not visible_part.isVisible():
             return QRect()
 
+        # Try to use cached geometry first
+        if self._hit_test_cache:
+            cached_geometry = self._hit_test_cache.get_cached_geometry(visible_part)
+            if cached_geometry:
+                return cached_geometry
+
+        # Fall back to dynamic calculation
         try:
             if hasattr(visible_part, 'isValid') and callable(getattr(visible_part, 'isValid')):
                 if not visible_part.isValid():
@@ -96,19 +108,63 @@ class HitTestCache:
         self._last_mouse_pos: Optional[QPoint] = None
         self._last_hit_result: Optional[Tuple[QWidget, str]] = None
         self._in_drag_operation = False
+        self._dragging_container: Optional[QWidget] = None
+        self._geometry_cache: Dict[QWidget, QRect] = {}  # Cache for widget geometries
+        self._dirty_regions: set = set()  # Track dirty regions needing updates
+        self._performance_monitor = None  # Will be set by DockingManager
         
-    def invalidate(self):
+    def invalidate(self, selective_widget: Optional[QWidget] = None):
         """
-        Invalidates the cache, forcing a rebuild on next hit test.
+        Invalidates the cache, with optional selective invalidation.
         Call this when the layout changes.
+        
+        Args:
+            selective_widget: If provided, only invalidate cache entries related to this widget
         """
-        self._cache_valid = False
-        self._drop_targets.clear()
-        self._tab_bars.clear()
-        self._window_rects.clear()
-        self._last_mouse_pos = None
-        self._last_hit_result = None
-        self._in_drag_operation = False
+        if selective_widget:
+            # Selective invalidation - only clear entries related to specific widget
+            self._selective_invalidate(selective_widget)
+        else:
+            # Full invalidation
+            self._cache_valid = False
+            self._drop_targets.clear()
+            self._tab_bars.clear()
+            self._window_rects.clear()
+            self._last_mouse_pos = None
+            self._last_hit_result = None
+            self._in_drag_operation = False
+            self._dragging_container = None
+            self._geometry_cache.clear()
+            self._dirty_regions.clear()
+    
+    def _selective_invalidate(self, widget: QWidget):
+        """
+        Selectively invalidate cache entries related to a specific widget.
+        
+        Args:
+            widget: Widget to invalidate cache entries for
+        """
+        # Remove drop targets related to this widget
+        self._drop_targets = [t for t in self._drop_targets 
+                             if t.widget is not widget and t.parent_container is not widget]
+        
+        # Remove tab bars related to this widget  
+        self._tab_bars = [tb for tb in self._tab_bars 
+                         if tb.container is not widget and tb.tab_widget.parent() is not widget]
+        
+        # Remove window rects for this widget
+        if widget in self._window_rects:
+            del self._window_rects[widget]
+        
+        # Mark geometry as dirty for this widget
+        self.mark_widget_dirty(widget)
+        
+        # Clear last hit result if it involves this widget
+        if (self._last_hit_result and 
+            len(self._last_hit_result) > 0 and 
+            self._last_hit_result[0] is widget):
+            self._last_mouse_pos = None
+            self._last_hit_result = None
         
     def build_cache(self, window_stack: List[QWidget], dock_containers: List[QWidget]):
         """
@@ -150,21 +206,25 @@ class HitTestCache:
             if window and window.isVisible():
                 from ..widgets.dock_panel import DockPanel
                 if isinstance(window, DockPanel) and not window.parent_container:
-                    self._drop_targets.append(CachedDropTarget(
+                    target = CachedDropTarget(
                         widget=window,
                         target_type='widget',
                         z_order=z_index
-                    ))
+                    )
+                    target.set_hit_test_cache(self)
+                    self._drop_targets.append(target)
                 
         self._cache_valid = True
         
     def _cache_container_targets(self, container, z_order=0):
         if container and container.isVisible():
-            self._drop_targets.append(CachedDropTarget(
+            target = CachedDropTarget(
                 widget=container,
                 target_type='container',
                 z_order=z_order
-            ))
+            )
+            target.set_hit_test_cache(self)
+            self._drop_targets.append(target)
         
         if hasattr(container, 'splitter') and container.splitter:
             self._cache_traversal_targets(container, container.splitter, z_order)
@@ -173,17 +233,23 @@ class HitTestCache:
         if not current_widget or not current_widget.isVisible():
             return
 
+        # Skip caching targets from the container that's currently being dragged
+        if self._dragging_container and container is self._dragging_container:
+            return
+
         if isinstance(current_widget, QTabWidget):
             current_tab_content = current_widget.currentWidget()
             if current_tab_content:
                 dockable_widget = current_tab_content.property("dockable_widget")
                 if dockable_widget:
-                    self._drop_targets.append(CachedDropTarget(
+                    target = CachedDropTarget(
                         widget=dockable_widget,
                         target_type='widget',
                         parent_container=container,
                         z_order=z_order
-                    ))
+                    )
+                    target.set_hit_test_cache(self)
+                    self._drop_targets.append(target)
 
             tab_bar = current_widget.tabBar()
             if tab_bar and tab_bar.isVisible():
@@ -235,8 +301,14 @@ class HitTestCache:
         matching_targets = []
         for target in self._drop_targets:
             if target.global_rect.contains(global_pos):
+                # Exclude the dragging widget itself
                 if excluded_widget and target.widget is excluded_widget:
                     continue
+                
+                # Also exclude widgets that belong to the dragging container
+                if excluded_widget and target.parent_container is excluded_widget:
+                    continue
+                    
                 matching_targets.append(target)
                 
         if matching_targets:
@@ -276,8 +348,9 @@ class HitTestCache:
         """
         return self._cache_valid
         
-    def set_drag_operation_state(self, in_drag: bool):
+    def set_drag_operation_state(self, in_drag: bool, dragging_container: Optional[QWidget] = None):
         self._in_drag_operation = in_drag
+        self._dragging_container = dragging_container if in_drag else None
         if not in_drag:
             self._last_mouse_pos = None
             self._last_hit_result = None
@@ -312,3 +385,95 @@ class HitTestCache:
                 return False
                 
         return False
+    
+    def set_performance_monitor(self, monitor):
+        """Set reference to performance monitor for cache statistics."""
+        self._performance_monitor = monitor
+    
+    def get_cached_geometry(self, widget: QWidget) -> Optional[QRect]:
+        """
+        Get cached geometry for a widget, computing it if not cached.
+        
+        Args:
+            widget: Widget to get geometry for
+            
+        Returns:
+            QRect: Cached or computed geometry, None if widget is invalid
+        """
+        if not widget or widget in self._dirty_regions:
+            if self._performance_monitor:
+                self._performance_monitor.increment_counter('cache_misses')
+            return None
+            
+        if widget in self._geometry_cache:
+            if self._performance_monitor:
+                self._performance_monitor.increment_counter('cache_hits')
+            return self._geometry_cache[widget]
+            
+        # Compute and cache geometry
+        try:
+            global_pos = widget.mapToGlobal(QPoint(0, 0))
+            size = widget.size()
+            
+            if (global_pos.x() < -50000 or global_pos.y() < -50000 or 
+                global_pos.x() > 50000 or global_pos.y() > 50000 or
+                size.width() <= 0 or size.height() <= 0):
+                return None
+                
+            geometry = QRect(global_pos, size)
+            self._geometry_cache[widget] = geometry
+            return geometry
+            
+        except Exception:
+            return None
+    
+    def mark_widget_dirty(self, widget: QWidget):
+        """
+        Mark a widget as having dirty geometry that needs recalculation.
+        
+        Args:
+            widget: Widget to mark as dirty
+        """
+        if widget:
+            self._dirty_regions.add(widget)
+            # Remove from cache to force recalculation
+            if widget in self._geometry_cache:
+                del self._geometry_cache[widget]
+    
+    def update_cached_geometry(self, widget: QWidget) -> bool:
+        """
+        Update cached geometry for a specific widget during drag operations.
+        
+        Args:
+            widget: Widget to update geometry for
+            
+        Returns:
+            bool: True if geometry was updated, False otherwise
+        """
+        if not widget or not self._in_drag_operation:
+            return False
+            
+        old_geometry = self._geometry_cache.get(widget)
+        new_geometry = self.get_cached_geometry(widget)
+        
+        if new_geometry and old_geometry != new_geometry:
+            self._geometry_cache[widget] = new_geometry
+            # Remove from dirty regions since it's now updated
+            if widget in self._dirty_regions:
+                self._dirty_regions.remove(widget)
+            return True
+            
+        return False
+    
+    def get_geometry_cache_stats(self) -> dict:
+        """
+        Get statistics about the geometry cache for performance monitoring.
+        
+        Returns:
+            dict: Cache statistics
+        """
+        return {
+            'cached_geometries': len(self._geometry_cache),
+            'dirty_regions': len(self._dirty_regions),
+            'cache_hit_rate': len(self._geometry_cache) / max(1, len(self._geometry_cache) + len(self._dirty_regions))
+        }
