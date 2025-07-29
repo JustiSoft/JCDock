@@ -15,7 +15,7 @@ from ..utils.icon_cache import IconCache
 
 
 class DockContainer(QWidget):
-    def __init__(self, orientation=Qt.Horizontal, margin_size=5, parent=None, manager=None, create_shadow=True,
+    def __init__(self, orientation=Qt.Horizontal, margin_size=6, parent=None, manager=None, create_shadow=True,
                  show_title_bar=True, title_bar_color=None):
         super().__init__(parent)
 
@@ -121,7 +121,6 @@ class DockContainer(QWidget):
         
         if self._should_draw_shadow:
             self._setup_shadow_effect()
-        
             
     def _setup_shadow_effect(self):
         """
@@ -396,7 +395,10 @@ class DockContainer(QWidget):
             return
 
         if self.title_bar and not self._is_maximized:
-            edge = self.get_edge(event.position().toPoint())
+            pos = event.position().toPoint()
+            edge = self.get_edge(pos)
+            
+            
             if edge:
                 if edge in ["top", "bottom"]:
                     self.setCursor(Qt.SizeVerCursor)
@@ -487,6 +489,7 @@ class DockContainer(QWidget):
                 )
                 self.mouseMoveEvent(mapped_event)
                 return True
+            
 
         return super().eventFilter(watched, event)
 
@@ -555,6 +558,7 @@ class DockContainer(QWidget):
         on_right = content_rect.width() - margin < adj_pos.x() <= content_rect.width()
         on_top = 0 <= adj_pos.y() < margin
         on_bottom = content_rect.height() - margin < adj_pos.y() <= content_rect.height()
+
 
         if on_top:
             if on_left: return "top_left"
