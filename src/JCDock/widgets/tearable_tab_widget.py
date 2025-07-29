@@ -130,6 +130,9 @@ class TearableTabWidget(QTabWidget):
         self.dragged_widget = None
         self.is_custom_dragging = False
         self.mouse_grabbed = False
+        
+        # Connect to currentChanged signal to force proper widget visibility
+        self.currentChanged.connect(self._on_tab_changed)
 
     def set_manager(self, manager):
         self.manager = manager
@@ -296,6 +299,48 @@ class TearableTabWidget(QTabWidget):
         self.dragged_tab_index = -1
         self.dragged_widget = None
         self.mouse_grabbed = False
+
+    def _on_tab_changed(self, index):
+        """
+        Handle tab changes to ensure proper widget visibility and prevent bleeding.
+        """
+        # Hide all widgets first
+        for i in range(self.count()):
+            widget = self.widget(i)
+            if widget and i != index:
+                widget.hide()
+        
+        # Show and update the current widget
+        if index >= 0:
+            current_widget = self.widget(index)
+            if current_widget:
+                current_widget.show()
+                current_widget.raise_()
+                current_widget.update()
+        
+        # Force repaint of the tab widget
+        self.repaint()
+
+    def resizeEvent(self, event):
+        """
+        Handle resize events to ensure proper tab content refresh.
+        """
+        super().resizeEvent(event)
+        
+        # Force visibility update for all tabs to prevent bleeding
+        current_index = self.currentIndex()
+        for i in range(self.count()):
+            widget = self.widget(i)
+            if widget:
+                if i == current_index:
+                    widget.show()
+                    widget.raise_()
+                    widget.update()
+                else:
+                    widget.hide()
+        
+        # Force repaint of the entire tab widget
+        self.repaint()
 
     def keyPressEvent(self, event):
         """

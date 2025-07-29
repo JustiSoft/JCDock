@@ -260,7 +260,17 @@ class DockContainer(QWidget):
             screen = QApplication.screenAt(self.pos())
             if not screen:
                 screen = QApplication.primaryScreen()
-            self.setGeometry(screen.availableGeometry())
+            
+            # Calculate proper maximized geometry accounting for shadow padding
+            screen_geom = screen.availableGeometry()
+            if self._should_draw_shadow and self._shadow_padding > 0:
+                # Expand geometry by shadow padding to fill entire screen
+                screen_geom = screen_geom.adjusted(
+                    -self._shadow_padding, -self._shadow_padding,
+                    self._shadow_padding, self._shadow_padding
+                )
+            
+            self.setGeometry(screen_geom)
             self._is_maximized = True
             self.title_bar.maximize_button.setIcon(self.title_bar._create_control_icon("restore"))
 
