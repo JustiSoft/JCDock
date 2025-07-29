@@ -43,19 +43,15 @@ class WindowManager:
 
     def validate_window_geometry(self, geometry: QRect) -> QRect:
         """
-        Validates and corrects a window's geometry to ensure it's visible on a screen.
+        Validates and corrects a window's geometry to ensure it's visible across multi-monitor setups.
+        Allows windows to span monitors while ensuring minimum visibility is maintained.
         
         Args:
             geometry: The proposed window geometry
             
         Returns:
-            QRect: A corrected geometry that ensures the window is visible on a screen
+            QRect: A corrected geometry that ensures the window is visible on desktop
         """
-        screen = QApplication.screenAt(geometry.topLeft())
-        if not screen:
-            screen = QApplication.primaryScreen()
-        
-        available_geometry = screen.availableGeometry()
         validated_geometry = QRect(geometry)
         
         # Ensure minimum dimensions
@@ -64,23 +60,66 @@ class WindowManager:
         validated_geometry.setWidth(min_width)
         validated_geometry.setHeight(min_height)
         
-        # Constrain to screen bounds
-        max_width = min(validated_geometry.width(), available_geometry.width())
-        max_height = min(validated_geometry.height(), available_geometry.height())
-        validated_geometry.setWidth(max_width)
-        validated_geometry.setHeight(max_height)
+        # Calculate total desktop bounds for multi-monitor support
+        desktop_bounds = self._calculate_desktop_bounds()
         
-        # Adjust position to keep window on screen
-        if validated_geometry.right() > available_geometry.right():
-            validated_geometry.moveRight(available_geometry.right())
-        if validated_geometry.bottom() > available_geometry.bottom():
-            validated_geometry.moveBottom(available_geometry.bottom())
-        if validated_geometry.left() < available_geometry.left():
-            validated_geometry.moveLeft(available_geometry.left())
-        if validated_geometry.top() < available_geometry.top():
-            validated_geometry.moveTop(available_geometry.top())
+        # Apply intelligent positioning to ensure visibility while allowing cross-monitor spanning
+        self._ensure_minimum_visibility(validated_geometry, desktop_bounds)
         
         return validated_geometry
+    
+    def _calculate_desktop_bounds(self) -> QRect:
+        """
+        Calculate the bounding rectangle encompassing all available screen real estate.
+        
+        Returns:
+            QRect: Combined geometry of all screens
+        """
+        total_bounds = QRect()
+        
+        screens = QApplication.screens()
+        if not screens:
+            primary = QApplication.primaryScreen()
+            if primary:
+                return primary.availableGeometry()
+            return QRect(0, 0, 1920, 1080)  # Fallback
+        
+        for screen in screens:
+            screen_geom = screen.availableGeometry()
+            if total_bounds.isEmpty():
+                total_bounds = QRect(screen_geom)
+            else:
+                total_bounds = total_bounds.united(screen_geom)
+        
+        return total_bounds
+    
+    def _ensure_minimum_visibility(self, geometry: QRect, desktop_bounds: QRect):
+        """
+        Ensure the window maintains minimum visibility on the desktop while allowing
+        cross-monitor positioning. Only adjusts position if window would be completely hidden.
+        
+        Args:
+            geometry: Window geometry to adjust (modified in-place)
+            desktop_bounds: Total desktop area bounds
+        """
+        min_visible_pixels = 50  # Minimum pixels that must remain visible
+        
+        # Only adjust if window would be completely outside desktop bounds
+        if geometry.right() < desktop_bounds.left():
+            geometry.moveLeft(desktop_bounds.left() - geometry.width() + min_visible_pixels)
+        elif geometry.left() > desktop_bounds.right():
+            geometry.moveLeft(desktop_bounds.right() - min_visible_pixels)
+            
+        if geometry.bottom() < desktop_bounds.top():
+            geometry.moveTop(desktop_bounds.top() - geometry.height() + min_visible_pixels)
+        elif geometry.top() > desktop_bounds.bottom():
+            geometry.moveTop(desktop_bounds.bottom() - min_visible_pixels)
+        
+        # Limit maximum size to prevent unreasonably large windows
+        max_width = min(geometry.width(), desktop_bounds.width() + 200)  # Allow slight overhang
+        max_height = min(geometry.height(), desktop_bounds.height() + 200)
+        geometry.setWidth(max_width)
+        geometry.setHeight(max_height)
 
     def create_new_floating_root(self):
         """

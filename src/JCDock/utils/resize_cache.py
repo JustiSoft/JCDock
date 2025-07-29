@@ -10,6 +10,7 @@ class ResizeConstraints:
     min_width: int
     min_height: int
     screen_geometry: QRect
+    desktop_geometry: QRect
     shadow_margin: int = 0
     min_shadow_width: int = 0
     min_shadow_height: int = 0
@@ -58,6 +59,9 @@ class ResizeCache:
             self._cached_screen = screen
             screen_geom = screen.availableGeometry()
             
+            # Calculate total desktop geometry across all screens
+            desktop_geom = self._calculate_total_desktop_geometry()
+            
             # Cache minimum size constraints
             min_width = max(widget.minimumWidth(), 100)
             min_height = max(widget.minimumHeight(), 100)
@@ -81,6 +85,7 @@ class ResizeCache:
                 min_width=min_width,
                 min_height=min_height,
                 screen_geometry=screen_geom,
+                desktop_geometry=desktop_geom,
                 shadow_margin=shadow_margin,
                 min_shadow_width=min_shadow_width,
                 min_shadow_height=min_shadow_height
@@ -95,6 +100,35 @@ class ResizeCache:
             if self._performance_monitor and 'timer_id' in locals():
                 self._performance_monitor.end_timing(timer_id)
     
+    def _calculate_total_desktop_geometry(self) -> QRect:
+        """
+        Calculate the bounding rectangle of all available screen geometries.
+        This allows windows to resize across monitor boundaries naturally.
+        
+        Returns:
+            QRect: Total desktop geometry encompassing all screens
+        """
+        total_rect = QRect()
+        
+        # Get all screens
+        screens = QApplication.screens()
+        if not screens:
+            # Fallback to primary screen if no screens found
+            primary = QApplication.primaryScreen()
+            if primary:
+                return primary.availableGeometry()
+            return QRect(0, 0, 1920, 1080)  # Ultimate fallback
+        
+        # Calculate bounding rectangle of all screen geometries
+        for screen in screens:
+            screen_geom = screen.availableGeometry()
+            if total_rect.isEmpty():
+                total_rect = QRect(screen_geom)
+            else:
+                total_rect = total_rect.united(screen_geom)
+        
+        return total_rect
+    
     def get_cached_constraints(self) -> Optional[ResizeConstraints]:
         """Get the currently cached resize constraints."""
         return self._constraints
@@ -102,17 +136,32 @@ class ResizeCache:
     def validate_cached_screen(self, widget: QWidget) -> bool:
         """
         Validate that the cached screen is still correct for the widget.
-        Returns True if cache is valid, False if screen changed.
+        Only invalidates cache if widget center moved completely to a different screen.
+        This prevents unnecessary cache invalidation during cross-monitor operations.
+        
+        Returns True if cache is valid, False if screen changed significantly.
         """
         if not self._cached_screen or not self._constraints:
             return False
             
-        current_screen = QApplication.screenAt(widget.pos())
+        # Use widget center point for more stable screen detection
+        widget_center = widget.geometry().center()
+        current_screen = QApplication.screenAt(widget_center)
         if not current_screen:
             current_screen = QApplication.primaryScreen()
             
-        # Check if widget moved to a different screen
+        # Only invalidate cache if widget center moved to a significantly different screen
+        # This allows windows to span monitors during resize without cache thrashing
         if current_screen != self._cached_screen:
+            # Check if the widget is still partially on the cached screen
+            cached_screen_geom = self._cached_screen.availableGeometry()
+            widget_geom = widget.geometry()
+            
+            # If widget still intersects with cached screen, keep cache valid
+            if cached_screen_geom.intersects(widget_geom):
+                return True
+                
+            # Widget completely moved to different screen, invalidate cache
             if self._performance_monitor:
                 self._performance_monitor.increment_counter('screen_changes')
             return False
@@ -130,6 +179,7 @@ class ResizeCache:
             
         self._cached_screen = screen
         self._constraints.screen_geometry = screen.availableGeometry()
+        self._constraints.desktop_geometry = self._calculate_total_desktop_geometry()
         
         if self._performance_monitor:
             self._performance_monitor.increment_counter('screen_cache_updates')
@@ -198,16 +248,19 @@ class ResizeCache:
         if new_geom.height() < constraints.min_height:
             new_geom.setHeight(constraints.min_height)
             
-        # Apply screen boundary constraints
-        screen_geom = constraints.screen_geometry
-        if new_geom.left() < screen_geom.left():
-            new_geom.moveLeft(screen_geom.left())
-        if new_geom.top() < screen_geom.top():
-            new_geom.moveTop(screen_geom.top())
-        if new_geom.right() > screen_geom.right():
-            new_geom.moveRight(screen_geom.right())
-        if new_geom.bottom() > screen_geom.bottom():
-            new_geom.moveBottom(screen_geom.bottom())
+        # Apply desktop boundary constraints (allows cross-monitor resizing)
+        desktop_geom = constraints.desktop_geometry
+        
+        # Only constrain if window would go completely outside desktop bounds
+        # This allows windows to span multiple monitors naturally
+        if new_geom.right() < desktop_geom.left():
+            new_geom.moveLeft(desktop_geom.left() - new_geom.width() + 50)  # Keep 50px visible
+        if new_geom.left() > desktop_geom.right():
+            new_geom.moveLeft(desktop_geom.right() - 50)  # Keep 50px visible
+        if new_geom.bottom() < desktop_geom.top():
+            new_geom.moveTop(desktop_geom.top() - new_geom.height() + 50)  # Keep 50px visible
+        if new_geom.top() > desktop_geom.bottom():
+            new_geom.moveTop(desktop_geom.bottom() - 50)  # Keep 50px visible
             
         # Apply sanity checks
         if (new_geom.width() <= 0 or new_geom.height() <= 0 or
