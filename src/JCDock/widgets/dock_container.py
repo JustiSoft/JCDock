@@ -17,7 +17,7 @@ from ..utils.resize_throttler import ResizeThrottler
 
 
 class DockContainer(QWidget):
-    def __init__(self, orientation=Qt.Horizontal, margin_size=6, parent=None, manager=None, create_shadow=True,
+    def __init__(self, orientation=Qt.Horizontal, margin_size=0, extended_resize_margin=6, parent=None, manager=None, create_shadow=True,
                  show_title_bar=True, title_bar_color=None):
         super().__init__(parent)
 
@@ -105,6 +105,7 @@ class DockContainer(QWidget):
 
         self.setMinimumSize(200, 150)
         self.resize_margin = 8
+        self.extended_resize_margin = extended_resize_margin
         self.resizing = False
         self.resize_edge = None
         self.resize_start_pos = None
@@ -306,27 +307,7 @@ class DockContainer(QWidget):
 
         pos = event.position().toPoint()
         
-        if self.content_wrapper:
-            content_rect = self.content_wrapper.geometry()
-            
-            if not content_rect.contains(pos):
-                self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-                underlying = QApplication.widgetAt(event.globalPosition().toPoint())
-                if underlying and underlying.window() is not self:
-                    target_window = underlying.window()
-                    if target_window:
-                        target_window.raise_()
-                        target_window.activateWindow()
-                        if self.manager and isinstance(target_window, (DockPanel, DockContainer)):
-                            self.manager.bring_to_front(target_window)
-                        QApplication.sendEvent(underlying, event)
-                self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
-                return
-        else:
-            content_rect = self.rect()
-
-        self.on_activation_request()
-
+        # Check for resize edges first (including extended detection zone)
         if self.title_bar and not self._is_maximized:
             self.resize_edge = self.get_edge(pos)
             if self.resize_edge:
@@ -354,7 +335,26 @@ class DockContainer(QWidget):
                     self.manager._set_state(DockingState.RESIZING_WINDOW)
                     
                 return
+        
+        # Handle clicks outside content area (but not in resize zone)
+        if self.content_wrapper:
+            content_rect = self.content_wrapper.geometry()
+            
+            if not content_rect.contains(pos):
+                self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+                underlying = QApplication.widgetAt(event.globalPosition().toPoint())
+                if underlying and underlying.window() is not self:
+                    target_window = underlying.window()
+                    if target_window:
+                        target_window.raise_()
+                        target_window.activateWindow()
+                        if self.manager and isinstance(target_window, (DockPanel, DockContainer)):
+                            self.manager.bring_to_front(target_window)
+                        QApplication.sendEvent(underlying, event)
+                self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+                return
 
+        self.on_activation_request()
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
@@ -397,7 +397,7 @@ class DockContainer(QWidget):
                 self._resize_throttler.request_resize(constrained_geom)
             return
 
-        # Handle cursor updates for resize edges (optimized with caching)
+        # Handle cursor updates for resize edges (optimized with caching, including extended zone)
         if self.title_bar and not self._is_maximized:
             pos = event.position().toPoint()
             
@@ -406,7 +406,7 @@ class DockContainer(QWidget):
             if cached_edge is not None:
                 edge = cached_edge
             else:
-                # Calculate edge and cache it
+                # Calculate edge and cache it (now includes extended detection zone)
                 edge = self.get_edge(pos)
                 self._resize_cache.cache_edge_detection(pos, edge)
             
@@ -571,43 +571,62 @@ class DockContainer(QWidget):
     def get_edge(self, pos):
         """
         Determines which edge (if any) the given position is on for resize operations.
-        Updated to work with content_wrapper architecture.
+        Now supports extended detection zone outside container boundaries for better cursor handling.
         """
         if not self.title_bar or self._is_maximized:
             return None
 
         if self.content_wrapper:
             content_rect = self.content_wrapper.geometry()
-            
-            if not content_rect.contains(pos):
-                return None
-                
-            adj_pos = pos - content_rect.topLeft()
         else:
             widget_rect = self.rect()
             if widget_rect.width() <= 0 or widget_rect.height() <= 0:
                 return None
-            
             content_rect = widget_rect
+
+        # Create extended detection rectangle that extends beyond container boundaries
+        extended_margin = self.extended_resize_margin
+        extended_rect = content_rect.adjusted(-extended_margin, -extended_margin, 
+                                            extended_margin, extended_margin)
+        
+        # First check if position is within extended detection zone
+        if not extended_rect.contains(pos):
+            return None
+
+        # Calculate position relative to the content rectangle
+        if self.content_wrapper:
+            adj_pos = pos - content_rect.topLeft()
+        else:
             adj_pos = pos
 
-        margin = self.resize_margin
-        on_left = 0 <= adj_pos.x() < margin
-        on_right = content_rect.width() - margin < adj_pos.x() <= content_rect.width()
-        on_top = 0 <= adj_pos.y() < margin
-        on_bottom = content_rect.height() - margin < adj_pos.y() <= content_rect.height()
-
-
-        if on_top:
-            if on_left: return "top_left"
-            if on_right: return "top_right"
-            return "top"
-        if on_bottom:
-            if on_left: return "bottom_left"
-            if on_right: return "bottom_right"
-            return "bottom"
-        if on_left: return "left"
-        if on_right: return "right"
+        # For positions outside the content rectangle but within extended zone,
+        # calculate which edge they're closest to
+        if not content_rect.contains(pos):
+            # Position is in extended zone outside container
+            rel_x = pos.x() - content_rect.left()
+            rel_y = pos.y() - content_rect.top()
+            
+            # Determine proximity to edges
+            near_left = rel_x < 0
+            near_right = rel_x >= content_rect.width()
+            near_top = rel_y < 0  
+            near_bottom = rel_y >= content_rect.height()
+            
+            # Return edge based on position in extended zone
+            if near_top:
+                if near_left: return "top_left"
+                if near_right: return "top_right"
+                return "top"
+            if near_bottom:
+                if near_left: return "bottom_left"
+                if near_right: return "bottom_right"
+                return "bottom"
+            if near_left: return "left"
+            if near_right: return "right"
+        
+        # Position is inside container - we want NO internal resize detection
+        # The resize detection should ONLY happen in the extended zone outside
+        # This allows content widgets to have normal cursors throughout their area
         return None
 
     def handle_tab_close(self, index, tab_widget=None):
