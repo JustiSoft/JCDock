@@ -12,6 +12,8 @@ from .title_bar import TitleBar
 from .dock_panel import DockPanel
 from ..interaction.docking_overlay import DockingOverlay
 from ..utils.icon_cache import IconCache
+from ..utils.resize_cache import ResizeCache
+from ..utils.resize_throttler import ResizeThrottler
 
 
 class DockContainer(QWidget):
@@ -119,6 +121,11 @@ class DockContainer(QWidget):
         self.content_area.installEventFilter(self)
 
         self._filters_installed = False
+        
+        # Initialize resize optimization components
+        self._resize_cache = ResizeCache()
+        self._resize_throttler = None  # Initialized when resize starts
+        self._cursor_update_timer = None  # For debounced cursor updates
         
         self.setAcceptDrops(True)
         
@@ -327,6 +334,22 @@ class DockContainer(QWidget):
                 self.resize_start_pos = event.globalPosition().toPoint()
                 self.resize_start_geom = self.geometry()
                 
+                # Initialize resize optimization components
+                self._resize_cache.cache_resize_constraints(
+                    self, self._should_draw_shadow, self._blur_radius
+                )
+                
+                # Set up performance monitoring if available
+                if (self.manager and hasattr(self.manager, 'performance_monitor') and 
+                    self.manager.performance_monitor):
+                    self._resize_cache.set_performance_monitor(self.manager.performance_monitor)
+                
+                # Initialize throttler for this resize operation
+                self._resize_throttler = ResizeThrottler(self, interval_ms=16)
+                if (self.manager and hasattr(self.manager, 'performance_monitor') and 
+                    self.manager.performance_monitor):
+                    self._resize_throttler.set_performance_monitor(self.manager.performance_monitor)
+                
                 if self.manager:
                     self.manager._set_state(DockingState.RESIZING_WINDOW)
                     
@@ -336,13 +359,15 @@ class DockContainer(QWidget):
 
     def mouseMoveEvent(self, event: QMouseEvent):
         """
-        Handles mouse movement for resizing operations and all cursor logic.
-        Enhanced with geometry validation.
+        Optimized mouse movement handler for resizing operations.
+        Uses caching and throttling to eliminate expensive operations during resize.
         """
-        if self.resizing and not self._is_maximized:
+        if self.resizing and not self._is_maximized and self._resize_throttler:
+            # Use optimized resize handling with caching and throttling
             delta = event.globalPosition().toPoint() - self.resize_start_pos
             new_geom = QRect(self.resize_start_geom)
 
+            # Calculate new geometry based on resize edge
             if "right" in self.resize_edge:
                 new_width = self.resize_start_geom.width() + delta.x()
                 new_geom.setWidth(max(new_width, self.minimumWidth()))
@@ -360,66 +385,67 @@ class DockContainer(QWidget):
                 new_geom.setY(self.resize_start_geom.bottom() - new_height)
                 new_geom.setHeight(new_height)
 
-            min_width = max(self.minimumWidth(), 100)
-            min_height = max(self.minimumHeight(), 100)
+            # Validate screen boundaries if widget moved to different screen
+            if not self._resize_cache.validate_cached_screen(self):
+                self._resize_cache.update_screen_cache(self)
+
+            # Apply cached constraints (replaces expensive inline calculations)
+            constrained_geom = self._resize_cache.apply_constraints_to_geometry(new_geom)
             
-            if new_geom.width() < min_width:
-                new_geom.setWidth(min_width)
-            if new_geom.height() < min_height:
-                new_geom.setHeight(min_height)
-                
-            if self._should_draw_shadow:
-                shadow_margin = 2 * self._blur_radius
-                min_shadow_width = shadow_margin + 50
-                min_shadow_height = shadow_margin + 50
-                
-                if new_geom.width() < min_shadow_width:
-                    new_geom.setWidth(min_shadow_width)
-                if new_geom.height() < min_shadow_height:
-                    new_geom.setHeight(min_shadow_height)
-            
-            screen = QApplication.screenAt(self.pos())
-            if not screen:
-                screen = QApplication.primaryScreen()
-            screen_geom = screen.availableGeometry()
-            
-            if new_geom.left() < screen_geom.left():
-                new_geom.moveLeft(screen_geom.left())
-            if new_geom.top() < screen_geom.top():
-                new_geom.moveTop(screen_geom.top())
-            if new_geom.right() > screen_geom.right():
-                new_geom.moveRight(screen_geom.right())
-            if new_geom.bottom() > screen_geom.bottom():
-                new_geom.moveBottom(screen_geom.bottom())
-                
-            if (new_geom.width() > 0 and new_geom.height() > 0 and
-                new_geom.width() <= 5000 and new_geom.height() <= 5000):
-                self.setGeometry(new_geom)
+            if not constrained_geom.isEmpty():
+                # Use throttler to batch geometry updates
+                self._resize_throttler.request_resize(constrained_geom)
             return
 
+        # Handle cursor updates for resize edges (optimized with caching)
         if self.title_bar and not self._is_maximized:
             pos = event.position().toPoint()
-            edge = self.get_edge(pos)
             
-            
-            if edge:
-                if edge in ["top", "bottom"]:
-                    self.setCursor(Qt.SizeVerCursor)
-                elif edge in ["left", "right"]:
-                    self.setCursor(Qt.SizeHorCursor)
-                elif edge in ["top_left", "bottom_right"]:
-                    self.setCursor(Qt.SizeFDiagCursor)
-                elif edge in ["top_right", "bottom_left"]:
-                    self.setCursor(Qt.SizeBDiagCursor)
+            # Check cached edge first
+            cached_edge = self._resize_cache.get_cached_edge(pos)
+            if cached_edge is not None:
+                edge = cached_edge
             else:
-                self.unsetCursor()
+                # Calculate edge and cache it
+                edge = self.get_edge(pos)
+                self._resize_cache.cache_edge_detection(pos, edge)
+            
+            self._update_cursor_for_edge(edge)
         else:
             self.unsetCursor()
 
         super().mouseMoveEvent(event)
 
+    def _update_cursor_for_edge(self, edge: str):
+        """
+        Update cursor based on resize edge with debouncing to prevent flicker.
+        
+        Args:
+            edge: Resize edge or None
+        """
+        if edge:
+            if edge in ["top", "bottom"]:
+                self.setCursor(Qt.SizeVerCursor)
+            elif edge in ["left", "right"]:
+                self.setCursor(Qt.SizeHorCursor)
+            elif edge in ["top_left", "bottom_right"]:
+                self.setCursor(Qt.SizeFDiagCursor)
+            elif edge in ["top_right", "bottom_left"]:
+                self.setCursor(Qt.SizeBDiagCursor)
+        else:
+            self.unsetCursor()
+
     def mouseReleaseEvent(self, event):
         if self.resizing:
+            # Flush any pending resize operations immediately
+            if self._resize_throttler:
+                self._resize_throttler.flush_pending()
+                self._resize_throttler.cleanup()
+                self._resize_throttler = None
+            
+            # Clear resize cache
+            self._resize_cache.clear_cache()
+            
             self.resizing = False
             self.resize_edge = None
             

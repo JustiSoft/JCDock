@@ -87,6 +87,18 @@ class DockingManager(QObject):
         if hasattr(self.hit_test_cache, 'get_geometry_cache_stats'):
             stats['hit_test_cache'] = self.hit_test_cache.get_geometry_cache_stats()
         
+        # Add resize performance stats from containers
+        resize_stats = []
+        for container in self.containers:
+            if hasattr(container, '_resize_cache') and container._resize_cache:
+                resize_stats.append({
+                    'container': str(container),
+                    'cache_stats': container._resize_cache.get_cache_stats()
+                })
+        
+        if resize_stats:
+            stats['resize_operations'] = resize_stats
+        
         return stats
     
     def clear_performance_metrics(self):
