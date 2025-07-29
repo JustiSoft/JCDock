@@ -582,6 +582,7 @@ class DockContainer(QWidget):
         """
         Determines which edge (if any) the given position is on for resize operations.
         Now supports extended detection zone outside container boundaries for better cursor handling.
+        Enhanced with larger corner zones for improved usability.
         """
         if not self.title_bar or self._is_maximized:
             return None
@@ -616,21 +617,38 @@ class DockContainer(QWidget):
             rel_x = pos.x() - content_rect.left()
             rel_y = pos.y() - content_rect.top()
             
-            # Determine proximity to edges
+            # Enhanced corner detection with larger zones for better usability
+            corner_expansion_factor = 2.0  # Make corner zones larger than single edge zones
+            expanded_corner_size = int(extended_margin * corner_expansion_factor)
+            
+            # Priority-based corner detection: Check expanded corner zones first
+            # This creates overlapping zones where corners take priority over edges
+            
+            # Top-left corner: Check for extended zone around top-left area
+            if (rel_x <= expanded_corner_size and rel_y <= expanded_corner_size):
+                return "top_left"
+            
+            # Top-right corner: Check for extended zone around top-right area
+            if (rel_x >= content_rect.width() - expanded_corner_size and rel_y <= expanded_corner_size):
+                return "top_right"
+            
+            # Bottom-left corner: Check for extended zone around bottom-left area
+            if (rel_x <= expanded_corner_size and rel_y >= content_rect.height() - expanded_corner_size):
+                return "bottom_left"
+            
+            # Bottom-right corner: Check for extended zone around bottom-right area
+            if (rel_x >= content_rect.width() - expanded_corner_size and rel_y >= content_rect.height() - expanded_corner_size):
+                return "bottom_right"
+            
+            # Determine proximity to edges for non-corner areas
             near_left = rel_x < 0
             near_right = rel_x >= content_rect.width()
             near_top = rel_y < 0  
             near_bottom = rel_y >= content_rect.height()
             
-            # Return edge based on position in extended zone
-            if near_top:
-                if near_left: return "top_left"
-                if near_right: return "top_right"
-                return "top"
-            if near_bottom:
-                if near_left: return "bottom_left"
-                if near_right: return "bottom_right"
-                return "bottom"
+            # Fall back to edge detection for remaining areas
+            if near_top: return "top"
+            if near_bottom: return "bottom"
             if near_left: return "left"
             if near_right: return "right"
         
