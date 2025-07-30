@@ -176,31 +176,9 @@ class TitleBar(QWidget):
                     edge = "right"
 
                 if edge:
-                    self._top_level_widget.resizing = True
-                    self._top_level_widget.resize_edge = edge
-                    self._top_level_widget.resize_start_pos = event.globalPosition().toPoint()
-                    self._top_level_widget.resize_start_geom = self._top_level_widget.geometry()
-                    
-                    # Initialize resize optimization components (same as container's mousePressEvent)
-                    if hasattr(self._top_level_widget, '_resize_cache'):
-                        self._top_level_widget._resize_cache.cache_resize_constraints(self._top_level_widget, False, 0)
-                        
-                        # Set up performance monitoring if available
-                        if (hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager and 
-                            hasattr(self._top_level_widget.manager, 'performance_monitor') and 
-                            self._top_level_widget.manager.performance_monitor):
-                            self._top_level_widget._resize_cache.set_performance_monitor(self._top_level_widget.manager.performance_monitor)
-                        
-                        # Initialize throttler for this resize operation
-                        from ..utils.resize_throttler import ResizeThrottler
-                        self._top_level_widget._resize_throttler = ResizeThrottler(self._top_level_widget, interval_ms=16)
-                        if (hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager and 
-                            hasattr(self._top_level_widget.manager, 'performance_monitor') and 
-                            self._top_level_widget.manager.performance_monitor):
-                            self._top_level_widget._resize_throttler.set_performance_monitor(self._top_level_widget.manager.performance_monitor)
-                    
-                    if hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager:
-                        self._top_level_widget.manager._set_state(DockingState.RESIZING_WINDOW)
+                    # Use centralized resize initiation from DockContainer
+                    if hasattr(self._top_level_widget, 'initiate_resize'):
+                        self._top_level_widget.initiate_resize(edge, event.globalPosition().toPoint())
 
             if not edge:
                 if hasattr(self._top_level_widget, 'on_activation_request'):
@@ -246,11 +224,9 @@ class TitleBar(QWidget):
                 if hasattr(self._top_level_widget, 'restore_normal_opacity'):
                     self._top_level_widget.restore_normal_opacity()
             if hasattr(self._top_level_widget, 'resizing') and self._top_level_widget.resizing:
-                self._top_level_widget.resizing = False
-                self._top_level_widget.resize_edge = None
-                
-                if hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager:
-                    self._top_level_widget.manager._set_state(DockingState.IDLE)
+                # Use centralized resize finishing from DockContainer
+                if hasattr(self._top_level_widget, '_finish_resize'):
+                    self._top_level_widget._finish_resize()
 
     def _create_control_icon(self, icon_type: str, color=QColor("#303030")):
         """Creates cached window control icons for improved performance."""

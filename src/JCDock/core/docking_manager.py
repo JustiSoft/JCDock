@@ -6,7 +6,6 @@ from PySide6.QtGui import QColor, QDrag, QPixmap, QPainter, QCursor
 
 from .docking_state import DockingState
 from ..widgets.floating_dock_root import FloatingDockRoot
-from ..widgets.main_dock_window import MainDockWindow
 from ..model.dock_model import LayoutModel, AnyNode, SplitterNode, TabGroupNode, WidgetNode
 from ..widgets.dock_panel import DockPanel
 from ..widgets.dock_container import DockContainer
@@ -245,7 +244,7 @@ class DockingManager(QObject):
         
         This is the authoritative method for checking persistent root status.
         It first checks the container's is_persistent_root property (if set),
-        then falls back to type-based checks for MainDockWindow and FloatingDockRoot.
+        then falls back to type-based checks for FloatingDockRoot.
         
         Use this method rather than checking container.is_persistent_root directly
         to ensure all persistent root types are properly identified.
@@ -253,7 +252,7 @@ class DockingManager(QObject):
         if hasattr(container, 'is_persistent_root') and container.is_persistent_root:
             return True
         
-        if self.main_window and container is self.main_window.dock_area:
+        if self.main_window and container is self.main_window:
             return True
         if isinstance(container, FloatingDockRoot):
             return True
@@ -400,6 +399,8 @@ class DockingManager(QObject):
         self.main_window = window
         if window not in self.window_stack:
             self.window_stack.append(window)
+        
+        # Main window registered for normal operation
 
     def set_debug_mode(self, enabled: bool):
         """
@@ -446,12 +447,16 @@ class DockingManager(QObject):
             dock_area.installEventFilter(self)
             dock_area.setMouseTracking(True)
             dock_area.setAttribute(Qt.WA_Hover, True)
+            
+            # Containers use their own overlay system, not the gesture manager
 
     def unregister_dock_area(self, dock_area: DockContainer):
         if dock_area in self.containers:
             self.containers.remove(dock_area)
         if dock_area in self.model.roots:
             self.model.unregister_widget(dock_area)
+            
+        # Containers don't use gesture manager
         if dock_area in self.window_stack:
             self.window_stack.remove(dock_area)
 
@@ -1973,7 +1978,7 @@ class DockingManager(QObject):
                     if isinstance(w, DockContainer):
                         root_node = self.model.roots.get(w)
                         is_empty = not (root_node and root_node.children)
-                        is_main_dock_area = (w is (self.main_window.dock_area if self.main_window else None))
+                        is_main_dock_area = (w is self.main_window if self.main_window else False)
                         is_floating_root = isinstance(w, FloatingDockRoot)
                         if is_empty and (is_main_dock_area or is_floating_root):
                             w.show_overlay(preset='main_empty')
@@ -2112,13 +2117,33 @@ class DockingManager(QObject):
         if not isinstance(obj, QWidget):
             return False
         
+        # Check widgets with safety for deleted objects
+        widgets_to_remove = []
         for widget in self.widgets:
-            if obj is widget or obj.isAncestorOf(widget) or widget.isAncestorOf(obj):
-                return True
+            try:
+                if obj is widget or obj.isAncestorOf(widget) or widget.isAncestorOf(obj):
+                    return True
+            except RuntimeError:
+                # Widget was deleted, mark for removal
+                widgets_to_remove.append(widget)
         
+        # Remove deleted widgets from list
+        for widget in widgets_to_remove:
+            self.widgets.remove(widget)
+        
+        # Check containers with safety for deleted objects
+        containers_to_remove = []
         for container in self.containers:
-            if obj is container or obj.isAncestorOf(container) or container.isAncestorOf(obj):
-                return True
+            try:
+                if obj is container or obj.isAncestorOf(container) or container.isAncestorOf(obj):
+                    return True
+            except RuntimeError:
+                # Container was deleted, mark for removal
+                containers_to_remove.append(container)
+        
+        # Remove deleted containers from list
+        for container in containers_to_remove:
+            self.containers.remove(container)
         
         return False
         

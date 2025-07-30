@@ -14,7 +14,7 @@ sys.path.insert(0, 'src')
 
 from JCDock.core.docking_manager import DockingManager
 from JCDock.widgets.dock_panel import DockPanel
-from JCDock.widgets.main_dock_window import MainDockWindow
+from JCDock.widgets.floating_dock_root import FloatingDockRoot
 from JCDock.widgets.dock_container import DockContainer
 from JCDock import dockable
 
@@ -138,10 +138,20 @@ def main():
     # Create the docking manager first
     manager = DockingManager()
     
-    # Create the main window with the manager
-    main_window = MainDockWindow(manager=manager)
+    # Create the main window with the manager using FloatingDockRoot
+    main_window = FloatingDockRoot(manager=manager, is_main_window=True)
     main_window.setWindowTitle("JCDock Simple Demo")
     main_window.resize(1200, 800)
+    main_window.setObjectName("MainDockArea")
+    main_window.set_persistent_root(True)
+    
+    # Hide the title bar since this acts like a main window
+    if main_window.title_bar:
+        main_window.title_bar.hide()
+    
+    # Register with the docking manager
+    manager.register_dock_area(main_window)
+    manager.set_main_window(main_window)
     
     # Create widgets
     widgets = [

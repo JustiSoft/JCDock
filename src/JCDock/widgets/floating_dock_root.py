@@ -8,22 +8,30 @@ class FloatingDockRoot(DockContainer):
     It overrides the standard activation request to add its special behavior.
     """
 
-    def __init__(self, manager, parent=None):
+    def __init__(self, manager, parent=None, is_main_window=False, title=None):
         from PySide6.QtGui import QColor
+        
+        # Determine if we should show title bar based on title parameter
+        show_title_bar = title is not None
+        
         super().__init__(
             parent=parent,
             manager=manager,
-            show_title_bar=True,
+            show_title_bar=show_title_bar,
             title_bar_color=QColor("#8B4513")
         )
-        self.setWindowTitle("Docking Application Layout")
+        self.is_main_window = is_main_window
+        
+        # Set window title and title bar text
+        window_title = title if title else "Docking Application Layout"
+        self.setWindowTitle(window_title)
         self.setGeometry(400, 400, 600, 500)
         self.installEventFilter(self)
         
-        self._original_title = "Docking Application Layout"
+        self._original_title = window_title
         
-        if self.title_bar:
-            self.title_bar.title_label.setText("Docking Application Layout")
+        if self.title_bar and title:
+            self.title_bar.title_label.setText(title)
         
         self.set_persistent_root(True)
         
@@ -33,6 +41,12 @@ class FloatingDockRoot(DockContainer):
         
         # Apply native Windows shadow after all setup is complete
         apply_native_shadow(self)
+    
+    def menuBar(self):
+        """Provide QMainWindow-like menuBar() method for compatibility."""
+        if hasattr(self, '_menu_bar'):
+            return self._menu_bar
+        return None
 
     def set_title(self, new_title: str):
         """Override to prevent title changes - FloatingDockRoot keeps its original title."""
@@ -59,7 +73,11 @@ class FloatingDockRoot(DockContainer):
                 
                 self.manager.signals.layout_changed.emit()
         
-        self.close()
+        if self.is_main_window:
+            from PySide6.QtWidgets import QApplication
+            QApplication.instance().quit()
+        else:
+            self.close()
     
     def closeEvent(self, event):
         """Handle window close events (Alt+F4, system close, etc.)."""
@@ -77,6 +95,10 @@ class FloatingDockRoot(DockContainer):
                     self.manager.containers.remove(self)
                 
                 self.manager.signals.layout_changed.emit()
+        
+        if self.is_main_window:
+            from PySide6.QtWidgets import QApplication
+            QApplication.instance().quit()
         
         event.accept()
 

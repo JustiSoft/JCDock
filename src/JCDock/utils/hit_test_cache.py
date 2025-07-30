@@ -182,37 +182,49 @@ class HitTestCache:
         self._window_rects.clear()
         
         for z_index, window in enumerate(window_stack):
-            if window and window.isVisible():
-                global_pos = window.mapToGlobal(QPoint(0, 0))
-                global_rect = QRect(global_pos, window.size())
-                
-                if (global_pos.x() < -50000 or global_pos.y() < -50000 or 
-                    global_pos.x() > 50000 or global_pos.y() > 50000 or
-                    window.size().width() <= 0 or window.size().height() <= 0):
-                    continue
+            try:
+                if window and window.isVisible():
+                    global_pos = window.mapToGlobal(QPoint(0, 0))
+                    global_rect = QRect(global_pos, window.size())
                     
-                self._window_rects[window] = (global_rect, z_index)
+                    if (global_pos.x() < -50000 or global_pos.y() < -50000 or 
+                        global_pos.x() > 50000 or global_pos.y() > 50000 or
+                        window.size().width() <= 0 or window.size().height() <= 0):
+                        continue
+                        
+                    self._window_rects[window] = (global_rect, z_index)
+            except RuntimeError:
+                # Window was deleted, skip it
+                continue
         
         for container in dock_containers:
-            if container and container.isVisible():
-                container_z_order = 0
-                for window, (rect, z_index) in self._window_rects.items():
-                    if window is container or (hasattr(window, 'dock_area') and window.dock_area is container):
-                        container_z_order = z_index
-                        break
-                self._cache_container_targets(container, container_z_order)
+            try:
+                if container and container.isVisible():
+                    container_z_order = 0
+                    for window, (rect, z_index) in self._window_rects.items():
+                        if window is container:
+                            container_z_order = z_index
+                            break
+                    self._cache_container_targets(container, container_z_order)
+            except RuntimeError:
+                # Container was deleted, skip it
+                continue
         
         for z_index, window in enumerate(window_stack):
-            if window and window.isVisible():
-                from ..widgets.dock_panel import DockPanel
-                if isinstance(window, DockPanel) and not window.parent_container:
-                    target = CachedDropTarget(
-                        widget=window,
-                        target_type='widget',
-                        z_order=z_index
-                    )
-                    target.set_hit_test_cache(self)
-                    self._drop_targets.append(target)
+            try:
+                if window and window.isVisible():
+                    from ..widgets.dock_panel import DockPanel
+                    if isinstance(window, DockPanel) and not window.parent_container:
+                        target = CachedDropTarget(
+                            widget=window,
+                            target_type='widget',
+                            z_order=z_index
+                        )
+                        target.set_hit_test_cache(self)
+                        self._drop_targets.append(target)
+            except RuntimeError:
+                # Window was deleted, skip it
+                continue
                 
         self._cache_valid = True
         

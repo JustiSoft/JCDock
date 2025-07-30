@@ -7,7 +7,7 @@ from PySide6.QtGui import QColor, QAction
 
 from JCDock.core.docking_manager import DockingManager
 from JCDock.widgets.dock_panel import DockPanel
-from JCDock.widgets.main_dock_window import MainDockWindow
+from JCDock.widgets.floating_dock_root import FloatingDockRoot
 from JCDock.widgets.dock_container import DockContainer
 from JCDock import dockable
 
@@ -164,7 +164,25 @@ class DockingTestApp:
         self.docking_manager.signals.layout_changed.connect(self.event_listener.on_layout_changed)
 
         self.widget_count = 0
-        self.main_window = MainDockWindow(manager=self.docking_manager)  # Re-enabled main window
+        # Create main window using FloatingDockRoot with is_main_window=True
+        self.main_window = FloatingDockRoot(manager=self.docking_manager, is_main_window=True, title="JCDOCK Test Application")
+        self.main_window.setWindowTitle("JCDOCK Test Application")
+        self.main_window.setGeometry(300, 300, 800, 600)
+        self.main_window.setObjectName("MainDockArea")
+        self.main_window.set_persistent_root(True)
+        
+        # Add menu bar support for main window functionality
+        from PySide6.QtWidgets import QMenuBar
+        self.main_window._menu_bar = QMenuBar(self.main_window)
+        
+        # Update the layout to include the menu bar below the title bar
+        if self.main_window.layout():
+            # Insert at position 1 to place it after the title bar (which is at position 0)
+            self.main_window.layout().insertWidget(1, self.main_window._menu_bar)
+
+        if self.docking_manager:
+            self.docking_manager.register_dock_area(self.main_window)
+            self.docking_manager.set_main_window(self.main_window)
 
         self.saved_layout_data = None
 

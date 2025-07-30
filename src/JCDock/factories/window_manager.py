@@ -129,7 +129,7 @@ class WindowManager:
         Returns:
             FloatingDockRoot: The newly created floating root window
         """
-        new_root_window = FloatingDockRoot(manager=self.manager)
+        new_root_window = FloatingDockRoot(manager=self.manager, is_main_window=False, title="Floating Dock Root")
 
         self.manager.register_dock_area(new_root_window)
 

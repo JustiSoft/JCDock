@@ -74,7 +74,7 @@ class DragDropController:
                     if isinstance(w, DockContainer):
                         root_node = self.manager.model.roots.get(w)
                         is_empty = not (root_node and root_node.children)
-                        is_main_dock_area = (w is (self.manager.main_window.dock_area if self.manager.main_window else None))
+                        is_main_dock_area = (w is self.manager.main_window if self.manager.main_window else False)
                         from ..widgets.floating_dock_root import FloatingDockRoot
                         is_floating_root = isinstance(w, FloatingDockRoot)
                         if is_empty and (is_main_dock_area or is_floating_root):

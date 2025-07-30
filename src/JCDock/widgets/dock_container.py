@@ -15,6 +15,7 @@ from ..utils.icon_cache import IconCache
 from ..utils.resize_cache import ResizeCache
 from ..utils.resize_throttler import ResizeThrottler
 from ..utils.windows_shadow import apply_native_shadow
+from .resize_overlay import ResizeOverlay
 
 
 class DockContainer(QWidget):
@@ -104,11 +105,9 @@ class DockContainer(QWidget):
 
         self._filters_installed = False
         
-        # Initialize resize optimization components
-        self._resize_cache = ResizeCache()
-        self._resize_throttler = None  # Initialized when resize starts
-        self._cursor_update_timer = None  # For debounced cursor updates
-        self._cursor_lock = False  # Prevent cursor thrashing
+        # Initialize resize components
+        self._resize_overlay = None  # Created on-demand during resize operations
+        self._content_updates_disabled = False  # Track content update state
         
         self.setAcceptDrops(True)
         
@@ -176,77 +175,119 @@ class DockContainer(QWidget):
         
         # Check for resize edges first
         if self.title_bar and not self._is_maximized:
-            self.resize_edge = self.get_edge(pos)
-            if self.resize_edge:
-                self.resizing = True
-                self.resize_start_pos = event.globalPosition().toPoint()
-                self.resize_start_geom = self.geometry()
-                
-                # Initialize resize optimization components
-                self._resize_cache.cache_resize_constraints(self, False, 0)
-                
-                # Set up performance monitoring if available
-                if (self.manager and hasattr(self.manager, 'performance_monitor') and 
-                    self.manager.performance_monitor):
-                    self._resize_cache.set_performance_monitor(self.manager.performance_monitor)
-                
-                # Initialize throttler for this resize operation
-                self._resize_throttler = ResizeThrottler(self, interval_ms=16)
-                if (self.manager and hasattr(self.manager, 'performance_monitor') and 
-                    self.manager.performance_monitor):
-                    self._resize_throttler.set_performance_monitor(self.manager.performance_monitor)
-                
-                if self.manager:
-                    self.manager._set_state(DockingState.RESIZING_WINDOW)
-                    
-                return
+            resize_edge = self.get_edge(pos)
+            if resize_edge:
+                if self.initiate_resize(resize_edge, event.globalPosition().toPoint()):
+                    return
         
         # Since content_wrapper is removed, handle activation directly
 
         self.on_activation_request()
         super().mousePressEvent(event)
+        
+    def initiate_resize(self, edge: str, start_pos: QPoint):
+        """
+        Initiate resize operation from title bar or container edge.
+        This consolidates resize initiation logic in one place.
+        
+        Args:
+            edge: Resize edge (e.g., "top", "left", "top_left", etc.)
+            start_pos: Global mouse position where resize started
+        """
+        if self._is_maximized:
+            return False
+            
+        self.resizing = True
+        self.resize_edge = edge
+        self.resize_start_pos = start_pos
+        self.resize_start_geom = self.geometry()
+        
+        # Create and show resize overlay
+        if not self._resize_overlay:
+            self._resize_overlay = ResizeOverlay()
+        
+        self._resize_overlay.set_original_geometry(self.resize_start_geom)
+        self._resize_overlay.show_overlay()
+        
+        # Disable content updates during resize
+        self._disable_content_updates()
+        
+        # Set manager state
+        if self.manager:
+            self.manager._set_state(DockingState.RESIZING_WINDOW)
+            
+        return True
+        
+    def _disable_content_updates(self):
+        """Disable updates on content area to prevent flicker during resize."""
+        if not self._content_updates_disabled:
+            self.content_area.setUpdatesEnabled(False)
+            self._content_updates_disabled = True
+            
+    def _enable_content_updates(self):
+        """Re-enable updates on content area after resize completes."""
+        if self._content_updates_disabled:
+            self.content_area.setUpdatesEnabled(True)
+            self._content_updates_disabled = False
 
     def handle_resize_move(self, global_pos: QPoint):
         """
-        Centralized resize handling method that performs geometry calculations
-        and cursor management.
+        Centralized resize handling method using lightweight overlay.
+        Only updates the overlay geometry during drag - actual container
+        geometry is applied once on mouseRelease.
         
         Args:
             global_pos: Global mouse position
         """
-        if self.resizing and not self._is_maximized and self._resize_throttler:
-            # Use optimized resize handling with caching and throttling
-            delta = global_pos - self.resize_start_pos
-            new_geom = QRect(self.resize_start_geom)
-
-            # Calculate new geometry based on resize edge
-            if "right" in self.resize_edge:
-                new_width = self.resize_start_geom.width() + delta.x()
-                new_geom.setWidth(max(new_width, self.minimumWidth()))
-            if "left" in self.resize_edge:
-                new_width = self.resize_start_geom.width() - delta.x()
-                new_width = max(new_width, self.minimumWidth())
-                new_geom.setX(self.resize_start_geom.right() - new_width)
-                new_geom.setWidth(new_width)
-            if "bottom" in self.resize_edge:
-                new_height = self.resize_start_geom.height() + delta.y()
-                new_geom.setHeight(max(new_height, self.minimumHeight()))
-            if "top" in self.resize_edge:
-                new_height = self.resize_start_geom.height() - delta.y()
-                new_height = max(new_height, self.minimumHeight())
-                new_geom.setY(self.resize_start_geom.bottom() - new_height)
-                new_geom.setHeight(new_height)
-
-            # Validate screen boundaries if widget moved to different screen
-            if not self._resize_cache.validate_cached_screen(self):
-                self._resize_cache.update_screen_cache(self)
-
-            # Apply cached constraints (replaces expensive inline calculations)
-            constrained_geom = self._resize_cache.apply_constraints_to_geometry(new_geom)
+        if not (self.resizing and self._resize_overlay and not self._is_maximized):
+            return
             
-            if not constrained_geom.isEmpty():
-                # Use throttler to batch geometry updates
-                self._resize_throttler.request_resize(constrained_geom)
+        # Calculate new geometry based on mouse delta
+        delta = global_pos - self.resize_start_pos
+        new_geom = QRect(self.resize_start_geom)
+
+        # Calculate new geometry based on resize edge
+        if "right" in self.resize_edge:
+            new_width = self.resize_start_geom.width() + delta.x()
+            new_geom.setWidth(max(new_width, self.minimumWidth()))
+        if "left" in self.resize_edge:
+            new_width = self.resize_start_geom.width() - delta.x()
+            new_width = max(new_width, self.minimumWidth())
+            new_geom.setX(self.resize_start_geom.right() - new_width)
+            new_geom.setWidth(new_width)
+        if "bottom" in self.resize_edge:
+            new_height = self.resize_start_geom.height() + delta.y()
+            new_geom.setHeight(max(new_height, self.minimumHeight()))
+        if "top" in self.resize_edge:
+            new_height = self.resize_start_geom.height() - delta.y()
+            new_height = max(new_height, self.minimumHeight())
+            new_geom.setY(self.resize_start_geom.bottom() - new_height)
+            new_geom.setHeight(new_height)
+
+        # Apply basic constraints (screen boundaries)
+        self._apply_screen_constraints(new_geom)
+        
+        # Update only the lightweight overlay - no expensive container resize
+        if not new_geom.isEmpty():
+            self._resize_overlay.update_overlay_geometry(new_geom)
+            
+    def _apply_screen_constraints(self, geometry: QRect):
+        """Apply basic screen boundary constraints to geometry."""
+        screen = QApplication.screenAt(geometry.center())
+        if not screen:
+            screen = QApplication.primaryScreen()
+            
+        desktop_geom = screen.availableGeometry()
+        
+        # Keep at least 50px visible on screen
+        if geometry.right() < desktop_geom.left() + 50:
+            geometry.moveLeft(desktop_geom.left() + 50 - geometry.width())
+        if geometry.left() > desktop_geom.right() - 50:
+            geometry.moveLeft(desktop_geom.right() - 50)
+        if geometry.bottom() < desktop_geom.top() + 50:
+            geometry.moveTop(desktop_geom.top() + 50 - geometry.height())
+        if geometry.top() > desktop_geom.bottom() - 50:
+            geometry.moveTop(desktop_geom.bottom() - 50)
 
     def mouseMoveEvent(self, event: QMouseEvent):
         """
@@ -292,15 +333,11 @@ class DockContainer(QWidget):
 
     def _update_cursor_for_edge(self, edge: str):
         """
-        Update cursor based on resize edge with debouncing to prevent flicker.
+        Update cursor based on resize edge.
         
         Args:
             edge: Resize edge or None
         """
-        # Prevent cursor thrashing with a simple lock
-        if self._cursor_lock:
-            return
-            
         if edge:
             if edge in ["top", "bottom"]:
                 self.setCursor(Qt.SizeVerCursor)
@@ -311,46 +348,49 @@ class DockContainer(QWidget):
             elif edge in ["top_right", "bottom_left"]:
                 self.setCursor(Qt.SizeBDiagCursor)
         else:
-            # Lock cursor updates briefly to prevent thrashing
-            self._cursor_lock = True
             self.unsetCursor()
-            # Force cursor reset with an explicit arrow cursor
-            self.setCursor(Qt.ArrowCursor)
-            
-            # Unlock after a brief delay and check cursor
-            QTimer.singleShot(50, self._unlock_and_check_cursor)
-
-    def _unlock_and_check_cursor(self):
-        """Unlock cursor updates and verify cursor state"""
-        self._cursor_lock = False
-        current_cursor = self.cursor()
-        if current_cursor.shape() != Qt.ArrowCursor:
-            self.setCursor(Qt.ArrowCursor)
 
     def mouseReleaseEvent(self, event):
         if self.resizing:
-            # Flush any pending resize operations immediately
-            if self._resize_throttler:
-                self._resize_throttler.flush_pending()
-                self._resize_throttler.cleanup()
-                self._resize_throttler = None
-            
-            # Clear resize cache
-            self._resize_cache.clear_cache()
-            
-            self.resizing = False
-            self.resize_edge = None
-            
-            # Ensure cursor is reset after resize operation
-            self.unsetCursor()
-            
-            if self.manager:
-                self.manager._set_state(DockingState.IDLE)
+            self._finish_resize()
 
         if self.title_bar and self.title_bar.moving:
             self.title_bar.moving = False
 
         super().mouseReleaseEvent(event)
+        
+    def _finish_resize(self):
+        """
+        Finish resize operation by committing the overlay geometry to the actual container.
+        This is the single expensive operation that happens at the end of resize.
+        """
+        if not self._resize_overlay:
+            return
+            
+        # Get final geometry from overlay
+        final_geometry = self._resize_overlay.geometry()
+        
+        # Hide and cleanup overlay first
+        self._resize_overlay.hide_overlay()
+        self._resize_overlay.deleteLater()
+        self._resize_overlay = None
+        
+        # Apply final geometry to the actual container (single expensive operation)
+        self.setGeometry(final_geometry)
+        
+        # Re-enable content updates
+        self._enable_content_updates()
+        
+        # Reset resize state
+        self.resizing = False
+        self.resize_edge = None
+        
+        # Reset cursor
+        self.unsetCursor()
+        
+        # Reset manager state
+        if self.manager:
+            self.manager._set_state(DockingState.IDLE)
 
     def update_content_event_filters(self):
         """

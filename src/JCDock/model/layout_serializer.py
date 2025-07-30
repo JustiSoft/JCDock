@@ -31,8 +31,8 @@ class LayoutSerializer:
         """
         layout_data = []
 
-        if self.manager.main_window and self.manager.main_window.dock_area in self.manager.model.roots:
-            main_dock_area = self.manager.main_window.dock_area
+        if self.manager.main_window and self.manager.main_window in self.manager.model.roots:
+            main_dock_area = self.manager.main_window
             main_root_node = self.manager.model.roots[main_dock_area]
 
             if hasattr(main_dock_area, 'splitter'):
@@ -48,7 +48,7 @@ class LayoutSerializer:
             layout_data.append(main_window_state)
 
         for window, root_node in self.manager.model.roots.items():
-            if window is (self.manager.main_window.dock_area if self.manager.main_window else None):
+            if window is self.manager.main_window:
                 continue
 
             if self.manager.is_deleted(window):
@@ -124,8 +124,8 @@ class LayoutSerializer:
         for window_state in layout_data:
             window_class = window_state['class']
 
-            if window_class == 'MainDockWindow':
-                container = self.manager.main_window.dock_area
+            if window_class in ('MainDockWindow', 'FloatingDockRoot'):
+                container = self.manager.main_window
                 geom_tuple = window_state['geometry']
                 self.manager.main_window.setGeometry(geom_tuple[0], geom_tuple[1], geom_tuple[2], geom_tuple[3])
 
@@ -215,7 +215,7 @@ class LayoutSerializer:
         self.manager.window_stack.clear()
         self.manager.floating_widget_count = 0
         if self.manager.main_window:
-            self.manager.containers.append(self.manager.main_window.dock_area)
+            self.manager.containers.append(self.manager.main_window)
             self.manager.window_stack.append(self.manager.main_window)
 
     def _deserialize_node(self, node_data: dict, loaded_widgets_cache: dict) -> AnyNode:
