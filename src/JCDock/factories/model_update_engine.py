@@ -20,7 +20,6 @@ class ModelUpdateEngine:
             manager: Reference to the DockingManager instance
         """
         self.manager = manager
-        self._is_docking_operation = False
     
     def update_model_after_close(self, widget_to_close: DockPanel):
         """
@@ -90,10 +89,6 @@ class ModelUpdateEngine:
                                 remaining_indices.append(i)
                         
                         if len(non_empty_children) != len(current_node.children):
-                            print(f"SIMPLIFY: Removing {len(current_node.children) - len(non_empty_children)} empty children from splitter")
-                            print(f"  Original children: {len(current_node.children)}, Remaining: {len(non_empty_children)}")
-                            print(f"  Original sizes: {current_node.sizes}")
-                            
                             # Some children were removed, redistribute their space proportionally
                             if current_node.sizes and len(current_node.sizes) == len(current_node.children) and remaining_indices:
                                 # Get sizes of remaining children
@@ -101,10 +96,6 @@ class ModelUpdateEngine:
                                 
                                 # Calculate total space from all original children
                                 total_original_space = sum(current_node.sizes)
-                                
-                                print(f"  Remaining indices: {remaining_indices}")
-                                print(f"  Remaining sizes: {remaining_sizes}")
-                                print(f"  Total original space: {total_original_space}")
                                 
                                 # Redistribute the total space proportionally among remaining children
                                 remaining_total = sum(remaining_sizes)
@@ -115,12 +106,10 @@ class ModelUpdateEngine:
                                         new_size = int(proportion * total_original_space)
                                         redistributed_sizes.append(max(new_size, 50))  # Minimum size
                                     current_node.sizes = redistributed_sizes
-                                    print(f"  Redistributed sizes: {redistributed_sizes}")
                                 else:
                                     # All remaining children had zero size, distribute equally
                                     equal_size = max(total_original_space // len(non_empty_children), 100)
                                     current_node.sizes = [equal_size] * len(non_empty_children)
-                                    print(f"  Equal distribution (zero remaining): {current_node.sizes}")
                             
                             current_node.children = non_empty_children
                             made_changes = True
@@ -129,25 +118,18 @@ class ModelUpdateEngine:
                         # Promote single child splitters while preserving parent's size allocation
                         if len(current_node.children) == 1:
                             child_to_promote = current_node.children[0]
-                            print(f"SIMPLIFY: Promoting single child from splitter")
-                            print(f"  Current node sizes: {current_node.sizes}")
-                            print(f"  Child to promote: {type(child_to_promote).__name__}")
                             
                             if parent_node is None:
                                 if not is_persistent_root:
-                                    print(f"  Promoting to root")
                                     self.manager.model.roots[root_window] = child_to_promote
                                     made_changes = True
                                     break
                             elif isinstance(parent_node, SplitterNode):
                                 try:
                                     idx = parent_node.children.index(current_node)
-                                    print(f"  Promoting to parent at index {idx}")
-                                    print(f"  Parent sizes before: {parent_node.sizes}")
                                     parent_node.children[idx] = child_to_promote
                                     # Preserve the size allocation for this position
                                     # The size at idx should remain the same since the promoted child takes the full space
-                                    print(f"  Parent sizes after: {parent_node.sizes}")
                                     made_changes = True
                                     break
                                 except ValueError:
@@ -186,7 +168,6 @@ class ModelUpdateEngine:
             if not self.manager.is_deleted(root_window) and hasattr(root_window, 'splitter') and root_window.splitter:
                 root_node = self.manager.model.roots.get(root_window)
                 if root_node:
-                    print("SIMPLIFY: Re-saving splitter sizes to model after simplification")
                     self.save_splitter_sizes_to_model(root_window.splitter, root_node)
             
             # Always re-enable updates
@@ -223,7 +204,6 @@ class ModelUpdateEngine:
         DEPRECATED: Complex relationship preservation system removed.
         Use save_splitter_sizes_to_model() for direct size preservation.
         """
-        print("WARNING: capture_widget_size_relationships is deprecated. Use save_splitter_sizes_to_model() instead.")
         pass
 
     def apply_preserved_relationships(self, root_window):
@@ -231,7 +211,6 @@ class ModelUpdateEngine:
         DEPRECATED: Complex relationship preservation system removed.
         Direct splitter sizes are now preserved automatically in the model.
         """
-        print("WARNING: apply_preserved_relationships is deprecated. Direct splitter sizes are preserved in model.")
         pass
 
     def _adjust_splitter_sizes_for_relationships(self, root_window, node, widget_ids, relationships):
@@ -275,19 +254,12 @@ class ModelUpdateEngine:
         Calculates appropriate initial sizes for a new splitter node based on existing
         layout proportions and the target widget size.
         """
-        print(f"\n=== CALCULATING INITIAL SPLITTER SIZES FOR DOCKING ===")
-        print(f"Target node: {type(target_node).__name__}")
-        print(f"Dock location: {dock_location}")
-        print(f"Container: {container}")
-        
         if not hasattr(container, 'splitter') or not container.splitter:
-            print("No splitter found in container, using default [50, 50]")
             return [50, 50]  # Default equal split
             
         # Get the target widgets to determine if we have valid targets
         target_widgets = self.manager.model.get_all_widgets_from_node(target_node)
         if not target_widgets:
-            print("No target widgets found, using default [50, 50]")
             return [50, 50]
         
         # For docking operations, the new widget gets a smaller proportional size
@@ -307,20 +279,14 @@ class ModelUpdateEngine:
         else:
             calculated_sizes = [target_proportion, source_proportion]
             
-        print(f"Calculated initial sizes: {calculated_sizes}")
-        print("=== END DOCKING SIZE CALCULATION ===\n")
         return calculated_sizes
     
     def set_docking_operation_mode(self, is_docking: bool):
         """
-        Sets whether we're currently in a docking operation.
-        During docking operations, relationship preservation is skipped.
+        DEPRECATED: No longer needed since relationship preservation system was removed.
+        Kept for compatibility but does nothing.
         """
-        self._is_docking_operation = is_docking
-        if is_docking:
-            print("DOCKING: Enabled docking operation mode - relationship preservation will be skipped")
-        else:
-            print("DOCKING: Disabled docking operation mode - relationship preservation will resume")
+        pass
     
     def _get_node_current_size(self, target_node, container):
         """

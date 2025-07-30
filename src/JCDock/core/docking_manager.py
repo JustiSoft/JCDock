@@ -160,6 +160,12 @@ class DockingManager(QObject):
         self._drag_source_id = None
         self.performance_monitor = PerformanceMonitor()
         
+        # Debounce timer for efficient splitter model updates
+        self._splitter_update_timer = QTimer()
+        self._splitter_update_timer.setSingleShot(True)
+        self._splitter_update_timer.timeout.connect(self._update_splitter_sizes_from_ui)
+        self._pending_splitter_update = None  # (qt_splitter, model_node) tuple
+        
         self.layout_serializer = LayoutSerializer(self)
         self.drag_drop_controller = DragDropController(self)
         self.layout_renderer = LayoutRenderer(self)
@@ -644,11 +650,9 @@ class DockingManager(QObject):
                     new_splitter.children = [dest_tab_group, source_node]
                 
                 # Calculate and assign initial sizes to preserve existing layout proportions
-                print(f"DOCKING: About to calculate sizes for new splitter in persistent root docking")
                 calculated_sizes = self.model_update_engine.calculate_initial_splitter_sizes(
                     destination_root_node, location, destination_container)
                 new_splitter.sizes = calculated_sizes
-                print(f"DOCKING: Assigned sizes {calculated_sizes} to new splitter")
                     
                 self._update_container_root(destination_container, new_splitter)
             else:
@@ -658,11 +662,9 @@ class DockingManager(QObject):
                     new_splitter.children = [destination_root_node, source_root_node]
                 
                 # Calculate and assign initial sizes to preserve existing layout proportions
-                print(f"DOCKING: About to calculate sizes for new splitter in non-persistent root docking")
                 calculated_sizes = self.model_update_engine.calculate_initial_splitter_sizes(
                     destination_root_node, location, destination_container)
                 new_splitter.sizes = calculated_sizes
-                print(f"DOCKING: Assigned sizes {calculated_sizes} to new splitter")
                     
                 self._update_container_root(destination_container, new_splitter)
 
@@ -742,17 +744,14 @@ class DockingManager(QObject):
         new_splitter = SplitterNode(orientation=orientation)
         
         # Calculate and assign initial sizes to preserve existing layout proportions
-        print(f"DOCKING: About to calculate sizes for new splitter in _perform_directional_docking_to_widget")
         # Use the target widget node's parent TabGroupNode as the target for size calculation
         target_tab_group = ancestry_path[1] if len(ancestry_path) > 1 else None
         if target_tab_group:
             calculated_sizes = self.model_update_engine.calculate_initial_splitter_sizes(
                 target_tab_group, location, destination_container)
             new_splitter.sizes = calculated_sizes
-            print(f"DOCKING: Assigned sizes {calculated_sizes} to new splitter")
         else:
             new_splitter.sizes = [75, 25] if location in ["right", "bottom"] else [25, 75]
-            print(f"DOCKING: Using fallback sizes {new_splitter.sizes} for new splitter")
         
         source_node = self._prepare_source_node_for_widget_docking(source_root_node)
         
@@ -1068,17 +1067,11 @@ class DockingManager(QObject):
         self._complete_docking_operation(container_to_modify, source_widget)
 
     def _perform_docking_operation(self, container_to_modify, source_node_to_move, target_node, target_parent, dock_location):
-        # STEP 2: Save current splitter state BEFORE any model changes
-        print(f"DOCKING: Saving splitter sizes to model before operation")
+        # Save current splitter state BEFORE any model changes
         if hasattr(container_to_modify, 'splitter') and container_to_modify.splitter:
             root_node = self.model.roots.get(container_to_modify)
             if root_node:
                 self._save_splitter_sizes_to_model(container_to_modify.splitter, root_node)
-                print(f"DOCKING: Splitter sizes saved to model")
-            else:
-                print(f"DOCKING: No root node found for container, skipping size save")
-        else:
-            print(f"DOCKING: No splitter found in container, skipping size save")
 
         if dock_location == 'center' and isinstance(target_node, TabGroupNode):
             all_source_widgets = self.model.get_all_widgets_from_node(source_node_to_move)
@@ -1093,28 +1086,21 @@ class DockingManager(QObject):
             else:
                 new_splitter.children = [actual_target_node, source_node_to_move]
             
-            # STEP 5: Calculate sizes for NEW splitter only (never modify existing parent splitters)
-            print(f"DOCKING: About to calculate sizes for NEW splitter only")
+            # Calculate sizes for NEW splitter only (never modify existing parent splitters)
             calculated_sizes = self.model_update_engine.calculate_initial_splitter_sizes(
                 actual_target_node, dock_location, container_to_modify)
             new_splitter.sizes = calculated_sizes
-            print(f"DOCKING: Assigned sizes {calculated_sizes} to NEW splitter (parent splitter sizes remain unchanged)")
 
             if target_parent is None:
                 self._update_container_root(container_to_modify, new_splitter)
             elif isinstance(target_parent, SplitterNode):
                 try:
                     idx = target_parent.children.index(target_node)
-                    print(f"DOCKING: Replacing child at index {idx} in parent splitter")
-                    print(f"DOCKING: Parent splitter sizes BEFORE replacement: {target_parent.sizes}")
                     
-                    # STEP 3: Preserve parent splitter sizes during child replacement
+                    # Preserve parent splitter sizes during child replacement
                     target_parent.children[idx] = new_splitter
                     # The parent's sizes should remain unchanged since we're only replacing a child
                     # The size allocation for this position (idx) should be preserved
-                    
-                    print(f"DOCKING: Parent splitter sizes AFTER replacement: {target_parent.sizes}")
-                    print(f"DOCKING: Child replacement completed successfully")
                 except (ValueError, IndexError):
                     print("ERROR: Consistency error during model update.")
                     self._update_container_root(container_to_modify, new_splitter)
@@ -1126,19 +1112,7 @@ class DockingManager(QObject):
             
         self._render_layout(container_to_modify, source_widget)
         
-        # Debug: Check what the actual sizes are after rendering
-        print(f"DOCKING: Layout rendered, checking actual splitter sizes...")
-        if hasattr(container_to_modify, 'splitter') and container_to_modify.splitter:
-            root_node = self.model.roots.get(container_to_modify)
-            if root_node:
-                self.model_update_engine._debug_print_splitter_hierarchy(container_to_modify.splitter, root_node, "AFTER DOCKING RENDER")
-            else:
-                print(f"DOCKING: No root node found for container after rendering")
         
-        # Skip relationship preservation during docking operations since we've already calculated appropriate sizes
-        # that better account for preserving existing layout proportions while accommodating the new widget
-        print("DOCKING: Skipping apply_preserved_relationships during docking operation")
-        # self.model_update_engine.apply_preserved_relationships(container_to_modify)
         
         self._complete_docking_operation(container_to_modify, source_widget)
 
@@ -1570,6 +1544,33 @@ class DockingManager(QObject):
             return
         
         self.model.pretty_print(manager=self)
+
+    def _on_splitter_moved(self, qt_splitter, model_node, pos, index):
+        """
+        Handler for splitterMoved signal that starts/restarts debounce timer.
+        This is performance-conscious and only triggers the actual update after user stops moving.
+        """
+        # Store the splitter and model node for the final update
+        self._pending_splitter_update = (qt_splitter, model_node)
+        
+        # Start or restart the debounce timer (250ms delay)
+        self._splitter_update_timer.start(250)
+    
+    def _update_splitter_sizes_from_ui(self):
+        """
+        Final model update function connected to timer timeout.
+        Only executes after user has stopped moving splitter for the timer delay.
+        """
+        if not self._pending_splitter_update:
+            return
+            
+        qt_splitter, model_node = self._pending_splitter_update
+        self._pending_splitter_update = None
+        
+        # Verify the splitter and model node are still valid
+        if qt_splitter and model_node and not self.is_deleted(qt_splitter):
+            current_sizes = qt_splitter.sizes()
+            model_node.sizes = current_sizes
 
     def _save_splitter_sizes_to_model(self, widget, node):
         """Delegate to ModelUpdateEngine for splitter size persistence."""

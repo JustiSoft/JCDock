@@ -1,5 +1,6 @@
 from PySide6.QtWidgets import QSplitter, QTabWidget
 from PySide6.QtCore import Qt
+from functools import partial
 
 from ..core.docking_state import DockingState
 from .dock_model import AnyNode, SplitterNode, TabGroupNode, WidgetNode
@@ -101,22 +102,22 @@ class LayoutRenderer:
             """)
             qt_splitter.setHandleWidth(2)
             qt_splitter.setChildrenCollapsible(False)
+            
+            # Wire splitterMoved signal with specific splitter and model node using partial
+            splitter_handler = partial(self.manager._on_splitter_moved, qt_splitter, node)
+            qt_splitter.splitterMoved.connect(splitter_handler)
+            
             for child_node in node.children:
                 child_widget = self._render_node(child_node, container, inside_splitter=True, widget_to_activate=widget_to_activate)
                 if child_widget:
                     qt_splitter.addWidget(child_widget)
-            # STEP 4: Verify rendering uses preserved sizes correctly
+            # Apply preserved sizes correctly
             if node.sizes and len(node.sizes) == qt_splitter.count():
-                print(f"RENDER: Applying preserved sizes {node.sizes} to splitter with {qt_splitter.count()} children")
                 qt_splitter.setSizes(node.sizes)
             elif node.sizes and len(node.sizes) > qt_splitter.count():
-                print(f"RENDER: Redistributing sizes - model has {len(node.sizes)}, splitter has {qt_splitter.count()}")
                 redistributed_sizes = self._redistribute_removed_space(node.sizes, qt_splitter.count())
-                print(f"RENDER: Redistributed sizes: {redistributed_sizes}")
                 qt_splitter.setSizes(redistributed_sizes)
             else:
-                print(f"RENDER: No preserved sizes found, using default equal sizes for {qt_splitter.count()} children")
-                print(f"RENDER: Model sizes: {node.sizes}, Splitter count: {qt_splitter.count()}")
                 qt_splitter.setSizes([100] * qt_splitter.count())
             return qt_splitter
         elif isinstance(node, TabGroupNode):
