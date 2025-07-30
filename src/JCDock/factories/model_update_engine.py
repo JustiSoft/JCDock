@@ -182,8 +182,12 @@ class ModelUpdateEngine:
 
                 break
         finally:
-            # Note: Complex relationship preservation system removed
-            # Relying solely on direct splitter sizes stored in model
+            # After model changes, ensure current splitter sizes are preserved in the model
+            if not self.manager.is_deleted(root_window) and hasattr(root_window, 'splitter') and root_window.splitter:
+                root_node = self.manager.model.roots.get(root_window)
+                if root_node:
+                    print("SIMPLIFY: Re-saving splitter sizes to model after simplification")
+                    self.save_splitter_sizes_to_model(root_window.splitter, root_node)
             
             # Always re-enable updates
             if not self.manager.is_deleted(root_window):
