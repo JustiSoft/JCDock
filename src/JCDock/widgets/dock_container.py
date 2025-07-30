@@ -3,7 +3,7 @@ from PySide6.QtWidgets import QWidget, QSplitter, QVBoxLayout, QTabWidget, QHBox
     QApplication
 from PySide6.QtCore import Qt, QRect, QEvent, QPoint, QRectF, QSize, QTimer, QPointF, QLineF, QObject
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QBrush, QRegion, QPixmap, QPen, QIcon, QPolygonF, \
-    QPalette, QDragEnterEvent, QDragMoveEvent, QDragLeaveEvent, QDropEvent
+    QPalette, QDragEnterEvent, QDragMoveEvent, QDragLeaveEvent, QDropEvent, QCursor
 from PySide6.QtWidgets import QTableWidget, QTreeWidget, QListWidget, QTextEdit, QPlainTextEdit, QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QSlider, QScrollBar
 
 from ..core.docking_state import DockingState
@@ -108,6 +108,7 @@ class DockContainer(QWidget):
         self._resize_cache = ResizeCache()
         self._resize_throttler = None  # Initialized when resize starts
         self._cursor_update_timer = None  # For debounced cursor updates
+        self._cursor_lock = False  # Prevent cursor thrashing
         
         self.setAcceptDrops(True)
         
@@ -205,14 +206,17 @@ class DockContainer(QWidget):
         self.on_activation_request()
         super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event: QMouseEvent):
+    def handle_resize_move(self, global_pos: QPoint):
         """
-        Optimized mouse movement handler for resizing operations.
-        Uses caching and throttling to eliminate expensive operations during resize.
+        Centralized resize handling method that performs geometry calculations
+        and cursor management.
+        
+        Args:
+            global_pos: Global mouse position
         """
         if self.resizing and not self._is_maximized and self._resize_throttler:
             # Use optimized resize handling with caching and throttling
-            delta = event.globalPosition().toPoint() - self.resize_start_pos
+            delta = global_pos - self.resize_start_pos
             new_geom = QRect(self.resize_start_geom)
 
             # Calculate new geometry based on resize edge
@@ -243,26 +247,48 @@ class DockContainer(QWidget):
             if not constrained_geom.isEmpty():
                 # Use throttler to batch geometry updates
                 self._resize_throttler.request_resize(constrained_geom)
+
+    def mouseMoveEvent(self, event: QMouseEvent):
+        """
+        Handles mouse movement on the container itself.
+        Only handles resize operations - cursor updates are handled by eventFilter.
+        """
+        if self.resizing:
+            # Use the consistent global source (OS-level cursor position)
+            global_pos = QCursor.pos()
+            self.handle_resize_move(global_pos)
             return
 
-        # Handle cursor updates for resize edges (optimized with caching)
-        if self.title_bar and not self._is_maximized:
-            pos = event.position().toPoint()
-            
-            # Check cached edge first
-            cached_edge = self._resize_cache.get_cached_edge(pos)
-            if cached_edge is not None:
-                edge = cached_edge
-            else:
-                # Calculate edge and cache it
-                edge = self.get_edge(pos)
-                self._resize_cache.cache_edge_detection(pos, edge)
-            
-            self._update_cursor_for_edge(edge)
-        else:
-            self.unsetCursor()
-
+        # For hover states, let the eventFilter handle cursor updates
+        # This prevents duplicate cursor updates
         super().mouseMoveEvent(event)
+
+    def _update_cursor_for_hover(self, global_pos: QPoint):
+        """
+        Centralized cursor update method that handles all cursor states based on mouse position.
+        This is the single source of truth for cursor updates during hover states.
+        
+        Args:
+            global_pos: Global mouse position
+        """
+        if not self.title_bar or self._is_maximized:
+            self.unsetCursor()
+            return
+            
+        # Convert global position to local coordinates
+        local_pos = self.mapFromGlobal(global_pos)
+        
+        # Determine if cursor is over a resize edge
+        edge = self.get_edge(local_pos)
+        
+        # Track edge transitions to avoid duplicate cursor updates
+        if not hasattr(self, '_last_edge'):
+            self._last_edge = None
+        
+        if edge != self._last_edge:
+            self._last_edge = edge
+            # Only update cursor when edge actually changes
+            self._update_cursor_for_edge(edge)
 
     def _update_cursor_for_edge(self, edge: str):
         """
@@ -271,6 +297,10 @@ class DockContainer(QWidget):
         Args:
             edge: Resize edge or None
         """
+        # Prevent cursor thrashing with a simple lock
+        if self._cursor_lock:
+            return
+            
         if edge:
             if edge in ["top", "bottom"]:
                 self.setCursor(Qt.SizeVerCursor)
@@ -281,7 +311,21 @@ class DockContainer(QWidget):
             elif edge in ["top_right", "bottom_left"]:
                 self.setCursor(Qt.SizeBDiagCursor)
         else:
+            # Lock cursor updates briefly to prevent thrashing
+            self._cursor_lock = True
             self.unsetCursor()
+            # Force cursor reset with an explicit arrow cursor
+            self.setCursor(Qt.ArrowCursor)
+            
+            # Unlock after a brief delay and check cursor
+            QTimer.singleShot(50, self._unlock_and_check_cursor)
+
+    def _unlock_and_check_cursor(self):
+        """Unlock cursor updates and verify cursor state"""
+        self._cursor_lock = False
+        current_cursor = self.cursor()
+        if current_cursor.shape() != Qt.ArrowCursor:
+            self.setCursor(Qt.ArrowCursor)
 
     def mouseReleaseEvent(self, event):
         if self.resizing:
@@ -296,6 +340,9 @@ class DockContainer(QWidget):
             
             self.resizing = False
             self.resize_edge = None
+            
+            # Ensure cursor is reset after resize operation
+            self.unsetCursor()
             
             if self.manager:
                 self.manager._set_state(DockingState.IDLE)
@@ -358,15 +405,44 @@ class DockContainer(QWidget):
             return False
 
         if event.type() == QEvent.Type.MouseMove:
-            is_moving = self.title_bar.moving if self.title_bar else False
-            if self.resizing or is_moving:
-                mapped_event = QMouseEvent(
-                    event.type(), self.mapFromGlobal(watched.mapToGlobal(event.pos())),
-                    event.globalPosition(), event.button(),
-                    event.buttons(), event.modifiers()
-                )
-                self.mouseMoveEvent(mapped_event)
-                return True
+            # Get the definitive global position from the cursor (OS-level)
+            global_pos = QCursor.pos()
+            
+            # Scan for missing child widgets and install filters on them (late installation)
+            widget_name = watched.objectName() if watched.objectName() else f"<{type(watched).__name__}>"
+            local_pos = self.mapFromGlobal(global_pos)
+            
+            # Only do late installation check on first few moves to reduce overhead
+            if not hasattr(self, '_move_count'):
+                self._move_count = 0
+            if self._move_count < 5:
+                if widget_name == 'ContentArea':
+                    all_children = self.findChildren(QWidget)
+                    for child in all_children:
+                        if child not in self._tracked_widgets:
+                            child.installEventFilter(self)
+                            child.setMouseTracking(True)
+                            self._tracked_widgets.add(child)
+                            
+                            # Handle viewport if it exists
+                            if hasattr(child, 'viewport'):
+                                viewport = child.viewport()
+                                if viewport and viewport not in self._tracked_widgets:
+                                    viewport.installEventFilter(self)
+                                    viewport.setMouseTracking(True)
+                                    self._tracked_widgets.add(viewport)
+                self._move_count += 1
+            
+            if self.resizing:
+                # Handle resize geometry updates
+                self.handle_resize_move(global_pos)
+                # Also update cursor immediately during resize
+                self._update_cursor_for_hover(global_pos)
+                return True  # Consume the event
+            else:
+                # Handle hover cursor updates over child widgets
+                self._update_cursor_for_hover(global_pos)
+                return False  # Pass the event to the child
             
 
         return super().eventFilter(watched, event)
@@ -385,20 +461,30 @@ class DockContainer(QWidget):
 
     def _install_event_filter_recursive(self, widget):
         """
-        Cached filter installation to prevent redundant operations.
-        Only processes widgets that haven't been tracked before.
+        Comprehensive recursive event filter installation.
+        Installs event filters on widgets, their viewports, and all children.
         """
         if not widget or widget in self._tracked_widgets:
             return
 
+        # Install event filter and enable mouse tracking
+        widget.installEventFilter(self)
         widget.setMouseTracking(True)
         self._tracked_widgets.add(widget)
 
+        # Handle viewport widgets specifically
         if hasattr(widget, 'viewport'):
             viewport = widget.viewport()
             if viewport and viewport not in self._tracked_widgets:
+                viewport.installEventFilter(self)
                 viewport.setMouseTracking(True)
                 self._tracked_widgets.add(viewport)
+
+        # Recursively process all children
+        children = widget.findChildren(QWidget)
+        for child in children:
+            if child not in self._tracked_widgets:
+                self._install_event_filter_recursive(child)
 
     def on_activation_request(self):
         """
@@ -410,18 +496,26 @@ class DockContainer(QWidget):
         if self.manager:
             self.manager.bring_to_front(self)
 
-    def get_edge(self, pos):
+    def get_edge(self, pos, test_rect=None):
         """
         Determines which edge (if any) the given position is on for resize operations.
+        
+        Args:
+            pos: Position to test
+            test_rect: Optional rectangle to test against. If None, uses widget's rect.
         """
         if not self.title_bar or self._is_maximized:
             return None
 
-        # Use the full widget rectangle as the content area
-        widget_rect = self.rect()
-        if widget_rect.width() <= 0 or widget_rect.height() <= 0:
-            return None
-        content_rect = widget_rect
+        # Use provided test_rect or default to widget's own rectangle
+        if test_rect is not None:
+            content_rect = test_rect
+        else:
+            widget_rect = self.rect()
+            if widget_rect.width() <= 0 or widget_rect.height() <= 0:
+                return None
+            content_rect = widget_rect
+        
         adj_pos = pos
 
         margin = self.resize_margin
@@ -429,6 +523,7 @@ class DockContainer(QWidget):
         on_right = content_rect.width() - margin < adj_pos.x() <= content_rect.width()
         on_top = 0 <= adj_pos.y() < margin
         on_bottom = content_rect.height() - margin < adj_pos.y() <= content_rect.height()
+
 
         if on_top:
             if on_left: return "top_left"

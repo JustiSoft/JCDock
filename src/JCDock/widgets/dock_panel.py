@@ -103,6 +103,11 @@ class DockPanel(QWidget):
                 viewport = widget.viewport()
                 if viewport:
                     viewport.setMouseTracking(True)
+        
+        # Trigger event filter installation on parent container if it exists
+        if self.parent_container and hasattr(self.parent_container, '_install_event_filter_recursive'):
+            self.parent_container._install_event_filter_recursive(widget)
+        
         self.update()
 
     def showEvent(self, event):
