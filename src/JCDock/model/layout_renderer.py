@@ -105,9 +105,18 @@ class LayoutRenderer:
                 child_widget = self._render_node(child_node, container, inside_splitter=True, widget_to_activate=widget_to_activate)
                 if child_widget:
                     qt_splitter.addWidget(child_widget)
+            # STEP 4: Verify rendering uses preserved sizes correctly
             if node.sizes and len(node.sizes) == qt_splitter.count():
+                print(f"RENDER: Applying preserved sizes {node.sizes} to splitter with {qt_splitter.count()} children")
                 qt_splitter.setSizes(node.sizes)
+            elif node.sizes and len(node.sizes) > qt_splitter.count():
+                print(f"RENDER: Redistributing sizes - model has {len(node.sizes)}, splitter has {qt_splitter.count()}")
+                redistributed_sizes = self._redistribute_removed_space(node.sizes, qt_splitter.count())
+                print(f"RENDER: Redistributed sizes: {redistributed_sizes}")
+                qt_splitter.setSizes(redistributed_sizes)
             else:
+                print(f"RENDER: No preserved sizes found, using default equal sizes for {qt_splitter.count()} children")
+                print(f"RENDER: Model sizes: {node.sizes}, Splitter count: {qt_splitter.count()}")
                 qt_splitter.setSizes([100] * qt_splitter.count())
             return qt_splitter
         elif isinstance(node, TabGroupNode):
@@ -226,6 +235,45 @@ class LayoutRenderer:
                 del self.manager.model.roots[root_window]
             else:
                 self.manager.model.roots[root_window] = simplified_node
+
+    def _redistribute_removed_space(self, original_sizes: list[int], target_count: int) -> list[int]:
+        """
+        Redistributes space from removed widgets proportionally to remaining widgets.
+        
+        Args:
+            original_sizes: The original sizes before widgets were removed
+            target_count: The number of widgets that should remain
+            
+        Returns:
+            list[int]: Redistributed sizes for the remaining widgets
+        """
+        if not original_sizes or target_count <= 0:
+            return [100] * target_count
+            
+        if len(original_sizes) <= target_count:
+            # No redistribution needed
+            return original_sizes[:target_count]
+        
+        # Calculate total space and space to redistribute
+        total_original_space = sum(original_sizes)
+        
+        # For now, assume the removed widgets are the ones that are no longer in the model
+        # This is a simplified approach - we take the first target_count widgets
+        # and redistribute the remaining space proportionally
+        remaining_sizes = original_sizes[:target_count]
+        remaining_total = sum(remaining_sizes)
+        
+        if remaining_total == 0:
+            return [100] * target_count
+            
+        # Calculate proportion of each remaining widget
+        redistributed_sizes = []
+        for size in remaining_sizes:
+            proportion = size / remaining_total
+            new_size = int(proportion * total_original_space)
+            redistributed_sizes.append(max(new_size, 50))  # Minimum size of 50
+            
+        return redistributed_sizes
 
     def _simplify_node(self, node: AnyNode) -> AnyNode:
         """

@@ -21,6 +21,112 @@ from ..interaction.overlay_manager import OverlayManager
 from ..factories.model_update_engine import ModelUpdateEngine
 from .widget_registry import get_registry
 
+
+class UndockPositioningStrategy:
+    """Base class for different undocking window positioning strategies."""
+    
+    def calculate_window_geometry(self, widget_to_undock: 'DockPanel', context: dict) -> QRect:
+        """Calculate the geometry for the new floating window."""
+        raise NotImplementedError
+
+
+class MousePositionStrategy(UndockPositioningStrategy):
+    """Positions floating window at mouse cursor for drag operations."""
+    
+    def calculate_window_geometry(self, widget_to_undock: 'DockPanel', context: dict) -> QRect:
+        global_mouse_pos = context.get('global_mouse_pos')
+        if not global_mouse_pos:
+            return self._get_default_geometry(widget_to_undock)
+            
+        if widget_to_undock.content_container.isVisible():
+            new_window_size = widget_to_undock.content_container.size()
+        else:
+            new_window_size = QSize(300, 200)
+
+        title_height = widget_to_undock.title_bar.height()
+        new_window_size.setHeight(new_window_size.height() + title_height)
+
+        offset_y = title_height // 2
+        offset_x = 50
+
+        new_window_pos = global_mouse_pos - QPoint(offset_x, offset_y)
+        return QRect(new_window_pos, new_window_size)
+    
+    def _get_default_geometry(self, widget_to_undock: 'DockPanel') -> QRect:
+        """Fallback geometry when no mouse position is available."""
+        size = QSize(300, 200)
+        if widget_to_undock.content_container.isVisible():
+            size = widget_to_undock.content_container.size()
+        title_height = widget_to_undock.title_bar.height()
+        size.setHeight(size.height() + title_height)
+        return QRect(QPoint(100, 100), size)
+
+
+class TabPositionStrategy(UndockPositioningStrategy):
+    """Positions floating window cascaded from the tab position for undock button."""
+    
+    def calculate_window_geometry(self, widget_to_undock: 'DockPanel', context: dict) -> QRect:
+        tab_widget = context.get('tab_widget')
+        if not tab_widget:
+            return self._get_default_geometry(widget_to_undock)
+            
+        # Get the tab widget's global position
+        tab_global_pos = tab_widget.mapToGlobal(QPoint(0, 0))
+        
+        if widget_to_undock.content_container.isVisible():
+            new_window_size = widget_to_undock.content_container.size()
+        else:
+            new_window_size = QSize(300, 200)
+
+        title_height = widget_to_undock.title_bar.height()
+        new_window_size.setHeight(new_window_size.height() + title_height)
+
+        # Position slightly offset from the tab widget
+        offset_x = 30
+        offset_y = 30
+        new_window_pos = tab_global_pos + QPoint(offset_x, offset_y)
+        
+        return QRect(new_window_pos, new_window_size)
+    
+    def _get_default_geometry(self, widget_to_undock: 'DockPanel') -> QRect:
+        """Fallback geometry when no tab widget is available."""
+        size = QSize(300, 200)
+        if widget_to_undock.content_container.isVisible():
+            size = widget_to_undock.content_container.size()
+        title_height = widget_to_undock.title_bar.height()
+        size.setHeight(size.height() + title_height)
+        return QRect(QPoint(150, 150), size)
+
+
+class CustomPositionStrategy(UndockPositioningStrategy):
+    """Uses provided position for programmatic undocking API."""
+    
+    def calculate_window_geometry(self, widget_to_undock: 'DockPanel', context: dict) -> QRect:
+        global_pos = context.get('global_pos')
+        docking_manager = context.get('docking_manager')
+        
+        if widget_to_undock.content_container.isVisible():
+            new_window_size = widget_to_undock.content_container.size()
+        else:
+            new_window_size = QSize(350, 250)
+
+        title_height = widget_to_undock.title_bar.height()
+        new_window_size.setHeight(new_window_size.height() + title_height)
+
+        if global_pos:
+            return QRect(global_pos, new_window_size)
+        else:
+            # Use cascaded default position based on floating widget count
+            count = docking_manager.floating_widget_count if docking_manager else 0
+            if widget_to_undock.content_container:
+                widget_global_pos = widget_to_undock.content_container.mapToGlobal(QPoint(0, 0))
+            else:
+                widget_global_pos = widget_to_undock.mapToGlobal(QPoint(0, 0))
+            new_pos = QPoint(widget_global_pos.x() + 150 + (count % 7) * 40,
+                             widget_global_pos.y() + 150 + (count % 7) * 40)
+            return QRect(new_pos, new_window_size)
+
+
 class DockingSignals(QObject):
     """
     A collection of signals to allow applications to react to layout changes.
@@ -536,6 +642,13 @@ class DockingManager(QObject):
                     new_splitter.children = [source_node, dest_tab_group]
                 else:
                     new_splitter.children = [dest_tab_group, source_node]
+                
+                # Calculate and assign initial sizes to preserve existing layout proportions
+                print(f"DOCKING: About to calculate sizes for new splitter in persistent root docking")
+                calculated_sizes = self.model_update_engine.calculate_initial_splitter_sizes(
+                    destination_root_node, location, destination_container)
+                new_splitter.sizes = calculated_sizes
+                print(f"DOCKING: Assigned sizes {calculated_sizes} to new splitter")
                     
                 self._update_container_root(destination_container, new_splitter)
             else:
@@ -543,6 +656,13 @@ class DockingManager(QObject):
                     new_splitter.children = [source_root_node, destination_root_node]
                 else:
                     new_splitter.children = [destination_root_node, source_root_node]
+                
+                # Calculate and assign initial sizes to preserve existing layout proportions
+                print(f"DOCKING: About to calculate sizes for new splitter in non-persistent root docking")
+                calculated_sizes = self.model_update_engine.calculate_initial_splitter_sizes(
+                    destination_root_node, location, destination_container)
+                new_splitter.sizes = calculated_sizes
+                print(f"DOCKING: Assigned sizes {calculated_sizes} to new splitter")
                     
                 self._update_container_root(destination_container, new_splitter)
 
@@ -621,6 +741,19 @@ class DockingManager(QObject):
         orientation = Qt.Orientation.Vertical if location in ["top", "bottom"] else Qt.Orientation.Horizontal
         new_splitter = SplitterNode(orientation=orientation)
         
+        # Calculate and assign initial sizes to preserve existing layout proportions
+        print(f"DOCKING: About to calculate sizes for new splitter in _perform_directional_docking_to_widget")
+        # Use the target widget node's parent TabGroupNode as the target for size calculation
+        target_tab_group = ancestry_path[1] if len(ancestry_path) > 1 else None
+        if target_tab_group:
+            calculated_sizes = self.model_update_engine.calculate_initial_splitter_sizes(
+                target_tab_group, location, destination_container)
+            new_splitter.sizes = calculated_sizes
+            print(f"DOCKING: Assigned sizes {calculated_sizes} to new splitter")
+        else:
+            new_splitter.sizes = [75, 25] if location in ["right", "bottom"] else [25, 75]
+            print(f"DOCKING: Using fallback sizes {new_splitter.sizes} for new splitter")
+        
         source_node = self._prepare_source_node_for_widget_docking(source_root_node)
         
         if len(ancestry_path) >= 3:
@@ -680,30 +813,37 @@ class DockingManager(QObject):
         self._update_container_root(destination_container, new_splitter)
 
     def _complete_regular_docking(self, source_container, source_root_node, destination_container):
-        source_widgets = self.model.get_all_widgets_from_node(source_root_node)
-        widget_to_activate = source_widgets[0].widget if source_widgets else None
+        # Enable docking operation mode to skip relationship preservation
+        self.model_update_engine.set_docking_operation_mode(True)
         
-        self._render_layout(destination_container, widget_to_activate)
-        destination_container.update()
-        destination_container.repaint()
-        
-        QApplication.processEvents()
-        
-        # Shadow functionality removed
-        
-        if self._is_persistent_root(source_container):
-            self.model.roots[source_container] = SplitterNode(orientation=Qt.Orientation.Horizontal)
-            self._render_layout(source_container)
-        else:
-            source_container.close()
-        
-        source_widgets = self.model.get_all_widgets_from_node(source_root_node)
-        if source_widgets:
-            self.signals.widget_docked.emit(source_widgets[0].widget, destination_container)
-        
-        destination_container.update()
-        destination_container.repaint()
-        QApplication.processEvents()
+        try:
+            source_widgets = self.model.get_all_widgets_from_node(source_root_node)
+            widget_to_activate = source_widgets[0].widget if source_widgets else None
+            
+            self._render_layout(destination_container, widget_to_activate)
+            destination_container.update()
+            destination_container.repaint()
+            
+            QApplication.processEvents()
+            
+            # Shadow functionality removed
+            
+            if self._is_persistent_root(source_container):
+                self.model.roots[source_container] = SplitterNode(orientation=Qt.Orientation.Horizontal)
+                self._render_layout(source_container)
+            else:
+                source_container.close()
+            
+            source_widgets = self.model.get_all_widgets_from_node(source_root_node)
+            if source_widgets:
+                self.signals.widget_docked.emit(source_widgets[0].widget, destination_container)
+            
+            destination_container.update()
+            destination_container.repaint()
+            QApplication.processEvents()
+        finally:
+            # Always disable docking operation mode when done
+            self.model_update_engine.set_docking_operation_mode(False)
         
         self.hit_test_cache.invalidate()
 
@@ -760,80 +900,17 @@ class DockingManager(QObject):
         :param global_pos: An optional QPoint to specify the new top-left of the floating window.
         :return: The DockContainer that now contains the floating widget, or None on failure.
         """
-        self.destroy_all_overlays()
-        QApplication.processEvents()
+        positioning_strategy = CustomPositionStrategy()
+        context = {'global_pos': global_pos, 'docking_manager': self}
         
-        if self.is_deleted(widget_to_undock):
-            print("ERROR: Cannot undock a deleted widget.")
-            return None
-
-        if not self.is_widget_docked(widget_to_undock):
-            print("INFO: Widget is already floating.")
-            return widget_to_undock
-
-        host_tab_group, parent_node, root_window = self.model.find_host_info(widget_to_undock)
-        if not host_tab_group or not root_window:
-            print("ERROR: Could not find widget in the layout model.")
-            return None
-
-        currently_active_widget = None
-        if isinstance(root_window, DockContainer):
-            currently_active_widget = self._get_currently_active_widget(root_window)
-            if currently_active_widget == widget_to_undock:
-                currently_active_widget = None
-
-        widget_node_to_remove = next((wn for wn in host_tab_group.children if wn.widget is widget_to_undock), None)
-        if widget_node_to_remove:
-            host_tab_group.children.remove(widget_node_to_remove)
-
-        if widget_to_undock.content_container.isVisible():
-            new_size = widget_to_undock.content_container.size()
-        else:
-            new_size = QSize(350, 250)
-
-        title_height = widget_to_undock.title_bar.height()
-        new_size.setHeight(new_size.height() + title_height)
-
-        if global_pos:
-            new_pos = global_pos
-        else:
-            count = self.floating_widget_count
-            if widget_to_undock.content_container:
-                widget_global_pos = widget_to_undock.content_container.mapToGlobal(QPoint(0, 0))
-            else:
-                widget_global_pos = widget_to_undock.mapToGlobal(QPoint(0, 0))
-            new_pos = QPoint(widget_global_pos.x() + 150 + (count % 7) * 40,
-                             widget_global_pos.y() + 150 + (count % 7) * 40)
-
-        new_geometry = QRect(new_pos, new_size)
-
-        newly_floated_window = self.create_floating_window([widget_to_undock], new_geometry)
+        newly_floated_window = self._perform_undock_operation(widget_to_undock, positioning_strategy, context)
         
-        if not newly_floated_window:
-            print("ERROR: Failed to create floating window.")
-            return None
-
-        self._simplify_model(root_window, currently_active_widget)
-        if root_window in self.model.roots:
-            root_window.update()
-            root_window.repaint()
-        else:
-            root_window.update_dynamic_title()
-
-        self.signals.widget_undocked.emit(widget_to_undock)
-        
-        if root_window in self.model.roots:
-            root_window.update()
-            root_window.repaint()
         if newly_floated_window:
+            # Additional post-processing specific to programmatic undocking
             newly_floated_window.update()
             newly_floated_window.repaint()
-        QApplication.processEvents()
-        
-        self.hit_test_cache.invalidate()
-        
-        if root_window in self.model.roots:
-            QTimer.singleShot(10, lambda: self._cleanup_container_overlays(root_window))
+            QApplication.processEvents()
+            self.hit_test_cache.invalidate()
             
         return newly_floated_window
 
@@ -875,22 +952,29 @@ class DockingManager(QObject):
         self.signals.layout_changed.emit()
 
     def dock_widgets(self, source_widget, target_entity, dock_location):
-        source_node_to_move = self._prepare_source_for_docking(source_widget)
-        if not source_node_to_move:
-            return
+        # Enable docking operation mode to skip relationship preservation
+        self.model_update_engine.set_docking_operation_mode(True)
+        
+        try:
+            source_node_to_move = self._prepare_source_for_docking(source_widget)
+            if not source_node_to_move:
+                return
 
-        if dock_location == "insert":
-            return self._handle_insert_docking(source_node_to_move, target_entity, source_widget)
+            if dock_location == "insert":
+                return self._handle_insert_docking(source_node_to_move, target_entity, source_widget)
 
-        container_to_modify, target_node, target_parent = self._resolve_dock_target(target_entity, source_widget, dock_location)
-        if not container_to_modify:
-            return
+            container_to_modify, target_node, target_parent = self._resolve_dock_target(target_entity, source_widget, dock_location)
+            if not container_to_modify:
+                return
 
-        if target_node and not target_node.children:
-            return self._handle_empty_container_docking(container_to_modify, source_node_to_move, source_widget)
+            if target_node and not target_node.children:
+                return self._handle_empty_container_docking(container_to_modify, source_node_to_move, source_widget)
 
-        self._perform_docking_operation(container_to_modify, source_node_to_move, target_node, target_parent, dock_location)
-        self._finalize_docking(container_to_modify, source_widget)
+            self._perform_docking_operation(container_to_modify, source_node_to_move, target_node, target_parent, dock_location)
+            self._finalize_docking(container_to_modify, source_widget)
+        finally:
+            # Always disable docking operation mode when done
+            self.model_update_engine.set_docking_operation_mode(False)
 
     def _prepare_source_for_docking(self, source_widget):
         self.destroy_all_overlays()
@@ -984,7 +1068,17 @@ class DockingManager(QObject):
         self._complete_docking_operation(container_to_modify, source_widget)
 
     def _perform_docking_operation(self, container_to_modify, source_node_to_move, target_node, target_parent, dock_location):
-        self._save_splitter_sizes_to_model(container_to_modify.splitter, self.model.roots[container_to_modify])
+        # STEP 2: Save current splitter state BEFORE any model changes
+        print(f"DOCKING: Saving splitter sizes to model before operation")
+        if hasattr(container_to_modify, 'splitter') and container_to_modify.splitter:
+            root_node = self.model.roots.get(container_to_modify)
+            if root_node:
+                self._save_splitter_sizes_to_model(container_to_modify.splitter, root_node)
+                print(f"DOCKING: Splitter sizes saved to model")
+            else:
+                print(f"DOCKING: No root node found for container, skipping size save")
+        else:
+            print(f"DOCKING: No splitter found in container, skipping size save")
 
         if dock_location == 'center' and isinstance(target_node, TabGroupNode):
             all_source_widgets = self.model.get_all_widgets_from_node(source_node_to_move)
@@ -998,13 +1092,29 @@ class DockingManager(QObject):
                 new_splitter.children = [source_node_to_move, actual_target_node]
             else:
                 new_splitter.children = [actual_target_node, source_node_to_move]
+            
+            # STEP 5: Calculate sizes for NEW splitter only (never modify existing parent splitters)
+            print(f"DOCKING: About to calculate sizes for NEW splitter only")
+            calculated_sizes = self.model_update_engine.calculate_initial_splitter_sizes(
+                actual_target_node, dock_location, container_to_modify)
+            new_splitter.sizes = calculated_sizes
+            print(f"DOCKING: Assigned sizes {calculated_sizes} to NEW splitter (parent splitter sizes remain unchanged)")
 
             if target_parent is None:
                 self._update_container_root(container_to_modify, new_splitter)
             elif isinstance(target_parent, SplitterNode):
                 try:
                     idx = target_parent.children.index(target_node)
+                    print(f"DOCKING: Replacing child at index {idx} in parent splitter")
+                    print(f"DOCKING: Parent splitter sizes BEFORE replacement: {target_parent.sizes}")
+                    
+                    # STEP 3: Preserve parent splitter sizes during child replacement
                     target_parent.children[idx] = new_splitter
+                    # The parent's sizes should remain unchanged since we're only replacing a child
+                    # The size allocation for this position (idx) should be preserved
+                    
+                    print(f"DOCKING: Parent splitter sizes AFTER replacement: {target_parent.sizes}")
+                    print(f"DOCKING: Child replacement completed successfully")
                 except (ValueError, IndexError):
                     print("ERROR: Consistency error during model update.")
                     self._update_container_root(container_to_modify, new_splitter)
@@ -1015,6 +1125,21 @@ class DockingManager(QObject):
             container_to_modify.overlay = None
             
         self._render_layout(container_to_modify, source_widget)
+        
+        # Debug: Check what the actual sizes are after rendering
+        print(f"DOCKING: Layout rendered, checking actual splitter sizes...")
+        if hasattr(container_to_modify, 'splitter') and container_to_modify.splitter:
+            root_node = self.model.roots.get(container_to_modify)
+            if root_node:
+                self.model_update_engine._debug_print_splitter_hierarchy(container_to_modify.splitter, root_node, "AFTER DOCKING RENDER")
+            else:
+                print(f"DOCKING: No root node found for container after rendering")
+        
+        # Skip relationship preservation during docking operations since we've already calculated appropriate sizes
+        # that better account for preserving existing layout proportions while accommodating the new widget
+        print("DOCKING: Skipping apply_preserved_relationships during docking operation")
+        # self.model_update_engine.apply_preserved_relationships(container_to_modify)
+        
         self._complete_docking_operation(container_to_modify, source_widget)
 
     def _complete_docking_operation(self, container, source_widget):
@@ -1094,6 +1219,13 @@ class DockingManager(QObject):
                 new_splitter.children = [source_child_node, target_child_node]
             else:
                 new_splitter.children = [target_child_node, source_child_node]
+            
+            # Calculate and assign initial sizes to preserve existing layout proportions
+            destination_container = target_widget.parent_container if hasattr(target_widget, 'parent_container') and target_widget.parent_container else target_widget
+            calculated_sizes = self.model_update_engine.calculate_initial_splitter_sizes(
+                target_node_to_move, dock_location, destination_container)
+            new_splitter.sizes = calculated_sizes
+            
             new_root_node = new_splitter
 
         if not new_root_node:
@@ -1207,6 +1339,13 @@ class DockingManager(QObject):
                 new_splitter.children = [source_child_node, target_child_node]
             else:
                 new_splitter.children = [target_child_node, source_child_node]
+            
+            # Calculate and assign initial sizes to preserve existing layout proportions
+            destination_container = source_container
+            calculated_sizes = self.model_update_engine.calculate_initial_splitter_sizes(
+                target_node_to_move, dock_location, destination_container)
+            new_splitter.sizes = calculated_sizes
+            
             new_root_node = new_splitter
 
         if not new_root_node:
@@ -1266,6 +1405,14 @@ class DockingManager(QObject):
             return
 
         host_tab_group, parent_node, root_window = self.model.find_host_info(widget_to_close)
+
+        # Save current splitter sizes and widget relationships before removing the widget
+        if isinstance(root_window, DockContainer) and hasattr(root_window, 'splitter') and root_window.splitter:
+            root_node = self.model.roots.get(root_window)
+            if root_node:
+                self._save_splitter_sizes_to_model(root_window.splitter, root_node)
+                # Capture widget size relationships before any structural changes
+                self.model_update_engine.capture_widget_size_relationships(root_window)
 
         self.signals.widget_closed.emit(widget_to_close.persistent_id)
 
@@ -1355,73 +1502,44 @@ class DockingManager(QObject):
             self.request_close_widget(widget)
 
     def undock_tab_group(self, tab_widget: QTabWidget):
-        self.destroy_all_overlays()
-        QApplication.processEvents()
+        print(f"\n=== DEBUG: undock_tab_group() called with tab_widget: {tab_widget} ===")
         
         self._set_state(DockingState.RENDERING)
         try:
             self.last_dock_target = None
             
-            if not tab_widget or not tab_widget.parentWidget(): return
+            if not tab_widget or not tab_widget.parentWidget(): 
+                return
             container = tab_widget.parentWidget()
             while container and not isinstance(container, DockContainer):
                 container = container.parentWidget()
-            if not container: return
+            if not container: 
+                return
             
-            if hasattr(container, 'overlay') and container.overlay:
-                container.overlay.destroy_overlay()
-                container.overlay = None
+            print(f"DEBUG: Found container: {container}")
 
             current_content = tab_widget.currentWidget()
-            if not current_content: return
+            if not current_content: 
+                return
             
             active_widget = next((w for w in container.contained_widgets if w.content_container is current_content), None)
-            if not active_widget: return
+            if not active_widget: 
+                return
             
-            widgets_to_move = [active_widget]
-
-            host_tab_group, parent_node, root_window = self.model.find_host_info(active_widget)
-            if host_tab_group is None: return
-
-            new_geom = QRect(tab_widget.mapToGlobal(QPoint(0, 0)), tab_widget.size())
-
-            widget_node_to_remove = None
-            for child in host_tab_group.children:
-                if isinstance(child, WidgetNode) and child.widget is active_widget:
-                    widget_node_to_remove = child
-                    break
+            # Use unified core for undocking
+            positioning_strategy = TabPositionStrategy()
+            context = {'tab_widget': tab_widget}
             
-            if widget_node_to_remove:
-                host_tab_group.children.remove(widget_node_to_remove)
-
-            newly_floated_window = self.create_floating_window(widgets_to_move, new_geom)
-
-            if not self.is_deleted(root_window):
-                remaining_active_widget = self._get_currently_active_widget(root_window)
-                
-                if hasattr(root_window, 'overlay') and root_window.overlay:
-                    root_window.overlay.destroy_overlay() 
-                    root_window.overlay = None
-                self._simplify_model(root_window, remaining_active_widget)
-                
-                if root_window in self.model.roots:
-                    root_window.update()
-                    root_window.repaint()
-                    QTimer.singleShot(10, lambda: self._cleanup_container_overlays(root_window))
+            newly_floated_window = self._perform_undock_operation(active_widget, positioning_strategy, context)
 
             if newly_floated_window and not self.is_deleted(newly_floated_window):
                 newly_floated_window.raise_()
                 newly_floated_window.activateWindow()
                 self.bring_to_front(newly_floated_window)
 
-            for widget in widgets_to_move:
-                self.signals.widget_undocked.emit(widget)
-
             self.signals.layout_changed.emit()
             
-            if root_window and not self.is_deleted(root_window):
-                root_window.update()
-                root_window.repaint()
+            # Additional updates specific to tab group undocking
             if newly_floated_window and not self.is_deleted(newly_floated_window):
                 newly_floated_window.update()
                 newly_floated_window.repaint()
@@ -1491,44 +1609,91 @@ class DockingManager(QObject):
         """Delegate to WindowManager for floating root creation."""
         return self.window_manager.create_new_floating_root()
 
-    def undock_single_widget_by_tear(self, widget_to_undock: DockPanel, global_mouse_pos: QPoint):
-        host_info = self._prepare_for_undocking(widget_to_undock)
-        if not host_info:
-            return
+    def _perform_undock_operation(self, widget_to_undock: DockPanel, positioning_strategy: UndockPositioningStrategy, context: dict = None) -> DockContainer | None:
+        """
+        Core undocking method that handles all common undocking operations.
         
-        host_tab_group, parent_node, root_window, currently_active_widget = host_info
-        widget_node_to_remove = self._remove_widget_from_model(widget_to_undock, host_tab_group, root_window)
-        
-        if widget_node_to_remove:
-            new_geometry = self._calculate_floating_window_geometry(widget_to_undock, global_mouse_pos)
-            newly_floated_window = self.create_floating_window([widget_to_undock], new_geometry)
+        Args:
+            widget_to_undock: The widget to undock
+            positioning_strategy: Strategy to determine new window position
+            context: Additional context for positioning (mouse pos, tab widget, etc.)
             
-            self._finalize_undocking(root_window, currently_active_widget, newly_floated_window, global_mouse_pos)
-
-    def _prepare_for_undocking(self, widget_to_undock):
+        Returns:
+            The newly created floating container, or None on failure
+        """
+        if context is None:
+            context = {}
+            
         self.destroy_all_overlays()
         QApplication.processEvents()
-        self.last_dock_target = None
-
-        if hasattr(widget_to_undock, 'overlay') and widget_to_undock.overlay:
-            widget_to_undock.overlay.destroy_overlay()
-            widget_to_undock.overlay = None
-            
-        host_tab_group, parent_node, root_window = self.model.find_host_info(widget_to_undock)
-        if not host_tab_group:
+        
+        if self.is_deleted(widget_to_undock):
+            print("ERROR: Cannot undock a deleted widget.")
             return None
 
+        if not self.is_widget_docked(widget_to_undock):
+            print("INFO: Widget is already floating.")
+            return widget_to_undock.parent_container if isinstance(widget_to_undock.parent_container, DockContainer) else None
+
+        # Find widget location in model
+        host_tab_group, parent_node, root_window = self.model.find_host_info(widget_to_undock)
+        if not host_tab_group or not root_window:
+            print("ERROR: Could not find widget in the layout model.")
+            return None
+
+        # Save current splitter sizes and widget relationships before removing the widget
+        if isinstance(root_window, DockContainer) and hasattr(root_window, 'splitter') and root_window.splitter:
+            root_node = self.model.roots.get(root_window)
+            if root_node:
+                self._save_splitter_sizes_to_model(root_window.splitter, root_node)
+                self.model_update_engine.capture_widget_size_relationships(root_window)
+
+        # Determine currently active widget before changes
         currently_active_widget = None
         if isinstance(root_window, DockContainer):
             currently_active_widget = self._get_currently_active_widget(root_window)
             if currently_active_widget == widget_to_undock:
                 currently_active_widget = None
 
+        # Clean up overlays
+        if hasattr(widget_to_undock, 'overlay') and widget_to_undock.overlay:
+            widget_to_undock.overlay.destroy_overlay()
+            widget_to_undock.overlay = None
+            
         if hasattr(root_window, 'overlay') and root_window.overlay:
             root_window.overlay.destroy_overlay()
             root_window.overlay = None
+
+        # Remove widget from model
+        widget_node_to_remove = self._remove_widget_from_model(widget_to_undock, host_tab_group, root_window)
         
-        return host_tab_group, parent_node, root_window, currently_active_widget
+        if not widget_node_to_remove:
+            return None
+
+        # Calculate new window geometry using strategy
+        new_geometry = positioning_strategy.calculate_window_geometry(widget_to_undock, context)
+        
+        # Create floating window
+        newly_floated_window = self.create_floating_window([widget_to_undock], new_geometry)
+        
+        if newly_floated_window:
+            # Finalize the undocking operation
+            setup_mouse_dragging = context.get('setup_mouse_dragging', True)
+            self._finalize_undocking(root_window, currently_active_widget, newly_floated_window, context.get('global_mouse_pos'), setup_mouse_dragging)
+            
+            # Emit undocked signal
+            self.signals.widget_undocked.emit(widget_to_undock)
+        
+        return newly_floated_window
+
+    def undock_single_widget_by_tear(self, widget_to_undock: DockPanel, global_mouse_pos: QPoint):
+        positioning_strategy = MousePositionStrategy()
+        context = {'global_mouse_pos': global_mouse_pos}
+        
+        newly_floated_window = self._perform_undock_operation(widget_to_undock, positioning_strategy, context)
+        
+        return newly_floated_window
+
 
     def _remove_widget_from_model(self, widget_to_undock, host_tab_group, root_window):
         widget_node_to_remove = next((wn for wn in host_tab_group.children if wn.widget is widget_to_undock), None)
@@ -1538,22 +1703,8 @@ class DockingManager(QObject):
             host_tab_group.children.remove(widget_node_to_remove)
         return widget_node_to_remove
 
-    def _calculate_floating_window_geometry(self, widget_to_undock, global_mouse_pos):
-        if widget_to_undock.content_container.isVisible():
-            new_window_size = widget_to_undock.content_container.size()
-        else:
-            new_window_size = QSize(300, 200)
 
-        title_height = widget_to_undock.title_bar.height()
-        new_window_size.setHeight(new_window_size.height() + title_height)
-
-        offset_y = title_height // 2
-        offset_x = 50
-
-        new_window_pos = global_mouse_pos - QPoint(offset_x, offset_y)
-        return QRect(new_window_pos, new_window_size)
-
-    def _finalize_undocking(self, root_window, currently_active_widget, newly_floated_window, global_mouse_pos):
+    def _finalize_undocking(self, root_window, currently_active_widget, newly_floated_window, global_mouse_pos, setup_mouse_dragging=True):
         if not self.is_deleted(root_window):
             self._simplify_model(root_window, currently_active_widget)
             if root_window in self.model.roots:
@@ -1570,10 +1721,12 @@ class DockingManager(QObject):
         if newly_floated_window:
             newly_floated_window.on_activation_request()
 
-            title_bar = newly_floated_window.title_bar
-            title_bar.moving = True
-            title_bar.offset = global_mouse_pos - newly_floated_window.pos()
-            title_bar.grabMouse()
+            # Only set up mouse dragging if requested and we have a mouse position
+            if setup_mouse_dragging and global_mouse_pos:
+                title_bar = newly_floated_window.title_bar
+                title_bar.moving = True
+                title_bar.offset = global_mouse_pos - newly_floated_window.pos()
+                title_bar.grabMouse()
 
     def start_tab_drag_operation(self, widget_persistent_id: str):
         """
