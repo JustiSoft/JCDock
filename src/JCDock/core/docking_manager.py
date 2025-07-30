@@ -1411,8 +1411,6 @@ class DockingManager(QObject):
             root_node = self.model.roots.get(root_window)
             if root_node:
                 self._save_splitter_sizes_to_model(root_window.splitter, root_node)
-                # Capture widget size relationships before any structural changes
-                self.model_update_engine.capture_widget_size_relationships(root_window)
 
         self.signals.widget_closed.emit(widget_to_close.persistent_id)
 
@@ -1646,7 +1644,6 @@ class DockingManager(QObject):
             root_node = self.model.roots.get(root_window)
             if root_node:
                 self._save_splitter_sizes_to_model(root_window.splitter, root_node)
-                self.model_update_engine.capture_widget_size_relationships(root_window)
 
         # Determine currently active widget before changes
         currently_active_widget = None
