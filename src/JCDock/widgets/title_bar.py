@@ -105,6 +105,44 @@ class TitleBar(QWidget):
             new_widget_global = event.globalPosition().toPoint() - self.offset
             self._top_level_widget.move(new_widget_global)
             return
+        
+        # Update resize cursor when hovering over title bar edges
+        from .dock_container import DockContainer
+        if isinstance(self._top_level_widget, DockContainer) and not getattr(self._top_level_widget, '_is_maximized', False):
+            pos = event.pos()
+            margin = getattr(self._top_level_widget, 'resize_margin', 8)
+            on_left = 0 <= pos.x() < margin
+            on_right = self.width() - margin < pos.x() <= self.width()
+            on_top = 0 <= pos.y() < margin
+
+            edge = None
+            if on_top:
+                if on_left:
+                    edge = "top_left"
+                elif on_right:
+                    edge = "top_right"
+                else:
+                    edge = "top"
+            elif on_left:
+                edge = "left"
+            elif on_right:
+                edge = "right"
+
+            # Update cursor based on edge
+            if edge:
+                if edge in ["top", "bottom"]:
+                    self.setCursor(Qt.SizeVerCursor)
+                elif edge in ["left", "right"]:
+                    self.setCursor(Qt.SizeHorCursor)
+                elif edge in ["top_left", "bottom_right"]:
+                    self.setCursor(Qt.SizeFDiagCursor)
+                elif edge in ["top_right", "bottom_left"]:
+                    self.setCursor(Qt.SizeBDiagCursor)
+            else:
+                self.unsetCursor()
+        else:
+            self.unsetCursor()
+            
         super().mouseMoveEvent(event)
 
     def mousePressEvent(self, event):
@@ -142,6 +180,24 @@ class TitleBar(QWidget):
                     self._top_level_widget.resize_edge = edge
                     self._top_level_widget.resize_start_pos = event.globalPosition().toPoint()
                     self._top_level_widget.resize_start_geom = self._top_level_widget.geometry()
+                    
+                    # Initialize resize optimization components (same as container's mousePressEvent)
+                    if hasattr(self._top_level_widget, '_resize_cache'):
+                        self._top_level_widget._resize_cache.cache_resize_constraints(self._top_level_widget, False, 0)
+                        
+                        # Set up performance monitoring if available
+                        if (hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager and 
+                            hasattr(self._top_level_widget.manager, 'performance_monitor') and 
+                            self._top_level_widget.manager.performance_monitor):
+                            self._top_level_widget._resize_cache.set_performance_monitor(self._top_level_widget.manager.performance_monitor)
+                        
+                        # Initialize throttler for this resize operation
+                        from ..utils.resize_throttler import ResizeThrottler
+                        self._top_level_widget._resize_throttler = ResizeThrottler(self._top_level_widget, interval_ms=16)
+                        if (hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager and 
+                            hasattr(self._top_level_widget.manager, 'performance_monitor') and 
+                            self._top_level_widget.manager.performance_monitor):
+                            self._top_level_widget._resize_throttler.set_performance_monitor(self._top_level_widget.manager.performance_monitor)
                     
                     if hasattr(self._top_level_widget, 'manager') and self._top_level_widget.manager:
                         self._top_level_widget.manager._set_state(DockingState.RESIZING_WINDOW)

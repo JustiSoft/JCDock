@@ -12,42 +12,8 @@ from JCDock.widgets.dock_container import DockContainer
 from JCDock import dockable
 
 
-def apply_tooltip_fix(widget):
-    """Helper function to fix tooltip transparency issues."""
-    widget.setStyleSheet("""
-        QToolTip {
-            background-color: #ffffcc;
-            color: #000000;
-            border: 1px solid #999999;
-            padding: 3px;
-            border-radius: 3px;
-        }
-    """)
 
 
-def apply_context_menu_fix(menu):
-    """Helper function to fix context menu transparency issues."""
-    menu.setStyleSheet("""
-        QMenu {
-            background-color: #f0f0f0;
-            color: #000000;
-            border: 1px solid #999999;
-            padding: 2px;
-        }
-        QMenu::item {
-            background-color: transparent;
-            padding: 5px 20px;
-        }
-        QMenu::item:selected {
-            background-color: #3daee9;
-            color: #ffffff;
-        }
-        QMenu::separator {
-            height: 1px;
-            background-color: #999999;
-            margin: 2px 0px;
-        }
-    """)
 
 
 @dockable("test_widget", "Test Widget")
@@ -104,7 +70,6 @@ class TabWidget1(QWidget):
         tooltip_button = QPushButton("Hover for Tooltip")
         tooltip_button.setToolTip("This is a helpful tooltip that appears when you hover over the button!")
         tooltip_button.clicked.connect(lambda: print("Tooltip button clicked!"))
-        apply_tooltip_fix(tooltip_button)
         layout.addWidget(tooltip_button)
 
 
@@ -130,7 +95,6 @@ class TabWidget2(QWidget):
     def show_context_menu(self, position):
         """Shows a context menu when right-clicking the button."""
         context_menu = QMenu(self)
-        apply_context_menu_fix(context_menu)
         
         action1 = QAction("Option 1", self)
         action1.triggered.connect(lambda: print("Option 1 selected from context menu"))

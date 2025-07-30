@@ -22,7 +22,7 @@ class MainDockWindow(QMainWindow):
         self.setWindowTitle("Docking Application")
         self.setGeometry(300, 300, 800, 600)
 
-        self.dock_area = DockContainer(manager=self.manager, create_shadow=False, show_title_bar=False)
+        self.dock_area = DockContainer(manager=self.manager, show_title_bar=False)
         self.dock_area.setObjectName("MainDockArea")
         self.dock_area.set_persistent_root(True)
         self.setCentralWidget(self.dock_area)

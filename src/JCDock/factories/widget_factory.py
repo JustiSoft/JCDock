@@ -183,8 +183,6 @@ class WidgetFactory:
         
         new_container = DockContainer(manager=self.manager, parent=None)
         new_container.setGeometry(validated_geometry)
-        
-        new_container.enable_shadow()
 
         if was_maximized:
             new_container._is_maximized = True
@@ -208,8 +206,7 @@ class WidgetFactory:
         self.manager.bring_to_front(new_container)
         self.manager._render_layout(new_container)
         
-        if not was_maximized:
-            new_container._setup_shadow_effect()
+        # Shadow functionality removed
 
         new_container.show()
         

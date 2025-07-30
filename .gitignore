@@ -33,3 +33,6 @@ clean_protection_backup.py
 
 # Shadow testing utility
 OS_shadow.py
+
+# Code analysis outputs
+repomix-output.xml

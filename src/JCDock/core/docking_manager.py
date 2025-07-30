@@ -454,8 +454,7 @@ class DockingManager(QObject):
         destination_container.update()
         destination_container.repaint()
         
-        if hasattr(source_container, 'disable_shadow'):
-            source_container.disable_shadow()
+        # Shadow functionality removed
         
         if self._is_persistent_root(source_container):
             self.model.roots[source_container] = SplitterNode(orientation=Qt.Orientation.Horizontal)
@@ -691,8 +690,7 @@ class DockingManager(QObject):
         
         QApplication.processEvents()
         
-        if hasattr(source_container, 'disable_shadow'):
-            source_container.disable_shadow()
+        # Shadow functionality removed
         
         if self._is_persistent_root(source_container):
             self.model.roots[source_container] = SplitterNode(orientation=Qt.Orientation.Horizontal)

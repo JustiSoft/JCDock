@@ -11,9 +11,6 @@ class ResizeConstraints:
     min_height: int
     screen_geometry: QRect
     desktop_geometry: QRect
-    shadow_margin: int = 0
-    min_shadow_width: int = 0
-    min_shadow_height: int = 0
 
 
 class ResizeCache:
@@ -42,8 +39,8 @@ class ResizeCache:
         
         Args:
             widget: The widget being resized
-            has_shadow: Whether the widget has shadow effects
-            blur_radius: Shadow blur radius for shadow constraints
+            has_shadow: Ignored - kept for compatibility
+            blur_radius: Ignored - kept for compatibility
             
         Returns:
             ResizeConstraints: Cached constraint data
@@ -62,33 +59,15 @@ class ResizeCache:
             # Calculate total desktop geometry across all screens
             desktop_geom = self._calculate_total_desktop_geometry()
             
-            # Cache minimum size constraints
+            # Cache minimum size constraints (no shadow adjustments needed)
             min_width = max(widget.minimumWidth(), 100)
             min_height = max(widget.minimumHeight(), 100)
-            
-            # Cache shadow constraints if applicable
-            shadow_margin = 0
-            min_shadow_width = min_width
-            min_shadow_height = min_height
-            
-            if has_shadow and blur_radius > 0:
-                shadow_margin = 2 * blur_radius
-                min_shadow_width = shadow_margin + 50
-                min_shadow_height = shadow_margin + 50
-                
-                if min_width < min_shadow_width:
-                    min_width = min_shadow_width
-                if min_height < min_shadow_height:
-                    min_height = min_shadow_height
             
             self._constraints = ResizeConstraints(
                 min_width=min_width,
                 min_height=min_height,
                 screen_geometry=screen_geom,
-                desktop_geometry=desktop_geom,
-                shadow_margin=shadow_margin,
-                min_shadow_width=min_shadow_width,
-                min_shadow_height=min_shadow_height
+                desktop_geometry=desktop_geom
             )
             
             if self._performance_monitor:

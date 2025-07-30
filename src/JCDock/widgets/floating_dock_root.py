@@ -1,5 +1,6 @@
 from PySide6.QtCore import QTimer, QEvent
 from .dock_container import DockContainer
+from ..utils.windows_shadow import apply_native_shadow
 
 class FloatingDockRoot(DockContainer):
     """
@@ -12,7 +13,6 @@ class FloatingDockRoot(DockContainer):
         super().__init__(
             parent=parent,
             manager=manager,
-            create_shadow=True,
             show_title_bar=True,
             title_bar_color=QColor("#8B4513")
         )
@@ -30,6 +30,9 @@ class FloatingDockRoot(DockContainer):
         if self.title_bar and self.title_bar.close_button:
             self.title_bar.close_button.clicked.disconnect()
             self.title_bar.close_button.clicked.connect(self._handle_user_close)
+        
+        # Apply native Windows shadow after all setup is complete
+        apply_native_shadow(self)
 
     def set_title(self, new_title: str):
         """Override to prevent title changes - FloatingDockRoot keeps its original title."""

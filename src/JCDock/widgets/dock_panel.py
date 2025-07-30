@@ -94,9 +94,7 @@ class DockPanel(QWidget):
         self.content_widget = widget
         self.content_widget.setObjectName(f"ActualContent_{self.windowTitle().replace(' ', '_')}")
         self.original_bg_color = widget.palette().color(widget.backgroundRole())
-        self.content_container.setStyleSheet("background: transparent;")
         widget.setAutoFillBackground(False)
-        widget.setStyleSheet("background: transparent;")
         self.content_layout.setContentsMargins(margin_size, margin_size, margin_size, margin_size)
         self.content_layout.addWidget(widget)
         if self.content_widget:
