@@ -30,3 +30,6 @@ version_info.txt
 # Branch protection management files
 *protection*.json
 clean_protection_backup.py
+
+# Shadow testing utility
+OS_shadow.py

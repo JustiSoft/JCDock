@@ -3,13 +3,51 @@ import sys
 import random
 from PySide6.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem, QMenuBar, QMenu, QStyle, QHBoxLayout
 from PySide6.QtCore import Qt, QObject, QEvent, Slot, QSize, QPoint, QRect
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QAction
 
 from JCDock.core.docking_manager import DockingManager
 from JCDock.widgets.dock_panel import DockPanel
 from JCDock.widgets.main_dock_window import MainDockWindow
 from JCDock.widgets.dock_container import DockContainer
 from JCDock import dockable
+
+
+def apply_tooltip_fix(widget):
+    """Helper function to fix tooltip transparency issues."""
+    widget.setStyleSheet("""
+        QToolTip {
+            background-color: #ffffcc;
+            color: #000000;
+            border: 1px solid #999999;
+            padding: 3px;
+            border-radius: 3px;
+        }
+    """)
+
+
+def apply_context_menu_fix(menu):
+    """Helper function to fix context menu transparency issues."""
+    menu.setStyleSheet("""
+        QMenu {
+            background-color: #f0f0f0;
+            color: #000000;
+            border: 1px solid #999999;
+            padding: 2px;
+        }
+        QMenu::item {
+            background-color: transparent;
+            padding: 5px 20px;
+        }
+        QMenu::item:selected {
+            background-color: #3daee9;
+            color: #ffffff;
+        }
+        QMenu::separator {
+            height: 1px;
+            background-color: #999999;
+            margin: 2px 0px;
+        }
+    """)
 
 
 @dockable("test_widget", "Test Widget")
@@ -59,7 +97,15 @@ class TabWidget1(QWidget):
         super().__init__()
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Tab Widget 1 Content"))
-        layout.addWidget(QPushButton("Tab 1 Button"))
+        
+        regular_button = QPushButton("Tab 1 Button")
+        layout.addWidget(regular_button)
+        
+        tooltip_button = QPushButton("Hover for Tooltip")
+        tooltip_button.setToolTip("This is a helpful tooltip that appears when you hover over the button!")
+        tooltip_button.clicked.connect(lambda: print("Tooltip button clicked!"))
+        apply_tooltip_fix(tooltip_button)
+        layout.addWidget(tooltip_button)
 
 
 @dockable("tab_widget_2", "Tab Widget 2") 
@@ -69,7 +115,39 @@ class TabWidget2(QWidget):
         super().__init__()
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Tab Widget 2 Content"))
-        layout.addWidget(QPushButton("Tab 2 Button"))
+        
+        regular_button = QPushButton("Tab 2 Button")
+        layout.addWidget(regular_button)
+        
+        context_menu_button = QPushButton("Right-click for Menu")
+        context_menu_button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        context_menu_button.customContextMenuRequested.connect(self.show_context_menu)
+        context_menu_button.clicked.connect(lambda: print("Context menu button clicked!"))
+        layout.addWidget(context_menu_button)
+        
+        self.context_menu_button = context_menu_button
+    
+    def show_context_menu(self, position):
+        """Shows a context menu when right-clicking the button."""
+        context_menu = QMenu(self)
+        apply_context_menu_fix(context_menu)
+        
+        action1 = QAction("Option 1", self)
+        action1.triggered.connect(lambda: print("Option 1 selected from context menu"))
+        context_menu.addAction(action1)
+        
+        action2 = QAction("Option 2", self)
+        action2.triggered.connect(lambda: print("Option 2 selected from context menu"))
+        context_menu.addAction(action2)
+        
+        context_menu.addSeparator()
+        
+        action3 = QAction("Help", self)
+        action3.triggered.connect(lambda: print("Help selected from context menu"))
+        context_menu.addAction(action3)
+        
+        global_pos = self.context_menu_button.mapToGlobal(position)
+        context_menu.exec(global_pos)
 
 
 @dockable("right_widget", "Right Widget")
