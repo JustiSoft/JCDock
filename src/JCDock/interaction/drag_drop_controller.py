@@ -531,32 +531,19 @@ class DragDropController:
             widget_to_undock: The widget to undock
             global_mouse_pos: Current mouse position for window placement
         """
-        self.manager.destroy_all_overlays()
+        # Use the unified undocking core from the manager
+        from ..core.docking_manager import MousePositionStrategy
         
-        host_tab_group, host_parent_node, root_window = self.manager.model.find_host_info(widget_to_undock)
+        positioning_strategy = MousePositionStrategy()
+        context = {'global_mouse_pos': global_mouse_pos}
         
-        if not (host_tab_group and host_parent_node and root_window):
-            print("ERROR: Could not find widget location for tear operation")
-            return None
-
-        widget_node_to_remove = next((wn for wn in host_tab_group.children if wn.widget is widget_to_undock), None)
-        if not widget_node_to_remove:
-            print("ERROR: Could not find widget node in tab group")
-            return None
-
-        host_tab_group.children.remove(widget_node_to_remove)
-
-        self.manager._simplify_model(root_window)
+        newly_floated_window = self.manager._perform_undock_operation(widget_to_undock, positioning_strategy, context)
         
-        if root_window in self.manager.model.roots:
-            self.manager._render_layout(root_window)
-
-        floating_window = self._create_floating_window_from_drag(widget_to_undock, global_mouse_pos)
+        if newly_floated_window:
+            # Additional processing specific to drag operations
+            self.manager.signals.layout_changed.emit()
         
-        self.manager.signals.widget_undocked.emit(widget_to_undock)
-        self.manager.signals.layout_changed.emit()
-        
-        return floating_window
+        return newly_floated_window
 
     def _create_floating_window_from_drag(self, widget, cursor_pos):
         """

@@ -266,7 +266,12 @@ class TearableTabWidget(QTabWidget):
         Create a floating window from the dragged tab.
         """
         if self.manager and self.dragged_widget:
-            self.manager._create_floating_window_from_drag(self.dragged_widget, cursor_pos)
+            # Use the unified undocking system to ensure size relationships are preserved
+            # But disable mouse dragging setup since we're already handling the drag
+            from ..core.docking_manager import MousePositionStrategy
+            positioning_strategy = MousePositionStrategy()
+            context = {'global_mouse_pos': cursor_pos, 'setup_mouse_dragging': False}
+            self.manager._perform_undock_operation(self.dragged_widget, positioning_strategy, context)
 
     def _cleanup_custom_drag(self):
         """
