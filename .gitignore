@@ -36,3 +36,6 @@ OS_shadow.py
 
 # Code analysis outputs
 repomix-output.xml
+
+# Node.js package lock file
+package-lock.json
