@@ -75,7 +75,7 @@ class LayoutRenderer:
         self._update_tab_bar_visibility(container)
         container.update_dynamic_title()
 
-    def _render_node(self, node: AnyNode, container: DockContainer, inside_splitter: bool = False, widget_to_activate: DockPanel = None) -> QTabWidget:
+    def _render_node(self, node: AnyNode, container: DockContainer, inside_splitter: bool = False, widget_to_activate: DockPanel = None, is_on_left_edge: bool = True, is_on_right_edge: bool = True, is_on_top_edge: bool = True, is_on_bottom_edge: bool = True) -> QTabWidget:
         """
         Recursively renders model nodes into Qt widgets.
         
@@ -84,6 +84,10 @@ class LayoutRenderer:
             container: The container hosting the layout
             inside_splitter: Whether this node is inside a splitter
             widget_to_activate: Optional widget to activate
+            is_on_left_edge: Whether this node is on the leftmost edge of the layout
+            is_on_right_edge: Whether this node is on the rightmost edge of the layout
+            is_on_top_edge: Whether this node is on the topmost edge of the layout
+            is_on_bottom_edge: Whether this node is on the bottommost edge of the layout
             
         Returns:
             QWidget: The rendered Qt widget
@@ -107,8 +111,39 @@ class LayoutRenderer:
             splitter_handler = partial(self.manager._on_splitter_moved, qt_splitter, node)
             qt_splitter.splitterMoved.connect(splitter_handler)
             
-            for child_node in node.children:
-                child_widget = self._render_node(child_node, container, inside_splitter=True, widget_to_activate=widget_to_activate)
+            for i, child_node in enumerate(node.children):
+                # Calculate edge context for this child
+                total_children = len(node.children)
+                is_first_child = (i == 0)
+                is_last_child = (i == total_children - 1)
+                
+                if node.orientation == Qt.Horizontal:
+                    # For horizontal splitters, children inherit top/bottom edges from parent
+                    # Left edge: child is on left edge if it's first AND parent is on left edge
+                    # Right edge: child is on right edge if it's last AND parent is on right edge
+                    child_left_edge = is_first_child and is_on_left_edge
+                    child_right_edge = is_last_child and is_on_right_edge
+                    child_top_edge = is_on_top_edge
+                    child_bottom_edge = is_on_bottom_edge
+                else:  # Qt.Vertical
+                    # For vertical splitters, children inherit left/right edges from parent
+                    # Top edge: child is on top edge if it's first AND parent is on top edge
+                    # Bottom edge: child is on bottom edge if it's last AND parent is on bottom edge
+                    child_left_edge = is_on_left_edge
+                    child_right_edge = is_on_right_edge
+                    child_top_edge = is_first_child and is_on_top_edge
+                    child_bottom_edge = is_last_child and is_on_bottom_edge
+                
+                child_widget = self._render_node(
+                    child_node, 
+                    container, 
+                    inside_splitter=True, 
+                    widget_to_activate=widget_to_activate,
+                    is_on_left_edge=child_left_edge,
+                    is_on_right_edge=child_right_edge,
+                    is_on_top_edge=child_top_edge,
+                    is_on_bottom_edge=child_bottom_edge
+                )
                 if child_widget:
                     qt_splitter.addWidget(child_widget)
             # Apply preserved sizes correctly
@@ -122,6 +157,9 @@ class LayoutRenderer:
             return qt_splitter
         elif isinstance(node, TabGroupNode):
             qt_tab_widget = container._create_tab_widget_with_controls()
+            
+            # Set dynamic border properties based on inherited position context
+            self._set_border_properties(qt_tab_widget, is_on_left_edge, is_on_right_edge, is_on_top_edge, is_on_bottom_edge)
             for widget_node in node.children:
                 widget = widget_node.widget
                 qt_tab_widget.addTab(widget.content_container, widget.windowTitle())
@@ -344,3 +382,26 @@ class LayoutRenderer:
             else:
                 if hasattr(root_window, 'close'):
                     root_window.close()
+
+    def _set_border_properties(self, widget, is_on_left_edge, is_on_right_edge, is_on_top_edge, is_on_bottom_edge):
+        """
+        Sets dynamic border properties on a widget based on its absolute position in the layout hierarchy.
+        
+        Args:
+            widget: The widget to set properties on
+            is_on_left_edge: Whether the widget is on the absolute left edge of the layout
+            is_on_right_edge: Whether the widget is on the absolute right edge of the layout
+            is_on_top_edge: Whether the widget is on the absolute top edge of the layout
+            is_on_bottom_edge: Whether the widget is on the absolute bottom edge of the layout
+        """
+        # Set border visibility based on absolute position in layout
+        # A border should only be visible if the widget is at the absolute edge
+        widget.setProperty("borderLeftVisible", is_on_left_edge)
+        widget.setProperty("borderRightVisible", is_on_right_edge)
+        widget.setProperty("borderTopVisible", is_on_top_edge)
+        widget.setProperty("borderBottomVisible", is_on_bottom_edge)
+        
+        # Force style re-evaluation
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+        widget.update()

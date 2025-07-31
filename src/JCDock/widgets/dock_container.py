@@ -626,22 +626,53 @@ class DockContainer(QWidget):
         tab_widget.set_manager(self.manager)
 
         tab_widget.setStyleSheet("""
+            /* === Base Pane Style === */
             QTabWidget::pane {
                 border: 1px solid #C4C4C3;
                 background: white;
             }
 
-            QTabBar::tab:!selected {
+            /* === Conditional Pane Border Removal === */
+            /* Correct: Only remove side and bottom borders. */
+            TearableTabWidget[borderRightVisible="false"]::pane {
+                border-right: none;
+            }
+            TearableTabWidget[borderLeftVisible="false"]::pane {
+                border-left: none;
+            }
+            TearableTabWidget[borderBottomVisible="false"]::pane {
+                border-bottom: none;
+            }
+
+            /* === Base Tab and TabBar Style === */
+            QTabBar::tab {
                 background: #E0E0E0;
                 border: 1px solid #C4C4C3;
                 padding: 6px 10px;
             }
-
             QTabBar::tab:selected {
                 background: white;
-                border: 1px solid #C4C4C3;
-                border-bottom-color: white;
-                padding: 6px 10px;
+                border-bottom-color: white; /* Merges with the pane */
+            }
+
+            /* === Conditional Border Removal for Sub-Controls === */
+
+            /* For VERTICAL stacking: Remove top border from all tabs of the bottom widget. */
+            TearableTabWidget[borderTopVisible="false"] QTabBar::tab {
+                border-top: none;
+            }
+
+            /* For HORIZONTAL stacking: Only remove the border that overlaps with splitter. */
+            TearableTabWidget[borderLeftVisible="false"] QTabBar::tab {
+                border-left: none !important;
+            }
+            
+            /* FINAL CORRECTION: Remove the outer border from the TAB BAR WIDGET itself. */
+            TearableTabWidget[borderLeftVisible="false"] TearableTabBar {
+                border-left: none;
+            }
+            TearableTabWidget[borderRightVisible="false"] TearableTabBar {
+                border-right: none;
             }
         """)
 
