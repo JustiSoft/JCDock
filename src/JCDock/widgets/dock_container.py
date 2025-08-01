@@ -44,7 +44,9 @@ class DockContainer(QWidget):
             self.setStyleSheet("""
                 DockContainer {
                     background-color: #F0F0F0;
-                    border: 1px solid #6A8EAE;
+                    border-left: 1px solid #6A8EAE;
+                    border-right: 1px solid #6A8EAE;
+                    border-bottom: 1px solid #6A8EAE;
                 }
             """)
             
@@ -53,7 +55,9 @@ class DockContainer(QWidget):
             self.setStyleSheet("""
                 DockContainer {
                     background-color: #F0F0F0;
-                    border: 1px solid #6A8EAE;
+                    border-left: 1px solid #6A8EAE;
+                    border-right: 1px solid #6A8EAE;
+                    border-bottom: 1px solid #6A8EAE;
                 }
             """)
             self.main_layout = QVBoxLayout(self)
@@ -62,7 +66,7 @@ class DockContainer(QWidget):
         self.content_wrapper = None
         self.container_layout = None
             
-        self.main_layout.setContentsMargins(2, 2, 2, 4)
+        self.main_layout.setContentsMargins(0, 0, 0, 4)
         self.main_layout.setSpacing(0)
 
         self.title_bar = None
