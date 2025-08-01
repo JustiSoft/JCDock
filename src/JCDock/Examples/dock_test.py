@@ -611,8 +611,13 @@ class DockingTestApp:
         from JCDock.core.widget_registry import get_registry
         registry = get_registry()
         if not registry.is_registered("adhoc_stateful_widget"):
-            # Register with a dummy class - the actual widget will be created via instance method
-            registry.register("adhoc_stateful_widget", QWidget, "Ad-Hoc Stateful Widget")
+            # Use the new factory registration to teach the manager how to
+            # correctly build the complex ad-hoc widget upon layout load.
+            self.docking_manager.register_widget_factory(
+                key="adhoc_stateful_widget",
+                factory=self._create_adhoc_stateful_widget,
+                title="Ad-Hoc Stateful Widget"
+            )
 
         self._create_test_menu_bar()  # Re-enabled menu bar
 

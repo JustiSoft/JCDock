@@ -146,25 +146,31 @@ class LayoutModel:
         return widgets
 
     def _recursive_get_widgets(self, node: AnyNode, widget_list: list):
+        if node is None:
+            return
         if isinstance(node, WidgetNode):
             widget_list.append(node)
         elif isinstance(node, (TabGroupNode, SplitterNode)):
             for child in node.children:
-                self._recursive_get_widgets(child, widget_list)
+                if child is not None:
+                    self._recursive_get_widgets(child, widget_list)
 
     def find_widget_node(self, root_node: AnyNode, target_widget) -> WidgetNode:
         """
         Recursively searches through the node tree to find the WidgetNode
         that contains the specified target widget.
         """
+        if root_node is None:
+            return None
         if isinstance(root_node, WidgetNode):
             if root_node.widget is target_widget:
                 return root_node
         elif isinstance(root_node, (TabGroupNode, SplitterNode)):
             for child in root_node.children:
-                result = self.find_widget_node(child, target_widget)
-                if result:
-                    return result
+                if child is not None:
+                    result = self.find_widget_node(child, target_widget)
+                    if result:
+                        return result
         return None
 
     def find_widget_node_with_parent(self, root_node: AnyNode, target_widget) -> tuple[WidgetNode, AnyNode]:
@@ -177,14 +183,17 @@ class LayoutModel:
     
     def _find_widget_with_parent_helper(self, node: AnyNode, target_widget, parent: AnyNode) -> tuple[WidgetNode, AnyNode]:
         """Helper method for find_widget_node_with_parent."""
+        if node is None:
+            return None, None
         if isinstance(node, WidgetNode):
             if node.widget is target_widget:
                 return node, parent
         elif isinstance(node, (TabGroupNode, SplitterNode)):
             for child in node.children:
-                result = self._find_widget_with_parent_helper(child, target_widget, node)
-                if result[0]:
-                    return result
+                if child is not None:
+                    result = self._find_widget_with_parent_helper(child, target_widget, node)
+                    if result[0]:
+                        return result
         return None, None
 
     def _find_node_with_ancestry(self, root_node: AnyNode, target_node: AnyNode) -> list[AnyNode]:

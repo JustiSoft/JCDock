@@ -261,21 +261,25 @@ class LayoutSerializer:
         node_type = node_data.get('type')
 
         if node_type == 'SplitterNode':
-            children = [self._deserialize_node(child_data, loaded_widgets_cache) for child_data in node_data['children']]
+            children_data = node_data.get('children', [])
+            children = [
+                node for node in (self._deserialize_node(child, loaded_widgets_cache) for child in children_data) if node is not None
+            ]
             return SplitterNode(
                 orientation=node_data['orientation'],
                 sizes=node_data['sizes'],
                 children=children
             )
         elif node_type == 'TabGroupNode':
-            return TabGroupNode(
-                children=[self._deserialize_node(child_data, loaded_widgets_cache) for child_data in
-                          node_data['children']]
-            )
+            children_data = node_data.get('children', [])
+            children = [
+                node for node in (self._deserialize_node(child, loaded_widgets_cache) for child in children_data) if node is not None
+            ]
+            return TabGroupNode(children=children)
         elif node_type == 'WidgetNode':
             persistent_id = node_data.get('id')
             if not persistent_id:
-                return TabGroupNode()
+                return None  # Return None on failure
 
             cache_key = f"{persistent_id}_{id(node_data)}_{len(loaded_widgets_cache)}"
             
@@ -322,7 +326,7 @@ class LayoutSerializer:
                 
                 return WidgetNode(widget=new_widget)
 
-        return TabGroupNode()
+        return None  # The default fallback should also be None
 
     def _find_first_tab_group_node(self, node: AnyNode) -> TabGroupNode | None:
         """
