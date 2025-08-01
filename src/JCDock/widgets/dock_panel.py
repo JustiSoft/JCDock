@@ -3,6 +3,7 @@
 from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QPushButton, QHBoxLayout, QStyle, QApplication, QGraphicsDropShadowEffect
 from PySide6.QtCore import Qt, QPoint, QRect, QEvent, QRectF
 from PySide6.QtGui import QColor, QPainter, QBrush, QMouseEvent, QPainterPath, QPalette, QRegion, QPen, QIcon, QPixmap
+from typing import Union, Optional
 
 from ..interaction.docking_overlay import DockingOverlay
 from .title_bar import TitleBar
@@ -162,6 +163,78 @@ class DockPanel(QWidget):
         self.setWindowTitle(new_title)
         if self.title_bar:
             self.title_bar.title_label.setText(new_title)
+        
+        # Notify parent container to update tab text if this panel is tabbed
+        self._notify_parent_container_title_changed()
+
+    def set_icon(self, icon: Optional[Union[str, QIcon]]):
+        """
+        Set or update the dock panel icon.
+        This updates both the title bar icon and any parent container tab icon.
+        
+        Args:
+            icon: Icon source - can be file path, Unicode character, Qt standard icon name, or QIcon object
+        """
+        if self.title_bar:
+            self.title_bar.set_icon(icon)
+        
+        # Notify parent container to update tab icon if this panel is tabbed
+        self._notify_parent_container_icon_changed()
+
+    def get_icon(self) -> Optional[QIcon]:
+        """
+        Get the current icon as a QIcon object.
+        
+        Returns:
+            QIcon: Current icon or None if no icon is set
+        """
+        if self.title_bar:
+            return self.title_bar.get_icon()
+        return None
+
+    def has_icon(self) -> bool:
+        """
+        Check if the dock panel currently has an icon.
+        
+        Returns:
+            bool: True if panel has an icon, False otherwise
+        """
+        if self.title_bar:
+            return self.title_bar.has_icon()
+        return False
+
+    def _notify_parent_container_icon_changed(self):
+        """
+        Notify the parent container that this panel's icon has changed.
+        This allows the container to update the corresponding tab icon AND
+        if this is a single widget, update the container's title bar icon.
+        """
+        from .dock_container import DockContainer
+        
+        if self.parent_container and isinstance(self.parent_container, DockContainer):
+            # Update tab icon if this widget is in a tab group
+            if hasattr(self.parent_container, 'update_tab_icon'):
+                self.parent_container.update_tab_icon(self)
+            
+            # If this is the only widget in the container, also update container title bar
+            if len(self.parent_container.contained_widgets) == 1:
+                if hasattr(self.parent_container, 'set_icon') and self.parent_container.title_bar:
+                    icon = self.get_icon()
+                    if icon:
+                        self.parent_container.set_icon(icon)
+                    else:
+                        self.parent_container.set_icon(None)
+
+    def _notify_parent_container_title_changed(self):
+        """
+        Notify the parent container that this panel's title has changed.
+        This allows the container to update the corresponding tab text.
+        """
+        from .dock_container import DockContainer
+        
+        if self.parent_container and isinstance(self.parent_container, DockContainer):
+            if hasattr(self.parent_container, 'update_tab_text'):
+                self.parent_container.update_tab_text(self)
 
     def closeEvent(self, event):
         if self.manager:

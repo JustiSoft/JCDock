@@ -360,6 +360,7 @@ class DragDropController:
 
         original_tab_text = tab_widget.tabText(tab_index)
         original_tab_enabled = tab_widget.isTabEnabled(tab_index)
+        original_tab_icon = tab_widget.tabIcon(tab_index)
         
         tab_widget.setTabEnabled(tab_index, False)
         tab_widget.setTabText(tab_index, f"[Dragging] {original_tab_text}")
@@ -395,6 +396,7 @@ class DragDropController:
         else:
             tab_widget.setTabEnabled(tab_index, original_tab_enabled)
             tab_widget.setTabText(tab_index, original_tab_text)
+            tab_widget.setTabIcon(tab_index, original_tab_icon)
 
             if drop_action == Qt.IgnoreAction:
                 cursor_pos = QCursor.pos()

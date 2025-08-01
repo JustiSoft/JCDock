@@ -870,6 +870,108 @@ class DockContainer(QWidget):
                 if result: return result
         return None
 
+    def update_tab_icon(self, widget):
+        """
+        Update the tab icon for a specific widget within this container.
+        
+        Args:
+            widget: The DockPanel widget whose tab icon should be updated
+        """
+        if not widget or not hasattr(widget, 'content_container'):
+            return
+            
+        tab_widget = self._find_tab_widget_containing(widget.content_container)
+        if tab_widget:
+            tab_index = self._find_tab_index(tab_widget, widget.content_container)
+            if tab_index != -1:
+                icon = widget.get_icon() if hasattr(widget, 'get_icon') else None
+                if icon:
+                    tab_widget.setTabIcon(tab_index, icon)
+                else:
+                    # Clear the icon by setting an empty QIcon
+                    tab_widget.setTabIcon(tab_index, QIcon())
+
+    def update_tab_text(self, widget):
+        """
+        Update the tab text for a specific widget within this container.
+        
+        Args:
+            widget: The DockPanel widget whose tab text should be updated
+        """
+        if not widget or not hasattr(widget, 'content_container'):
+            return
+            
+        tab_widget = self._find_tab_widget_containing(widget.content_container)
+        if tab_widget:
+            tab_index = self._find_tab_index(tab_widget, widget.content_container)
+            if tab_index != -1:
+                tab_widget.setTabText(tab_index, widget.windowTitle())
+
+    def _find_tab_widget_containing(self, content_container):
+        """
+        Find the QTabWidget that contains the specified content container.
+        
+        Args:
+            content_container: The content container to search for
+            
+        Returns:
+            QTabWidget: The tab widget containing this content, or None if not found
+        """
+        if not self.splitter:
+            return None
+            
+        if isinstance(self.splitter, QTabWidget):
+            # Check if this tab widget contains the content
+            for i in range(self.splitter.count()):
+                if self.splitter.widget(i) is content_container:
+                    return self.splitter
+        elif isinstance(self.splitter, QSplitter):
+            # Recursively search through all child tab widgets
+            return self._find_tab_widget_in_splitter(self.splitter, content_container)
+            
+        return None
+
+    def _find_tab_widget_in_splitter(self, splitter, content_container):
+        """
+        Recursively search for a tab widget containing the content container in a splitter.
+        
+        Args:
+            splitter: The QSplitter to search in
+            content_container: The content container to find
+            
+        Returns:
+            QTabWidget: The tab widget containing the content, or None if not found
+        """
+        for i in range(splitter.count()):
+            child = splitter.widget(i)
+            if isinstance(child, QTabWidget):
+                # Check if this tab widget contains the content
+                for j in range(child.count()):
+                    if child.widget(j) is content_container:
+                        return child
+            elif isinstance(child, QSplitter):
+                # Recursively search nested splitters
+                result = self._find_tab_widget_in_splitter(child, content_container)
+                if result:
+                    return result
+        return None
+
+    def _find_tab_index(self, tab_widget, content_container):
+        """
+        Find the index of a content container within a tab widget.
+        
+        Args:
+            tab_widget: The QTabWidget to search in
+            content_container: The content container to find
+            
+        Returns:
+            int: The tab index, or -1 if not found
+        """
+        for i in range(tab_widget.count()):
+            if tab_widget.widget(i) is content_container:
+                return i
+        return -1
+
     def handle_tab_reorder(self, from_index, to_index):
         """
         Called when a tab is moved in a tab bar. Updates the layout model.

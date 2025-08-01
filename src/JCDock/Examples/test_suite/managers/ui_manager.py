@@ -256,6 +256,9 @@ class UIManager:
         
         change_container_icon_action = dynamic_menu.addAction("Change Icon of First Container")
         change_container_icon_action.triggered.connect(self._change_first_container_icon)
+        
+        change_widget_icon_action = dynamic_menu.addAction("Change Icon of First Widget")
+        change_widget_icon_action.triggered.connect(self._change_first_widget_icon)
     
     # Widget creation methods
     def _create_widget_by_type(self, widget_key: str):
@@ -560,40 +563,57 @@ class UIManager:
     
     # Icon management methods
     def _create_window_with_unicode_icon(self, icon: str, title_suffix: str):
-        """Create a floating window with a Unicode emoji icon."""
-        window = FloatingDockRoot(
-            manager=self.docking_manager,
+        """Create a dockable widget with a Unicode emoji icon."""
+        from ..widgets.test_widgets import TestContentWidget
+        
+        # Create content widget
+        content_widget = TestContentWidget(f"{title_suffix} Content")
+        
+        # Create dockable widget container
+        container, dock_panel = self.docking_manager.create_simple_floating_widget(
+            content_widget,
             title=f"{title_suffix} Window",
-            icon=icon
+            x=200, y=200, width=400, height=300
         )
-        window.setGeometry(200, 200, 400, 300)
-        self.docking_manager.register_dock_area(window)
-        window.show()
-        print(f"Created window '{title_suffix} Window' with Unicode icon")
+        
+        # Set icon on the DockPanel
+        dock_panel.set_icon(icon)
+        print(f"Created dockable widget '{title_suffix} Window' with Unicode icon")
     
     def _create_window_with_qt_icon(self, icon_name: str, title_suffix: str):
-        """Create a floating window with a Qt Standard icon."""
-        window = FloatingDockRoot(
-            manager=self.docking_manager,
+        """Create a dockable widget with a Qt Standard icon."""
+        from ..widgets.test_widgets import TestContentWidget
+        
+        # Create content widget
+        content_widget = TestContentWidget(f"{title_suffix} Content")
+        
+        # Create dockable widget container
+        container, dock_panel = self.docking_manager.create_simple_floating_widget(
+            content_widget,
             title=f"{title_suffix} Window",
-            icon=icon_name
+            x=250, y=250, width=400, height=300
         )
-        window.setGeometry(250, 250, 400, 300)
-        self.docking_manager.register_dock_area(window)
-        window.show()
-        print(f"Created window '{title_suffix} Window' with Qt standard icon: {icon_name}")
+        
+        # Set icon on the DockPanel
+        dock_panel.set_icon(icon_name)
+        print(f"Created dockable widget '{title_suffix} Window' with Qt standard icon")
     
     def _create_window_with_no_icon(self):
-        """Create a floating window with no icon to test fallback behavior."""
-        window = FloatingDockRoot(
-            manager=self.docking_manager,
+        """Create a dockable widget with no icon to test fallback behavior."""
+        from ..widgets.test_widgets import TestContentWidget
+        
+        # Create content widget
+        content_widget = TestContentWidget("No Icon Content")
+        
+        # Create dockable widget container
+        container, dock_panel = self.docking_manager.create_simple_floating_widget(
+            content_widget,
             title="No Icon Window",
-            icon=None
+            x=300, y=300, width=400, height=300
         )
-        window.setGeometry(300, 300, 400, 300)
-        self.docking_manager.register_dock_area(window)
-        window.show()
-        print("Created window with no icon (fallback test)")
+        
+        # Explicitly do not set an icon
+        print("Created dockable widget with no icon (fallback test)")
     
     def _add_icon_to_main_window(self):
         """Add an icon to the main window's title bar."""
@@ -626,3 +646,22 @@ class UIManager:
         else:
             print("No suitable container found (need a floating window with title bar)")
             print("Try creating a floating window first using the 'Widgets' menu")
+
+    def _change_first_widget_icon(self):
+        """Change the icon of the first available widget."""
+        all_widgets = self.docking_manager.get_all_widgets()
+        if not all_widgets:
+            print("No widgets available to change icon")
+            return
+            
+        from ..utils.constants import DYNAMIC_ICONS
+        import random
+        
+        target_widget = all_widgets[0]
+        if hasattr(target_widget, 'set_icon'):
+            next_icon = random.choice(DYNAMIC_ICONS)
+            target_widget.set_icon(next_icon)
+            print(f"Changed icon of widget '{target_widget.windowTitle()}'")
+        else:
+            print(f"Widget '{target_widget.windowTitle()}' does not support icons")
+

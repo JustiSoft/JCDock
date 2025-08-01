@@ -162,7 +162,12 @@ class LayoutRenderer:
             self._set_border_properties(qt_tab_widget, is_on_left_edge, is_on_right_edge, is_on_top_edge, is_on_bottom_edge)
             for widget_node in node.children:
                 widget = widget_node.widget
-                qt_tab_widget.addTab(widget.content_container, widget.windowTitle())
+                tab_index = qt_tab_widget.addTab(widget.content_container, widget.windowTitle())
+                
+                # Set tab icon if the widget has one
+                if hasattr(widget, 'get_icon') and widget.get_icon():
+                    qt_tab_widget.setTabIcon(tab_index, widget.get_icon())
+                
                 widget.content_container.setProperty("dockable_widget", widget)
                 if widget.original_bg_color:
                     bg_color_name = widget.original_bg_color.name()
