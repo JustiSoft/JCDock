@@ -1,3 +1,4 @@
+from typing import Callable, Optional, Dict, Any
 from PySide6.QtCore import QPoint, QRect, QSize
 from PySide6.QtWidgets import QWidget
 
@@ -42,7 +43,13 @@ class WidgetFactory:
         if registration is None:
             raise ValueError(f"Widget key '{key}' is not registered. Use @dockable decorator to register widget types.")
         
-        widget_instance = registration.widget_class()
+        # Create widget instance based on registration type
+        if registration.reg_type == 'class':
+            widget_instance = registration.widget_class()
+        elif registration.reg_type == 'factory':
+            widget_instance = registration.factory_func()
+        else:
+            raise ValueError(f"Unknown registration type '{registration.reg_type}' for widget key '{key}'")
         
         panel = DockPanel(registration.default_title, parent=None, manager=self.manager)
         
@@ -87,7 +94,9 @@ class WidgetFactory:
         return container
 
     def add_as_floating_widget(self, widget_instance: QWidget, persistent_key: str, title: str = None, 
-                              position=None, size=None) -> DockContainer:
+                              position=None, size=None, 
+                              state_provider: Optional[Callable[[QWidget], Dict[str, Any]]] = None,
+                              state_restorer: Optional[Callable[[QWidget, Dict[str, Any]], None]] = None) -> DockContainer:
         """
         Make an existing widget instance dockable as a floating window (By Instance path).
         This is the second public API for the simplified widget creation system.
@@ -98,6 +107,8 @@ class WidgetFactory:
             title: Optional title for the widget (uses registry default if not provided)
             position: Optional position for the floating window (defaults to cascaded position)  
             size: Optional size for the floating window (defaults to 400x300)
+            state_provider: Optional function to extract state from widget for persistence
+            state_restorer: Optional function to restore state to widget from saved data
             
         Returns:
             DockContainer containing the dockable widget
@@ -133,6 +144,10 @@ class WidgetFactory:
         
         self.manager.register_widget(panel)
         
+        # Store state handlers if provided
+        if state_provider is not None or state_restorer is not None:
+            self.manager.register_instance_state_handlers(persistent_key, state_provider, state_restorer)
+        
         self.manager.floating_widget_count += 1
         
         return container
@@ -142,6 +157,13 @@ class WidgetFactory:
         """
         Create a simple floating widget without requiring registry registration or QRect.
         This is the simplest possible API for basic use cases.
+        
+        ⚠️  WARNING: This method is for convenience only and is NOT PERSISTENT across application sessions.
+        The generated persistent ID is unstable and based on object memory addresses, which means
+        widgets created with this method will NOT be restored when loading saved layouts.
+        
+        For persistent widgets, use create_floating_widget_from_key() or add_as_floating_widget()
+        with a registered widget type instead.
         
         Args:
             content_widget: The widget to make dockable

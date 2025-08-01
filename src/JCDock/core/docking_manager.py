@@ -1,4 +1,5 @@
 import pickle
+from typing import Callable, Optional, Dict, Any
 
 from PySide6.QtWidgets import QWidget, QTabWidget, QApplication
 from PySide6.QtCore import Qt, QRect, QEvent, QPoint, QRectF, QSize, QTimer, Signal, QObject, QMimeData
@@ -15,10 +16,10 @@ from ..model.layout_serializer import LayoutSerializer
 from ..interaction.drag_drop_controller import DragDropController
 from ..model.layout_renderer import LayoutRenderer
 from ..factories.widget_factory import WidgetFactory
-from ..factories.window_manager import WindowManager
+from ..factories.window_manager import WindowManager  
 from ..interaction.overlay_manager import OverlayManager
-from ..factories.model_update_engine import ModelUpdateEngine
 from .widget_registry import get_registry
+from ..factories.model_update_engine import ModelUpdateEngine
 
 
 class UndockPositioningStrategy:
@@ -158,6 +159,10 @@ class DockingManager(QObject):
         self.hit_test_cache = HitTestCache()
         self._drag_source_id = None
         self.performance_monitor = PerformanceMonitor()
+        
+        # Dictionary to store ad-hoc state handlers for widget instances
+        # Maps persistent_key -> (state_provider_func, state_restorer_func)
+        self.instance_state_handlers = {}
         
         # Debounce timer for efficient splitter model updates
         self._splitter_update_timer = QTimer()
@@ -327,9 +332,11 @@ class DockingManager(QObject):
         return self.widget_factory.create_floating_widget_from_key(key, position, size)
 
     def add_as_floating_widget(self, widget_instance: QWidget, persistent_key: str, title: str = None, 
-                              position=None, size=None) -> DockContainer:
+                              position=None, size=None,
+                              state_provider: Optional[Callable[[QWidget], Dict[str, Any]]] = None,
+                              state_restorer: Optional[Callable[[QWidget, Dict[str, Any]], None]] = None) -> DockContainer:
         """Delegate to WidgetFactory for floating widget creation from instance."""
-        return self.widget_factory.add_as_floating_widget(widget_instance, persistent_key, title, position, size)
+        return self.widget_factory.add_as_floating_widget(widget_instance, persistent_key, title, position, size, state_provider, state_restorer)
 
     def bring_to_front(self, widget):
         """Delegate to WindowManager for window stacking."""
@@ -449,6 +456,36 @@ class DockingManager(QObject):
             dock_area.setAttribute(Qt.WA_Hover, True)
             
             # Containers use their own overlay system, not the gesture manager
+
+    def register_widget_factory(self, key: str, factory: Callable[[], QWidget], title: str):
+        """
+        Register a factory function for creating widgets that require constructor arguments
+        or complex initialization logic.
+        
+        Args:
+            key: Unique string identifier for the widget type
+            factory: Callable that returns a QWidget instance when called
+            title: Default title for widgets created from this factory
+            
+        Raises:
+            ValueError: If the key is already registered
+        """
+        registry = get_registry()
+        registry.register_factory(key, factory, title)
+
+    def register_instance_state_handlers(self, persistent_key: str, 
+                                       state_provider: Optional[Callable[[QWidget], Dict[str, Any]]] = None,
+                                       state_restorer: Optional[Callable[[QWidget, Dict[str, Any]], None]] = None):
+        """
+        Register ad-hoc state handlers for widget instances that don't have built-in state methods.
+        This allows managing state for widgets without modifying their source code.
+        
+        Args:
+            persistent_key: The persistent key for the widget type
+            state_provider: Function to extract state from a widget instance for persistence
+            state_restorer: Function to restore state to a widget instance from saved data
+        """
+        self.instance_state_handlers[persistent_key] = (state_provider, state_restorer)
 
     def unregister_dock_area(self, dock_area: DockContainer):
         if dock_area in self.containers:

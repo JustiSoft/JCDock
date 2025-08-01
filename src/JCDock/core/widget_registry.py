@@ -5,7 +5,7 @@ This module provides a global registry that acts as the definitive source of tru
 for all known dockable widget types.
 """
 
-from typing import Dict, Type, Any, Optional
+from typing import Dict, Type, Any, Optional, Callable, Union
 from dataclasses import dataclass
 from PySide6.QtWidgets import QWidget
 
@@ -13,8 +13,10 @@ from PySide6.QtWidgets import QWidget
 @dataclass
 class WidgetRegistration:
     """Information package for a registered widget type."""
-    widget_class: Type[QWidget]
+    widget_class: Optional[Type[QWidget]]
     default_title: str
+    factory_func: Optional[Callable[[], QWidget]]
+    reg_type: str  # 'class' or 'factory'
 
 
 class WidgetRegistry:
@@ -30,7 +32,21 @@ class WidgetRegistry:
         
         self._registry[key] = WidgetRegistration(
             widget_class=widget_class,
-            default_title=default_title
+            default_title=default_title,
+            factory_func=None,
+            reg_type='class'
+        )
+    
+    def register_factory(self, key: str, factory_func: Callable[[], QWidget], default_title: str) -> None:
+        """Register a widget factory function with the given key and default title."""
+        if key in self._registry:
+            raise ValueError(f"Widget key '{key}' is already registered")
+        
+        self._registry[key] = WidgetRegistration(
+            widget_class=None,
+            default_title=default_title,
+            factory_func=factory_func,
+            reg_type='factory'
         )
     
     def get_registration(self, key: str) -> Optional[WidgetRegistration]:

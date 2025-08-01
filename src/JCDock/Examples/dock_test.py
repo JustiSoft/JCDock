@@ -1,7 +1,11 @@
 import re
 import sys
 import random
-from PySide6.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem, QMenuBar, QMenu, QStyle, QHBoxLayout
+import configparser
+import base64
+import os
+from datetime import datetime
+from PySide6.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem, QMenuBar, QMenu, QStyle, QHBoxLayout, QFileDialog
 from PySide6.QtCore import Qt, QObject, QEvent, Slot, QSize, QPoint, QRect
 from PySide6.QtGui import QColor, QAction
 
@@ -18,7 +22,7 @@ from JCDock import dockable
 
 @dockable("test_widget", "Test Widget")
 class TestContentWidget(QWidget):
-    """Registered widget class for the new registry system."""
+    """Registered widget class for the new registry system with state persistence support."""
     def __init__(self, widget_name="Test Widget"):
         super().__init__()
         self.widget_name = widget_name
@@ -26,9 +30,9 @@ class TestContentWidget(QWidget):
         layout = QVBoxLayout(self)
         
         # Add a label
-        label = QLabel(f"This is {widget_name}")
-        label.setStyleSheet("font-weight: bold; padding: 10px;")
-        layout.addWidget(label)
+        self.main_label = QLabel(f"This is {widget_name}")
+        self.main_label.setStyleSheet("font-weight: bold; padding: 10px;")
+        layout.addWidget(self.main_label)
         
         # Add some buttons
         button1 = QPushButton("Button 1")
@@ -37,23 +41,96 @@ class TestContentWidget(QWidget):
         layout.addWidget(button2)
         
         # Add a table with test data
-        table = QTableWidget(5, 3)
-        table.setHorizontalHeaderLabels(["Item ID", "Description", "Value"])
+        self.table = QTableWidget(5, 3)
+        self.table.setHorizontalHeaderLabels(["Item ID", "Description", "Value"])
         
-        for row in range(5):
-            item_id = QTableWidgetItem(f"{widget_name}-I{row+1}")
-            item_desc = QTableWidgetItem(f"Sample data item for row {row+1}")
-            item_value = QTableWidgetItem(str(random.randint(100, 999)))
-            
-            item_id.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            item_value.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            
-            table.setItem(row, 0, item_id)
-            table.setItem(row, 1, item_desc)
-            table.setItem(row, 2, item_value)
+        # Initialize with default data
+        self._populate_table()
+        layout.addWidget(self.table)
         
-        table.resizeColumnsToContents()
-        layout.addWidget(table)
+        # State persistence tracking
+        self.click_count = 0
+        self.last_modified = None
+        
+        # Connect button to demonstrate state persistence
+        button1.clicked.connect(self._increment_click_count)
+        
+    def _populate_table(self, data=None):
+        """Populate table with provided data or generate new random data."""
+        if data is None:
+            # Generate new random data
+            for row in range(5):
+                item_id = QTableWidgetItem(f"{self.widget_name}-I{row+1}")
+                item_desc = QTableWidgetItem(f"Sample data item for row {row+1}")
+                item_value = QTableWidgetItem(str(random.randint(100, 999)))
+                
+                item_id.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                item_value.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                
+                self.table.setItem(row, 0, item_id)
+                self.table.setItem(row, 1, item_desc)
+                self.table.setItem(row, 2, item_value)
+        else:
+            # Restore from saved data
+            for row, row_data in enumerate(data):
+                for col, cell_value in enumerate(row_data):
+                    item = QTableWidgetItem(str(cell_value))
+                    if col in [0, 2]:  # Center align first and last columns
+                        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    self.table.setItem(row, col, item)
+        
+        self.table.resizeColumnsToContents()
+    
+    def _increment_click_count(self):
+        """Increment click count and update the label to show persistent state."""
+        self.click_count += 1
+        self.last_modified = datetime.now().strftime('%H:%M:%S')
+        self.main_label.setText(f"{self.widget_name} - Clicks: {self.click_count} (Last: {self.last_modified})")
+    
+    def get_dock_state(self):
+        """
+        Return the widget's internal state for persistence.
+        This method will be called during layout serialization.
+        """
+        # Save table data
+        table_data = []
+        for row in range(self.table.rowCount()):
+            row_data = []
+            for col in range(self.table.columnCount()):
+                item = self.table.item(row, col)
+                row_data.append(item.text() if item else "")
+            table_data.append(row_data)
+        
+        return {
+            'widget_name': self.widget_name,
+            'click_count': self.click_count,
+            'last_modified': self.last_modified,
+            'table_data': table_data
+        }
+    
+    def set_dock_state(self, state_dict):
+        """
+        Restore the widget's internal state from persistence.
+        This method will be called during layout deserialization.
+        """
+        if not isinstance(state_dict, dict):
+            return
+        
+        # Restore widget properties
+        self.widget_name = state_dict.get('widget_name', self.widget_name)
+        self.click_count = state_dict.get('click_count', 0)
+        self.last_modified = state_dict.get('last_modified', None)
+        
+        # Update the label to reflect restored state
+        if self.click_count > 0 and self.last_modified:
+            self.main_label.setText(f"{self.widget_name} - Clicks: {self.click_count} (Last: {self.last_modified})")
+        else:
+            self.main_label.setText(f"This is {self.widget_name}")
+        
+        # Restore table data
+        table_data = state_dict.get('table_data')
+        if table_data:
+            self._populate_table(table_data)
 
 
 @dockable("tab_widget_1", "Tab Widget 1")
@@ -124,6 +201,349 @@ class RightWidget(QWidget):
         layout.addWidget(QPushButton("Right Button"))
 
 
+@dockable("chart_widget", "Chart Widget")
+class ChartWidget(QWidget):
+    """Chart widget displaying financial data in table format with controls."""
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        
+        # Header with chart controls
+        header_layout = QHBoxLayout()
+        header_layout.addWidget(QLabel("📈 Stock Price Chart"))
+        
+        refresh_btn = QPushButton("Refresh Data")
+        refresh_btn.clicked.connect(self._refresh_chart_data)
+        header_layout.addWidget(refresh_btn)
+        
+        timeframe_btn = QPushButton("1D")
+        timeframe_btn.clicked.connect(lambda: print("Timeframe changed"))
+        header_layout.addWidget(timeframe_btn)
+        
+        layout.addLayout(header_layout)
+        
+        # Chart data table
+        self.chart_table = QTableWidget(12, 4)
+        self.chart_table.setHorizontalHeaderLabels(["Time", "Price", "Volume", "Change %"])
+        
+        # Style the table to look more chart-like
+        self.chart_table.setStyleSheet("""
+            QTableWidget {
+                gridline-color: #333;
+                background-color: #f8f9fa;
+                alternate-background-color: #e9ecef;
+            }
+            QHeaderView::section {
+                background-color: #dee2e6;
+                font-weight: bold;
+                border: 1px solid #adb5bd;
+                padding: 4px;
+            }
+        """)
+        self.chart_table.setAlternatingRowColors(True)
+        
+        self._populate_chart_data()
+        layout.addWidget(self.chart_table)
+        
+        # Chart controls
+        controls_layout = QHBoxLayout()
+        controls_layout.addWidget(QPushButton("Zoom In"))
+        controls_layout.addWidget(QPushButton("Zoom Out"))
+        controls_layout.addWidget(QPushButton("Export Chart"))
+        layout.addLayout(controls_layout)
+    
+    def _populate_chart_data(self):
+        """Populate chart table with random financial data."""
+        import random
+        from datetime import datetime, timedelta
+        
+        base_price = 150.0
+        for row in range(12):
+            time_str = (datetime.now() - timedelta(hours=11-row)).strftime("%H:%M")
+            
+            # Simulate price movement
+            price_change = random.uniform(-2.5, 2.5)
+            current_price = base_price + price_change
+            base_price = current_price
+            
+            volume = random.randint(10000, 500000)
+            change_pct = price_change / current_price * 100
+            
+            self.chart_table.setItem(row, 0, QTableWidgetItem(time_str))
+            self.chart_table.setItem(row, 1, QTableWidgetItem(f"${current_price:.2f}"))
+            self.chart_table.setItem(row, 2, QTableWidgetItem(f"{volume:,}"))
+            
+            # Color code the change percentage
+            change_item = QTableWidgetItem(f"{change_pct:+.2f}%")
+            if change_pct > 0:
+                change_item.setBackground(QColor("#d4edda"))
+            elif change_pct < 0:
+                change_item.setBackground(QColor("#f8d7da"))
+            self.chart_table.setItem(row, 3, change_item)
+        
+        self.chart_table.resizeColumnsToContents()
+    
+    def _refresh_chart_data(self):
+        """Refresh chart data with new random values."""
+        self._populate_chart_data()
+        print("Chart data refreshed")
+
+
+@dockable("order_widget", "Order Widget")
+class OrderWidget(QWidget):
+    """Order management widget for trading operations."""
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        
+        # Header
+        header_layout = QHBoxLayout()
+        header_layout.addWidget(QLabel("📋 Order Management"))
+        
+        new_order_btn = QPushButton("New Order")
+        new_order_btn.clicked.connect(self._create_new_order)
+        header_layout.addWidget(new_order_btn)
+        
+        cancel_all_btn = QPushButton("Cancel All")
+        cancel_all_btn.clicked.connect(self._cancel_all_orders)
+        cancel_all_btn.setStyleSheet("background-color: #dc3545; color: white;")
+        header_layout.addWidget(cancel_all_btn)
+        
+        layout.addLayout(header_layout)
+        
+        # Order entry form
+        form_layout = QHBoxLayout()
+        form_layout.addWidget(QLabel("Symbol:"))
+        self.symbol_field = QPushButton("AAPL")
+        self.symbol_field.clicked.connect(lambda: print("Symbol selector opened"))
+        form_layout.addWidget(self.symbol_field)
+        
+        form_layout.addWidget(QLabel("Qty:"))
+        self.qty_field = QPushButton("100")
+        form_layout.addWidget(self.qty_field)
+        
+        form_layout.addWidget(QLabel("Price:"))
+        self.price_field = QPushButton("$150.00")
+        form_layout.addWidget(self.price_field)
+        
+        buy_btn = QPushButton("BUY")
+        buy_btn.setStyleSheet("background-color: #28a745; color: white; font-weight: bold;")
+        buy_btn.clicked.connect(lambda: self._place_order("BUY"))
+        form_layout.addWidget(buy_btn)
+        
+        sell_btn = QPushButton("SELL")
+        sell_btn.setStyleSheet("background-color: #dc3545; color: white; font-weight: bold;")
+        sell_btn.clicked.connect(lambda: self._place_order("SELL"))  
+        form_layout.addWidget(sell_btn)
+        
+        layout.addLayout(form_layout)
+        
+        # Orders table
+        self.orders_table = QTableWidget(8, 6)
+        self.orders_table.setHorizontalHeaderLabels(["Order ID", "Symbol", "Side", "Quantity", "Price", "Status"])
+        
+        self.orders_table.setStyleSheet("""
+            QTableWidget {
+                gridline-color: #dee2e6;
+                background-color: #ffffff;
+            }
+            QHeaderView::section {
+                background-color: #6c757d;
+                color: white;
+                font-weight: bold;
+                border: 1px solid #495057;
+                padding: 6px;
+            }
+        """)
+        
+        self._populate_orders_data()
+        layout.addWidget(self.orders_table)
+        
+        # Status bar
+        status_layout = QHBoxLayout()
+        status_layout.addWidget(QLabel("📊 Active Orders: 5"))
+        status_layout.addWidget(QLabel("💰 Total Value: $15,750"))
+        status_layout.addWidget(QLabel("🟢 Connected"))
+        layout.addLayout(status_layout)
+    
+    def _populate_orders_data(self):
+        """Populate orders table with random order data."""
+        import random
+        
+        symbols = ["AAPL", "GOOGL", "TSLA", "MSFT", "AMZN", "NVDA"]
+        statuses = ["Pending", "Filled", "Cancelled", "Partial"]
+        sides = ["BUY", "SELL"]
+        
+        for row in range(8):
+            order_id = f"ORD{1000 + row}"
+            symbol = random.choice(symbols)
+            side = random.choice(sides)
+            quantity = random.randint(10, 500)
+            price = random.uniform(50, 300)
+            status = random.choice(statuses)
+            
+            self.orders_table.setItem(row, 0, QTableWidgetItem(order_id))
+            self.orders_table.setItem(row, 1, QTableWidgetItem(symbol))
+            
+            # Color code buy/sell
+            side_item = QTableWidgetItem(side)
+            if side == "BUY":
+                side_item.setForeground(QColor("#28a745"))
+            else:
+                side_item.setForeground(QColor("#dc3545"))
+            self.orders_table.setItem(row, 2, side_item)
+            
+            self.orders_table.setItem(row, 3, QTableWidgetItem(str(quantity)))
+            self.orders_table.setItem(row, 4, QTableWidgetItem(f"${price:.2f}"))
+            
+            # Color code status
+            status_item = QTableWidgetItem(status)
+            if status == "Filled":
+                status_item.setBackground(QColor("#d4edda"))
+            elif status == "Cancelled":
+                status_item.setBackground(QColor("#f8d7da"))
+            elif status == "Pending":
+                status_item.setBackground(QColor("#fff3cd"))
+            self.orders_table.setItem(row, 5, status_item)
+        
+        self.orders_table.resizeColumnsToContents()
+    
+    def _create_new_order(self):
+        """Create a new order."""
+        print("New order dialog opened")
+    
+    def _place_order(self, side):
+        """Place a buy/sell order."""
+        print(f"Placing {side} order")
+        self._populate_orders_data()  # Refresh data
+    
+    def _cancel_all_orders(self):
+        """Cancel all pending orders."""
+        print("All orders cancelled")
+        self._populate_orders_data()  # Refresh data
+
+
+@dockable("portfolio_widget", "Portfolio Widget")
+class PortfolioWidget(QWidget):
+    """Portfolio overview widget showing holdings and performance."""
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        
+        # Header with portfolio summary
+        header_layout = QVBoxLayout()
+        title_layout = QHBoxLayout()
+        title_layout.addWidget(QLabel("💼 Portfolio Overview"))
+        
+        sync_btn = QPushButton("Sync")
+        sync_btn.clicked.connect(self._sync_portfolio)
+        title_layout.addWidget(sync_btn)
+        
+        settings_btn = QPushButton("Settings")
+        settings_btn.clicked.connect(lambda: print("Portfolio settings opened"))
+        title_layout.addWidget(settings_btn)
+        
+        header_layout.addLayout(title_layout)
+        
+        # Portfolio summary
+        summary_layout = QHBoxLayout()
+        summary_layout.addWidget(QLabel("💰 Total Value: $125,750.00"))
+        summary_layout.addWidget(QLabel("📈 Day P&L: +$2,150 (+1.74%)"))
+        summary_layout.addWidget(QLabel("📊 Total P&L: +$15,750 (+14.3%)"))
+        header_layout.addLayout(summary_layout)
+        
+        layout.addLayout(header_layout)
+        
+        # Holdings table
+        self.portfolio_table = QTableWidget(10, 7)
+        self.portfolio_table.setHorizontalHeaderLabels([
+            "Symbol", "Shares", "Avg Cost", "Current Price", "Market Value", "P&L", "P&L %"
+        ])
+        
+        self.portfolio_table.setStyleSheet("""
+            QTableWidget {
+                gridline-color: #e9ecef;
+                background-color: #ffffff;
+                selection-background-color: #007bff;
+            }
+            QHeaderView::section {
+                background-color: #495057;
+                color: white;
+                font-weight: bold;
+                border: 1px solid #343a40;
+                padding: 8px;
+            }
+        """)
+        
+        self._populate_portfolio_data()
+        layout.addWidget(self.portfolio_table)
+        
+        # Action buttons
+        actions_layout = QHBoxLayout()
+        actions_layout.addWidget(QPushButton("Add Position"))
+        actions_layout.addWidget(QPushButton("Rebalance"))
+        actions_layout.addWidget(QPushButton("Generate Report"))
+        actions_layout.addWidget(QPushButton("Export CSV"))
+        layout.addLayout(actions_layout)
+        
+        # Footer with allocation chart (simulated with labels)
+        allocation_layout = QHBoxLayout()
+        allocation_layout.addWidget(QLabel("Asset Allocation:"))
+        allocation_layout.addWidget(QLabel("🟦 Stocks 75%"))
+        allocation_layout.addWidget(QLabel("🟩 Bonds 15%"))
+        allocation_layout.addWidget(QLabel("🟨 Cash 10%"))
+        layout.addLayout(allocation_layout)
+    
+    def _populate_portfolio_data(self):
+        """Populate portfolio table with random holdings data."""
+        import random
+        
+        holdings = [
+            ("AAPL", 150), ("GOOGL", 50), ("TSLA", 75), ("MSFT", 200),
+            ("AMZN", 30), ("NVDA", 100), ("META", 80), ("NFLX", 25),
+            ("DIS", 120), ("V", 90)
+        ]
+        
+        for row, (symbol, shares) in enumerate(holdings):
+            avg_cost = random.uniform(50, 300)
+            current_price = avg_cost * random.uniform(0.8, 1.4)  # ±40% from cost
+            market_value = shares * current_price
+            pnl_dollar = shares * (current_price - avg_cost)
+            pnl_percent = (current_price - avg_cost) / avg_cost * 100
+            
+            self.portfolio_table.setItem(row, 0, QTableWidgetItem(symbol))
+            self.portfolio_table.setItem(row, 1, QTableWidgetItem(str(shares)))
+            self.portfolio_table.setItem(row, 2, QTableWidgetItem(f"${avg_cost:.2f}"))
+            self.portfolio_table.setItem(row, 3, QTableWidgetItem(f"${current_price:.2f}"))
+            self.portfolio_table.setItem(row, 4, QTableWidgetItem(f"${market_value:,.2f}"))
+            
+            # Color code P&L
+            pnl_dollar_item = QTableWidgetItem(f"${pnl_dollar:+,.2f}")
+            pnl_percent_item = QTableWidgetItem(f"{pnl_percent:+.1f}%")
+            
+            if pnl_dollar > 0:
+                pnl_dollar_item.setForeground(QColor("#28a745"))
+                pnl_percent_item.setForeground(QColor("#28a745"))
+                pnl_dollar_item.setBackground(QColor("#f8fff9"))
+                pnl_percent_item.setBackground(QColor("#f8fff9"))
+            else:
+                pnl_dollar_item.setForeground(QColor("#dc3545"))
+                pnl_percent_item.setForeground(QColor("#dc3545"))
+                pnl_dollar_item.setBackground(QColor("#fff5f5"))
+                pnl_percent_item.setBackground(QColor("#fff5f5"))
+            
+            self.portfolio_table.setItem(row, 5, pnl_dollar_item)
+            self.portfolio_table.setItem(row, 6, pnl_percent_item)
+        
+        self.portfolio_table.resizeColumnsToContents()
+    
+    def _sync_portfolio(self):
+        """Sync portfolio data."""
+        print("Syncing portfolio data...")
+        self._populate_portfolio_data()
+        print("Portfolio data updated")
+
+
 class EventListener(QObject):
     """
     A simple event listener to demonstrate connecting to DockingManager signals.
@@ -186,7 +606,26 @@ class DockingTestApp:
 
         self.saved_layout_data = None
 
+        # Register keys needed for ad-hoc state handler demonstrations
+        # This shows how any widget class can be registered even if not decorated
+        from JCDock.core.widget_registry import get_registry
+        registry = get_registry()
+        if not registry.is_registered("adhoc_stateful_widget"):
+            # Register with a dummy class - the actual widget will be created via instance method
+            registry.register("adhoc_stateful_widget", QWidget, "Ad-Hoc Stateful Widget")
+
         self._create_test_menu_bar()  # Re-enabled menu bar
+
+    def _get_standard_layout_path(self) -> str:
+        """Returns the standardized path for the application layout file."""
+        layouts_dir = os.path.join(os.getcwd(), "layouts")
+        return os.path.join(layouts_dir, "jcdock_layout.ini")
+
+    def _ensure_layout_directory(self):
+        """Creates the layouts directory if it doesn't exist."""
+        layouts_dir = os.path.join(os.getcwd(), "layouts")
+        if not os.path.exists(layouts_dir):
+            os.makedirs(layouts_dir)
 
     def _create_test_menu_bar(self):
         """
@@ -217,6 +656,14 @@ class DockingTestApp:
         right_widget_action = by_type_menu.addAction("Right Widget")
         right_widget_action.triggered.connect(lambda: self.create_widget_by_type("right_widget"))
         
+        # Add new financial widgets
+        chart_widget_action = by_type_menu.addAction("Chart Widget")
+        chart_widget_action.triggered.connect(lambda: self.create_widget_by_type("chart_widget"))
+        order_widget_action = by_type_menu.addAction("Order Widget")
+        order_widget_action.triggered.connect(lambda: self.create_widget_by_type("order_widget"))
+        portfolio_widget_action = by_type_menu.addAction("Portfolio Widget")
+        portfolio_widget_action.triggered.connect(lambda: self.create_widget_by_type("portfolio_widget"))
+        
         # Submenu for "By Instance" path - demonstrates making existing widgets dockable
         # This shows how developers can take pre-configured widget instances and make them dockable
         by_instance_menu = widget_menu.addMenu("Create By Instance (Existing)")
@@ -224,6 +671,33 @@ class DockingTestApp:
         instance_test_action.triggered.connect(lambda: self.create_widget_by_instance("test_widget"))
         instance_tab1_action = by_instance_menu.addAction("Tab Widget 1 Instance")
         instance_tab1_action.triggered.connect(lambda: self.create_widget_by_instance("tab_widget_1"))
+        
+        # Add new financial widget instances
+        instance_chart_action = by_instance_menu.addAction("Chart Widget Instance")
+        instance_chart_action.triggered.connect(lambda: self.create_widget_by_instance("chart_widget"))
+        instance_order_action = by_instance_menu.addAction("Order Widget Instance")
+        instance_order_action.triggered.connect(lambda: self.create_widget_by_instance("order_widget"))
+        instance_portfolio_action = by_instance_menu.addAction("Portfolio Widget Instance")
+        instance_portfolio_action.triggered.connect(lambda: self.create_widget_by_instance("portfolio_widget"))
+        
+        widget_menu.addSeparator()
+        
+        # Submenu for "By Factory" path - demonstrates factory function registration
+        # This shows how developers can register factory functions for complex widget creation
+        by_factory_menu = widget_menu.addMenu("Create By Factory (Advanced)")
+        by_factory_menu.aboutToShow.connect(self._setup_factory_examples)  # Setup factories when menu is shown
+        factory_custom_action = by_factory_menu.addAction("Custom Factory Widget")
+        factory_custom_action.triggered.connect(lambda: self.create_widget_by_factory("custom_factory_widget"))
+        factory_complex_action = by_factory_menu.addAction("Complex Initialization Widget")
+        factory_complex_action.triggered.connect(lambda: self.create_widget_by_factory("complex_init_widget"))
+        
+        widget_menu.addSeparator()
+        
+        # Submenu for "Ad-Hoc State Handlers" path - demonstrates state handling without modifying widget source
+        # This shows how developers can add state persistence to existing widgets without modifying their code
+        adhoc_menu = widget_menu.addMenu("Create with Ad-Hoc State Handlers")
+        adhoc_stateful_action = adhoc_menu.addAction("Stateful Widget with Ad-Hoc Handlers")
+        adhoc_stateful_action.triggered.connect(self.create_widget_with_adhoc_handlers)
         
         widget_menu.addSeparator()
         
@@ -355,6 +829,12 @@ class DockingTestApp:
             widget_instance = TabWidget2()
         elif widget_key == "right_widget":
             widget_instance = RightWidget()
+        elif widget_key == "chart_widget":
+            widget_instance = ChartWidget()
+        elif widget_key == "order_widget":
+            widget_instance = OrderWidget()
+        elif widget_key == "portfolio_widget":
+            widget_instance = PortfolioWidget()
         else:
             print(f"Unknown widget key: {widget_key}")
             return
@@ -369,6 +849,213 @@ class DockingTestApp:
         )
         
         print(f"Made widget instance dockable: {container}")
+    
+    def _setup_factory_examples(self):
+        """Setup factory examples when the factory menu is accessed."""
+        try:
+            # Only register once
+            from JCDock.core.widget_registry import get_registry
+            registry = get_registry()
+            
+            if not registry.is_registered("custom_factory_widget"):
+                # Register a factory that creates widgets with custom arguments
+                self.docking_manager.register_widget_factory(
+                    "custom_factory_widget",
+                    lambda: self._create_custom_factory_widget("Factory Example", "green"),
+                    "Custom Factory Widget"
+                )
+            
+            if not registry.is_registered("complex_init_widget"):
+                # Register a factory with complex initialization
+                self.docking_manager.register_widget_factory(
+                    "complex_init_widget",
+                    self._create_complex_init_widget,
+                    "Complex Initialization Widget"
+                )
+        except ValueError:
+            # Already registered, ignore
+            pass
+    
+    def _create_custom_factory_widget(self, title, color):
+        """Factory function that creates a widget with custom arguments."""
+        from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton
+        
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        label = QLabel(f"Factory Created: {title}")
+        label.setStyleSheet(f"color: {color}; font-weight: bold; padding: 10px; background: #f0f0f0; border-radius: 5px;")
+        layout.addWidget(label)
+        
+        info_label = QLabel("This widget was created using a factory function!")
+        layout.addWidget(info_label)
+        
+        button = QPushButton("Factory Button")
+        button.clicked.connect(lambda: print(f"Factory widget '{title}' button clicked!"))
+        layout.addWidget(button)
+        
+        return widget
+    
+    def _create_complex_init_widget(self):
+        """Factory function demonstrating complex initialization logic."""
+        from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QListWidget
+        import random
+        
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        # Complex initialization that couldn't be done in a simple constructor
+        session_id = random.randint(1000, 9999)
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        
+        header_label = QLabel(f"Complex Widget (Session: {session_id})")
+        header_label.setStyleSheet("color: purple; font-weight: bold; padding: 10px; background: #f8f0ff; border-radius: 5px;")
+        layout.addWidget(header_label)
+        
+        info_label = QLabel(f"Initialized at: {timestamp}")
+        layout.addWidget(info_label)
+        
+        # Create a list with dynamically generated data
+        data_list = QListWidget()
+        for i in range(5):
+            data_list.addItem(f"Dynamic Item {i+1} (Generated at runtime)")
+        layout.addWidget(data_list)
+        
+        footer_label = QLabel("This demonstrates complex initialization that requires factory functions!")
+        footer_label.setStyleSheet("font-style: italic; color: #666;")
+        layout.addWidget(footer_label)
+        
+        return widget
+    
+    def create_widget_by_factory(self, factory_key: str):
+        """Create a widget using the 'By Factory' path - factory function registration."""
+        print(f"Creating widget using 'By Factory' path: {factory_key}")
+        
+        # Calculate cascading position
+        count = len(self.docking_manager.widgets)
+        x = 300 + count * 40
+        y = 300 + count * 40
+        
+        # Use the factory-based API
+        container = self.docking_manager.create_floating_widget_from_key(
+            factory_key,
+            position=(x, y),
+            size=(400, 300)
+        )
+        
+        print(f"Created widget from factory: {container}")
+    
+    def create_widget_with_adhoc_handlers(self):
+        """Create a widget using ad-hoc state handlers for persistence without modifying the widget source."""
+        print("Creating widget with ad-hoc state handlers...")
+        
+        # Create a widget instance that doesn't have built-in state persistence
+        widget_instance = self._create_adhoc_stateful_widget()
+        
+        # Modify its state to demonstrate persistence
+        widget_instance.text_input.setText("This will be preserved!")
+        widget_instance.counter_spin.setValue(789)
+        widget_instance._simulate_clicks(5)  # Add some state
+        
+        # Calculate cascading position
+        count = len(self.docking_manager.widgets)
+        x = 400 + count * 40
+        y = 400 + count * 40
+        
+        # Add the widget with ad-hoc state handlers
+        container = self.docking_manager.add_as_floating_widget(
+            widget_instance,
+            "adhoc_stateful_widget",  # Must be registered for persistence
+            title="Widget with Ad-Hoc State Handlers",
+            position=(x, y),
+            size=(450, 350),
+            state_provider=self._extract_adhoc_widget_state,
+            state_restorer=self._restore_adhoc_widget_state
+        )
+        
+        print(f"Created widget with ad-hoc state handlers: {container}")
+    
+    def _create_adhoc_stateful_widget(self):
+        """Create a widget that doesn't have built-in state persistence methods."""
+        from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QLineEdit, QSpinBox, QPushButton, QTextEdit
+        
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        # Header
+        header = QLabel("Ad-Hoc State Handler Demo")
+        header.setStyleSheet("font-weight: bold; font-size: 14px; padding: 10px; background: #e8f4fd; border-radius: 5px;")
+        layout.addWidget(header)
+        
+        # Explanation
+        explanation = QLabel("This widget doesn't have get_dock_state/set_dock_state methods.\nState is managed through external handler functions.")
+        explanation.setStyleSheet("font-style: italic; color: #666; padding: 5px;")
+        layout.addWidget(explanation)
+        
+        # Stateful text input
+        layout.addWidget(QLabel("Text Input (will be preserved):"))
+        widget.text_input = QLineEdit()
+        widget.text_input.setPlaceholderText("Enter text to be preserved across sessions...")
+        layout.addWidget(widget.text_input)
+        
+        # Stateful counter
+        layout.addWidget(QLabel("Counter (will be preserved):"))
+        widget.counter_spin = QSpinBox()
+        widget.counter_spin.setRange(0, 9999)
+        widget.counter_spin.setValue(100)
+        layout.addWidget(widget.counter_spin)
+        
+        # Button with click tracking
+        widget.click_count = 0
+        widget.click_button = QPushButton("Click Me (count preserved)")
+        widget.click_button.clicked.connect(lambda: widget._on_click())
+        layout.addWidget(widget.click_button)
+        
+        # Status display
+        widget.status_label = QLabel("Clicks: 0")
+        layout.addWidget(widget.status_label)
+        
+        # Notes area
+        layout.addWidget(QLabel("Notes (will be preserved):"))
+        widget.notes_area = QTextEdit()
+        widget.notes_area.setPlaceholderText("Add some notes that will persist...")
+        widget.notes_area.setMaximumHeight(100)
+        layout.addWidget(widget.notes_area)
+        
+        # Add methods to the widget instance
+        def on_click():
+            widget.click_count += 1
+            widget.status_label.setText(f"Clicks: {widget.click_count}")
+        
+        def simulate_clicks(count):
+            """Helper for testing."""
+            for _ in range(count):
+                on_click()
+        
+        widget._on_click = on_click
+        widget._simulate_clicks = simulate_clicks
+        
+        return widget
+    
+    def _extract_adhoc_widget_state(self, widget):
+        """Ad-hoc state provider function - extracts state from the widget."""
+        return {
+            'text_input_value': widget.text_input.text(),
+            'counter_value': widget.counter_spin.value(), 
+            'click_count': widget.click_count,
+            'notes_content': widget.notes_area.toPlainText()
+        }
+    
+    def _restore_adhoc_widget_state(self, widget, state_dict):
+        """Ad-hoc state restorer function - restores state to the widget."""
+        # Restore UI state
+        widget.text_input.setText(state_dict.get('text_input_value', ''))
+        widget.counter_spin.setValue(state_dict.get('counter_value', 100))
+        widget.notes_area.setPlainText(state_dict.get('notes_content', ''))
+        
+        # Restore internal state
+        widget.click_count = state_dict.get('click_count', 0)
+        widget.status_label.setText(f"Clicks: {widget.click_count} (RESTORED)")
 
     def create_and_register_new_widget(self):
         """Legacy method for comparison - shows the old complexity."""
@@ -487,27 +1174,127 @@ class DockingTestApp:
         return container
 
     def save_layout(self):
-        """Saves the current docking layout to an internal variable."""
+        """Saves the current docking layout to the standardized .ini file."""
         print("\n--- RUNNING TEST: Save Layout ---")
+        
+        # Use standardized file path
+        file_path = self._get_standard_layout_path()
+        
         try:
-            self.saved_layout_data = self.docking_manager.save_layout_to_bytearray()
-            print("SUCCESS: Layout saved to memory.")
+            # Ensure the directory exists
+            self._ensure_layout_directory()
+            
+            # Get layout data as bytearray
+            layout_data = self.docking_manager.save_layout_to_bytearray()
+            
+            # Encode to base64 for storing in text file
+            encoded_data = base64.b64encode(layout_data).decode('utf-8')
+            
+            # Create .ini file structure
+            config = configparser.ConfigParser()
+            config['layout'] = {
+                'data': encoded_data,
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+            config['metadata'] = {
+                'version': '1.0',
+                'application': 'JCDock Test Application'
+            }
+            
+            # Write to file
+            with open(file_path, 'w') as configfile:
+                config.write(configfile)
+            
+            print(f"SUCCESS: Layout saved to {file_path}")
+            
         except Exception as e:
             print(f"FAILURE: Could not save layout: {e}")
         print("---------------------------------")
 
     def load_layout(self):
-        """Loads the previously saved docking layout."""
+        """Loads a docking layout from the standardized .ini file."""
         print("\n--- RUNNING TEST: Load Layout ---")
-        if self.saved_layout_data:
-            try:
-                self.docking_manager.load_layout_from_bytearray(self.saved_layout_data)
-                print("SUCCESS: Layout loaded from memory.")
-            except Exception as e:
-                print(f"FAILURE: Could not load layout: {e}")
-        else:
-            print("INFO: No layout data saved yet. Please save a layout first.")
+        
+        # Use standardized file path
+        file_path = self._get_standard_layout_path()
+        
+        if not os.path.exists(file_path):
+            print(f"INFO: No saved layout found at {file_path}")
+            print("---------------------------------")
+            return
+        
+        try:
+            # Read .ini file
+            config = configparser.ConfigParser()
+            config.read(file_path)
+            
+            # Validate file structure
+            if 'layout' not in config:
+                print("FAILURE: Invalid layout file - missing [layout] section")
+                print("---------------------------------")
+                return
+            
+            if 'data' not in config['layout']:
+                print("FAILURE: Invalid layout file - missing layout data")
+                print("---------------------------------")
+                return
+            
+            # Decode base64 data back to bytearray
+            encoded_data = config['layout']['data']
+            layout_data = base64.b64decode(encoded_data.encode('utf-8'))
+            
+            # Load layout using existing method
+            self.docking_manager.load_layout_from_bytearray(layout_data)
+            
+            # Show metadata if available
+            if 'metadata' in config:
+                version = config['metadata'].get('version', 'Unknown')
+                app = config['metadata'].get('application', 'Unknown')
+                print(f"INFO: Loaded layout version {version} from {app}")
+            
+            if 'timestamp' in config['layout']:
+                timestamp = config['layout']['timestamp']
+                print(f"INFO: Layout saved on {timestamp}")
+            
+            print(f"SUCCESS: Layout loaded from {file_path}")
+            
+        except Exception as e:
+            print(f"FAILURE: Could not load layout: {e}")
         print("---------------------------------")
+
+    def _load_layout_silently(self) -> bool:
+        """
+        Silently loads a docking layout from the standardized .ini file.
+        Used for startup loading without test output.
+        
+        Returns:
+            bool: True if layout was loaded successfully, False otherwise
+        """
+        file_path = self._get_standard_layout_path()
+        
+        if not os.path.exists(file_path):
+            return False
+        
+        try:
+            # Read .ini file
+            config = configparser.ConfigParser()
+            config.read(file_path)
+            
+            # Validate file structure
+            if 'layout' not in config or 'data' not in config['layout']:
+                return False
+            
+            # Decode base64 data back to bytearray
+            encoded_data = config['layout']['data']
+            layout_data = base64.b64decode(encoded_data.encode('utf-8'))
+            
+            # Load layout using existing method
+            self.docking_manager.load_layout_from_bytearray(layout_data)
+            
+            return True
+            
+        except Exception:
+            return False
 
 
     def run_find_widget_test(self):
@@ -949,22 +1736,21 @@ class DockingTestApp:
         print('='*60)
 
     def run(self):
-        """Creates floating widgets using the new simplified APIs and starts the application."""
+        """Loads saved layout from .ini file at startup, or starts with empty layout."""
         self.main_window.show()
         
-        print("Creating startup widgets to demonstrate the Two Paths to Simplicity...")
+        # Try to load saved layout first
+        print("Checking for saved layout...")
+        layout_loaded = self._load_layout_silently()
         
-        # Demonstrate Path 1: "By Type" - Create widgets from registered keys
-        print("\n1. Creating widgets using 'By Type' path (registry-based):")
-        self.create_widget_by_type("test_widget")
-        self.create_widget_by_type("tab_widget_1")
+        if layout_loaded:
+            print(f"SUCCESS: Loaded saved layout from {self._get_standard_layout_path()}")
+            print(f"Startup complete! Restored {len(self.docking_manager.widgets)} widgets from saved layout.")
+        else:
+            print("No saved layout found. Starting with empty layout.")
+            print("Startup complete! Use the 'Widgets' menu to create widgets.")
         
-        # Demonstrate Path 2: "By Instance" - Make existing widgets dockable  
-        print("\n2. Creating widgets using 'By Instance' path (existing instances):")
-        self.create_widget_by_instance("tab_widget_2")
-        
-        print(f"\nStartup complete! Created {len(self.docking_manager.widgets)} widgets using the new simplified APIs.")
-        print("Use the 'Widgets' menu to create more widgets and test both API paths.")
+        print("Use the 'File' menu to save/load layouts.")
         
         return self.app.exec()
 

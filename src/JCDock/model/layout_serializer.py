@@ -96,11 +96,40 @@ class LayoutSerializer:
                 'children': [self._serialize_node(child) for child in node.children]
             }
         elif isinstance(node, WidgetNode):
-            return {
+            serialized_data = {
                 'type': 'WidgetNode',
                 'id': node.widget.persistent_id,
                 'margin': getattr(node.widget, '_content_margin_size', 5)
             }
+            
+            # Check if the content widget supports state persistence
+            content_widget = getattr(node.widget, 'content_widget', None)
+            state_saved = False
+            
+            # First try: Check for built-in get_dock_state method
+            if content_widget and hasattr(content_widget, 'get_dock_state') and callable(getattr(content_widget, 'get_dock_state')):
+                try:
+                    widget_state = content_widget.get_dock_state()
+                    if isinstance(widget_state, dict):
+                        serialized_data['internal_state'] = widget_state
+                        state_saved = True
+                except Exception as e:
+                    # Gracefully handle any errors in user's state saving logic
+                    pass
+            
+            # Second try: Check for ad-hoc state handlers if built-in method failed
+            if not state_saved and node.widget.persistent_id in self.manager.instance_state_handlers:
+                state_provider, state_restorer = self.manager.instance_state_handlers[node.widget.persistent_id]
+                if state_provider is not None and content_widget is not None:
+                    try:
+                        widget_state = state_provider(content_widget)
+                        if isinstance(widget_state, dict):
+                            serialized_data['internal_state'] = widget_state
+                    except Exception as e:
+                        # Gracefully handle any errors in user's ad-hoc state saving logic
+                        pass
+            
+            return serialized_data
         return {}
 
     def load_layout_from_bytearray(self, data: bytearray):
@@ -264,6 +293,33 @@ class LayoutSerializer:
                     new_widget = None
 
             if new_widget:
+                # Check if there's saved internal state to restore
+                internal_state = node_data.get('internal_state')
+                if internal_state and isinstance(internal_state, dict):
+                    content_widget = getattr(new_widget, 'content_widget', None)
+                    state_restored = False
+                    
+                    # First try: Check for built-in set_dock_state method
+                    if content_widget and hasattr(content_widget, 'set_dock_state') and callable(getattr(content_widget, 'set_dock_state')):
+                        try:
+                            content_widget.set_dock_state(internal_state)
+                            state_restored = True
+                        except Exception as e:
+                            # Gracefully handle any errors in user's restoration logic
+                            # Don't let a single faulty widget crash the entire layout load
+                            pass
+                    
+                    # Second try: Check for ad-hoc state handlers if built-in method failed
+                    if not state_restored and persistent_id in self.manager.instance_state_handlers:
+                        state_provider, state_restorer = self.manager.instance_state_handlers[persistent_id]
+                        if state_restorer is not None and content_widget is not None:
+                            try:
+                                state_restorer(content_widget, internal_state)
+                            except Exception as e:
+                                # Gracefully handle any errors in user's ad-hoc restoration logic
+                                # Don't let a single faulty widget crash the entire layout load
+                                pass
+                
                 return WidgetNode(widget=new_widget)
 
         return TabGroupNode()
