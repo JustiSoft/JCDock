@@ -150,21 +150,64 @@ if __name__ == "__main__":
     sys.exit(app.exec())
 ```
 
-## Complete Examples
+## Complete Examples and Testing
 
-For a comprehensive demonstration of JCDock's capabilities and different API usage patterns, refer to the complete example script at `src/JCDock/Examples/dock_test.py`. This script showcases:
+### Comprehensive Test Suite
+
+JCDock includes a modular test suite that demonstrates all framework capabilities and serves as both a testing framework and reference implementation. To run the test suite:
+
+```bash
+# From the Examples directory
+cd src/JCDock/Examples
+python run_test_suite.py
+```
 
 ![JCDock Demo](src/JCDock/Examples/sample.png)
 *Example of JCDock in action showing floating windows, docked panels, and tearable tabs*
 
+The test suite (`src/JCDock/Examples/test_suite/`) features a modular architecture with:
+
+#### Core Components
+- **`main.py`** - Application entry point and configuration
+- **`app.py`** - Main application class with UI coordination
+
+#### Managers (`managers/`)
+- **`test_manager.py`** - Test execution and validation
+- **`ui_manager.py`** - Menu system and user interface management  
+- **`layout_manager.py`** - Layout persistence and file operations
+
+#### Test Widgets (`widgets/`)
+- **`test_widgets.py`** - Registry-based widgets with `@dockable` decorators
+- **`financial_widgets.py`** - Complex financial dashboard widgets (Chart, Order, Portfolio)
+
+#### Utilities (`utils/`)
+- **`constants.py`** - Application constants and configuration
+- **`data_generator.py`** - Random data generation for testing
+- **`test_utilities.py`** - Testing helper functions and validation
+
+#### Key Testing Features
 - **Registry-based widget creation** using `@dockable` decorators
 - **Both API paths**: "By Type" (registry-based) and "By Instance" (existing widgets)
-- **Layout persistence** with save/load functionality
 - **Comprehensive testing functions** for all API methods including widget finding, listing, docking operations, and state management
 - **Signal system usage** with event listeners for layout changes
 - **Interactive menu system** for testing different features and operations
+- **Layout persistence testing** with automatic save/load validation
+- **Performance monitoring** and drag operation testing
 
-This example serves as both a testing framework and a reference implementation, showing various ways to integrate JCDock into your applications.
+### Layout Persistence
+
+The test suite demonstrates automatic layout persistence using the standard layout file location:
+
+```
+layouts/
+└── jcdock_layout.ini  # Automatically saved/loaded layout file
+```
+
+The layout file preserves:
+- **Widget positions** and container hierarchies
+- **Window geometry** and multi-monitor positioning
+- **Widget state** (custom data via `get_dock_state()`/`set_dock_state()`)
+- **Tab ordering** and splitter proportions
 
 ## Advanced Features
 
