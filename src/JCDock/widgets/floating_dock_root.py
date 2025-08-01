@@ -8,17 +8,23 @@ class FloatingDockRoot(DockContainer):
     It overrides the standard activation request to add its special behavior.
     """
 
-    def __init__(self, manager, parent=None, is_main_window=False, title=None):
+    def __init__(self, manager, parent=None, is_main_window=False, title=None, 
+                 title_bar_color=None, title_text_color=None):
         from PySide6.QtGui import QColor
         
         # Determine if we should show title bar based on title parameter
         show_title_bar = title is not None
         
+        # Use provided colors or set more pleasing defaults
+        if title_bar_color is None:
+            title_bar_color = QColor("#2F4F4F")  # Dark teal - more pleasing than brown
+        
         super().__init__(
             parent=parent,
             manager=manager,
             show_title_bar=show_title_bar,
-            title_bar_color=QColor("#8B4513")
+            title_bar_color=title_bar_color,
+            title_text_color=title_text_color
         )
         self.is_main_window = is_main_window
         

@@ -20,18 +20,32 @@ from .resize_overlay import ResizeOverlay
 
 class DockContainer(QWidget):
     def __init__(self, orientation=Qt.Horizontal, margin_size=5, parent=None, manager=None,
-                 show_title_bar=True, title_bar_color=None):
+                 show_title_bar=True, title_bar_color=None, background_color=None, border_color=None,
+                 title_text_color=None):
         super().__init__(parent)
 
         # Initialize tracking set early before any addWidget calls that trigger childEvent
         self._tracked_widgets = set()
         
-        self._background_color = QColor("#F0F0F0")
+        if background_color is not None:
+            self._background_color = background_color
+        else:
+            self._background_color = QColor("#F0F0F0")
+
+        if border_color is not None:
+            self._border_color = border_color
+        else:
+            self._border_color = QColor("#6A8EAE")
 
         if title_bar_color is not None:
             self._title_bar_color = title_bar_color
         else:
             self._title_bar_color = QColor("#C0D3E8")
+
+        if title_text_color is not None:
+            self._title_text_color = title_text_color
+        else:
+            self._title_text_color = QColor("#101010")
 
         self.setObjectName("DockContainer")
         self.manager = manager
@@ -41,25 +55,11 @@ class DockContainer(QWidget):
         if show_title_bar:
             self.setWindowTitle("Docked Widgets")
             self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
-            self.setStyleSheet("""
-                DockContainer {
-                    background-color: #F0F0F0;
-                    border-left: 1px solid #6A8EAE;
-                    border-right: 1px solid #6A8EAE;
-                    border-bottom: 1px solid #6A8EAE;
-                }
-            """)
+            self.setStyleSheet(self._generate_stylesheet())
             
             self.main_layout = QVBoxLayout(self)
         else:
-            self.setStyleSheet("""
-                DockContainer {
-                    background-color: #F0F0F0;
-                    border-left: 1px solid #6A8EAE;
-                    border-right: 1px solid #6A8EAE;
-                    border-bottom: 1px solid #6A8EAE;
-                }
-            """)
+            self.setStyleSheet(self._generate_stylesheet())
             self.main_layout = QVBoxLayout(self)
             
         # Remove the content_wrapper - no longer needed
@@ -71,7 +71,8 @@ class DockContainer(QWidget):
 
         self.title_bar = None
         if show_title_bar:
-            self.title_bar = TitleBar("Docked Widgets", self, top_level_widget=self)
+            self.title_bar = TitleBar("Docked Widgets", self, top_level_widget=self, 
+                                    title_text_color=self._title_text_color)
             self.title_bar.setMouseTracking(True)
             
             self.main_layout.addWidget(self.title_bar, 0)
@@ -118,6 +119,54 @@ class DockContainer(QWidget):
         # Apply native Windows shadow for containers with title bars
         if show_title_bar:
             apply_native_shadow(self)
+
+    def _generate_stylesheet(self):
+        """Generate dynamic stylesheet using current color properties."""
+        return f"""
+            DockContainer {{
+                background-color: {self._background_color.name()};
+                border-left: 1px solid {self._border_color.name()};
+                border-right: 1px solid {self._border_color.name()};
+                border-bottom: 1px solid {self._border_color.name()};
+            }}
+        """
+
+    def get_background_color(self):
+        """Get the current background color."""
+        return self._background_color
+
+    def set_background_color(self, color):
+        """Set the background color and update the stylesheet."""
+        if isinstance(color, QColor):
+            self._background_color = color
+        else:
+            self._background_color = QColor(color)
+        self.setStyleSheet(self._generate_stylesheet())
+
+    def get_border_color(self):
+        """Get the current border color."""
+        return self._border_color
+
+    def set_border_color(self, color):
+        """Set the border color and update the stylesheet."""
+        if isinstance(color, QColor):
+            self._border_color = color
+        else:
+            self._border_color = QColor(color)
+        self.setStyleSheet(self._generate_stylesheet())
+
+    def get_title_text_color(self):
+        """Get the current title text color."""
+        return self._title_text_color
+
+    def set_title_text_color(self, color):
+        """Set the title text color and update the title bar."""
+        if isinstance(color, QColor):
+            self._title_text_color = color
+        else:
+            self._title_text_color = QColor(color)
+        if self.title_bar:
+            self.title_bar.set_title_text_color(self._title_text_color)
 
     def set_drag_transparency(self, opacity=0.4):
         """

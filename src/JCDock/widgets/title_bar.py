@@ -9,7 +9,7 @@ from ..utils.icon_cache import IconCache
 
 
 class TitleBar(QWidget):
-    def __init__(self, title, parent=None, top_level_widget=None):
+    def __init__(self, title, parent=None, top_level_widget=None, title_text_color=None):
         super().__init__(parent)
         self._top_level_widget = top_level_widget if top_level_widget is not None else parent
         self.setObjectName(f"TitleBar_{title.replace(' ', '_')}")
@@ -17,12 +17,17 @@ class TitleBar(QWidget):
         self.setFixedHeight(42)
         self.setMouseTracking(True)
 
+        if title_text_color is not None:
+            self._title_text_color = title_text_color
+        else:
+            self._title_text_color = QColor("#101010")
+
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 0, 8, 0)
         layout.setSpacing(4)
 
         self.title_label = QLabel(title)
-        self.title_label.setStyleSheet("background: transparent; color: #101010;")
+        self.title_label.setStyleSheet(f"background: transparent; color: {self._title_text_color.name()};")
         self.title_label.setAttribute(Qt.WA_TransparentForMouseEvents)
 
         layout.addWidget(self.title_label, 1)
@@ -59,6 +64,18 @@ class TitleBar(QWidget):
 
         self.moving = False
         self.offset = QPoint()
+
+    def get_title_text_color(self):
+        """Get the current title text color."""
+        return self._title_text_color
+
+    def set_title_text_color(self, color):
+        """Set the title text color and update the label stylesheet."""
+        if isinstance(color, QColor):
+            self._title_text_color = color
+        else:
+            self._title_text_color = QColor(color)
+        self.title_label.setStyleSheet(f"background: transparent; color: {self._title_text_color.name()};")
 
     def paintEvent(self, event):
         """Paint the title bar background with rounded top corners and border edges."""

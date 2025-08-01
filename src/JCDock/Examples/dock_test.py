@@ -618,6 +618,14 @@ class DockingTestApp:
                 factory=self._create_adhoc_stateful_widget,
                 title="Ad-Hoc Stateful Widget"
             )
+            
+            # IMPORTANT: Register the state handlers for this widget type
+            # This ensures that widgets created during layout loading will have proper state restoration
+            self.docking_manager.register_instance_state_handlers(
+                persistent_key="adhoc_stateful_widget",
+                state_provider=self._extract_adhoc_widget_state,
+                state_restorer=self._restore_adhoc_widget_state
+            )
 
         self._create_test_menu_bar()  # Re-enabled menu bar
 
@@ -753,6 +761,42 @@ class DockingTestApp:
         test_menu.addSeparator()
         run_all_tests_action = test_menu.addAction("Run All Tests Sequentially")
         run_all_tests_action.triggered.connect(self.run_all_tests_sequentially)
+
+        # Add Color Customization menu
+        color_menu = menu_bar.addMenu("Colors")
+        
+        # Container colors submenu
+        container_colors_menu = color_menu.addMenu("Container Colors")
+        container_bg_action = container_colors_menu.addAction("Set Container Background to Light Blue")
+        container_bg_action.triggered.connect(lambda: self.set_container_background_color(QColor("#E6F3FF")))
+        container_border_action = container_colors_menu.addAction("Set Container Border to Dark Blue")
+        container_border_action.triggered.connect(lambda: self.set_container_border_color(QColor("#0066CC")))
+        
+        # Floating window colors submenu
+        floating_colors_menu = color_menu.addMenu("Floating Window Colors")
+        floating_bg_action = floating_colors_menu.addAction("Create Floating Window - Green Theme")
+        floating_bg_action.triggered.connect(lambda: self.create_colored_floating_window(
+            QColor("#228B22"), QColor("#FFFFFF")))  # Forest green background, white text
+        floating_bg2_action = floating_colors_menu.addAction("Create Floating Window - Purple Theme")
+        floating_bg2_action.triggered.connect(lambda: self.create_colored_floating_window(
+            QColor("#6A5ACD"), QColor("#FFFFFF")))  # Slate blue background, white text
+        floating_bg3_action = floating_colors_menu.addAction("Create Floating Window - Dark Theme")
+        floating_bg3_action.triggered.connect(lambda: self.create_colored_floating_window(
+            QColor("#2D2D2D"), QColor("#00FF00")))  # Dark gray background, bright green text
+        
+        # Title bar text color submenu
+        title_text_menu = color_menu.addMenu("Title Bar Text Colors")
+        main_title_text_action = title_text_menu.addAction("Change Main Window Title Text to Red")
+        main_title_text_action.triggered.connect(lambda: self.change_main_window_title_text_color(QColor("#FF0000")))
+        main_title_text2_action = title_text_menu.addAction("Change Main Window Title Text to Blue")
+        main_title_text2_action.triggered.connect(lambda: self.change_main_window_title_text_color(QColor("#0066FF")))
+        main_title_text3_action = title_text_menu.addAction("Change Main Window Title Text to Gold")
+        main_title_text3_action.triggered.connect(lambda: self.change_main_window_title_text_color(QColor("#FFD700")))
+        
+        # Reset colors
+        color_menu.addSeparator()
+        reset_colors_action = color_menu.addAction("Reset All Colors to Defaults")
+        reset_colors_action.triggered.connect(self.reset_all_colors)
 
 
     def _create_test_content(self, name: str) -> QWidget:
@@ -1007,7 +1051,7 @@ class DockingTestApp:
         layout.addWidget(QLabel("Counter (will be preserved):"))
         widget.counter_spin = QSpinBox()
         widget.counter_spin.setRange(0, 9999)
-        widget.counter_spin.setValue(100)
+        widget.counter_spin.setValue(0)  # Use neutral default - will be obvious if restoration fails
         layout.addWidget(widget.counter_spin)
         
         # Button with click tracking
@@ -1017,7 +1061,7 @@ class DockingTestApp:
         layout.addWidget(widget.click_button)
         
         # Status display
-        widget.status_label = QLabel("Clicks: 0")
+        widget.status_label = QLabel("Clicks: 0 (NEW WIDGET)")
         layout.addWidget(widget.status_label)
         
         # Notes area
@@ -1030,7 +1074,7 @@ class DockingTestApp:
         # Add methods to the widget instance
         def on_click():
             widget.click_count += 1
-            widget.status_label.setText(f"Clicks: {widget.click_count}")
+            widget.status_label.setText(f"Clicks: {widget.click_count} (MANUAL)")
         
         def simulate_clicks(count):
             """Helper for testing."""
@@ -1053,14 +1097,28 @@ class DockingTestApp:
     
     def _restore_adhoc_widget_state(self, widget, state_dict):
         """Ad-hoc state restorer function - restores state to the widget."""
-        # Restore UI state
-        widget.text_input.setText(state_dict.get('text_input_value', ''))
-        widget.counter_spin.setValue(state_dict.get('counter_value', 100))
-        widget.notes_area.setPlainText(state_dict.get('notes_content', ''))
+        # Validate state_dict
+        if not isinstance(state_dict, dict):
+            widget.status_label.setText("Clicks: 0 (RESTORE FAILED - Invalid data)")
+            return
         
-        # Restore internal state
-        widget.click_count = state_dict.get('click_count', 0)
-        widget.status_label.setText(f"Clicks: {widget.click_count} (RESTORED)")
+        try:
+            # Restore UI state
+            text_value = state_dict.get('text_input_value', '')
+            counter_value = state_dict.get('counter_value', 0)  # Use 0 as neutral default
+            notes_value = state_dict.get('notes_content', '')
+            click_count = state_dict.get('click_count', 0)
+            
+            widget.text_input.setText(text_value)
+            widget.counter_spin.setValue(counter_value)
+            widget.notes_area.setPlainText(notes_value)
+            
+            # Restore internal state
+            widget.click_count = click_count
+            widget.status_label.setText(f"Clicks: {widget.click_count} (RESTORED ✓)")
+            
+        except Exception as e:
+            widget.status_label.setText(f"Clicks: 0 (RESTORE FAILED - {str(e)})")
 
     def create_and_register_new_widget(self):
         """Legacy method for comparison - shows the old complexity."""
@@ -1740,6 +1798,46 @@ class DockingTestApp:
         
         print('='*60)
 
+    def set_container_background_color(self, color):
+        """Set background color for the main container."""
+        self.main_window.set_background_color(color)
+        print(f"Set main container background color to {color.name()}")
+
+    def set_container_border_color(self, color):
+        """Set border color for the main container."""
+        self.main_window.set_border_color(color)
+        print(f"Set main container border color to {color.name()}")
+
+    def create_colored_floating_window(self, title_bar_color, title_text_color):
+        """Create a new floating window with custom colors."""
+        floating_root = FloatingDockRoot(
+            manager=self.docking_manager,
+            title="Custom Colored Window",
+            title_bar_color=title_bar_color,
+            title_text_color=title_text_color
+        )
+        floating_root.setGeometry(100, 100, 400, 300)
+        self.docking_manager.register_dock_area(floating_root)
+        floating_root.show()
+        print(f"Created floating window with title bar color {title_bar_color.name()} and text color {title_text_color.name()}")
+
+    def change_main_window_title_text_color(self, color):
+        """Change the title bar text color of the main window."""
+        if self.main_window.title_bar:
+            self.main_window.set_title_text_color(color)
+            print(f"Changed main window title text color to {color.name()}")
+        else:
+            print("Main window has no title bar to change text color")
+
+    def reset_all_colors(self):
+        """Reset all colors to their defaults."""
+        # Reset main window colors
+        self.main_window.set_background_color(QColor("#F0F0F0"))
+        self.main_window.set_border_color(QColor("#6A8EAE"))
+        if self.main_window.title_bar:
+            self.main_window.set_title_text_color(QColor("#101010"))
+        print("Reset all colors to defaults (background: #F0F0F0, border: #6A8EAE, title text: #101010)")
+
     def run(self):
         """Loads saved layout from .ini file at startup, or starts with empty layout."""
         self.main_window.show()
@@ -1755,6 +1853,7 @@ class DockingTestApp:
             print("No saved layout found. Starting with empty layout.")
             print("Startup complete! Use the 'Widgets' menu to create widgets.")
         
+        print("Use the 'Colors' menu to test color customization features.")
         print("Use the 'File' menu to save/load layouts.")
         
         return self.app.exec()
