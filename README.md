@@ -59,7 +59,7 @@ JCDock uses a unified window model where all floating windows are `DockContainer
 - **DockingState**: State machine defining operational states (IDLE, RENDERING, DRAGGING_WINDOW, RESIZING_WINDOW, DRAGGING_TAB)
 - **DockPanel**: Wrapper for any QWidget to make it dockable with title bars and controls  
 - **DockContainer**: Advanced host containers with drag-and-drop capabilities and tab/splitter management
-- **MainDockWindow**: Main application window with built-in central dock area
+- **FloatingDockRoot**: Independent floating windows that can act as main windows or floating dock targets
 - **TearableTabWidget**: Enhanced tab widget supporting drag-out operations with visual feedback
 
 ### Specialized Systems
@@ -122,7 +122,6 @@ from PySide6.QtWidgets import QApplication, QLabel, QTextEdit
 from PySide6.QtCore import Qt
 
 from JCDock import DockingManager
-from JCDock.widgets.main_dock_window import MainDockWindow
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
@@ -130,8 +129,9 @@ if __name__ == "__main__":
     # 1. Create the Docking Manager
     manager = DockingManager()
     
-    # 2. Create the Main Window (automatically handles registration)
-    main_window = MainDockWindow(manager)
+    # 2. Create a main window using a floating root
+    main_window = manager.create_new_floating_root()
+    main_window.setWindowTitle("My Application")
 
     # 3. Create simple floating widgets
     project_content = QLabel("Project Explorer")
@@ -141,7 +141,7 @@ if __name__ == "__main__":
     _, editor_panel = manager.create_simple_floating_widget(editor_content, "Editor")
 
     # 4. Dock widgets to create layout
-    manager.dock_widget(project_panel, main_window.dock_area, "left")
+    manager.dock_widget(project_panel, main_window, "left")
     manager.dock_widget(editor_panel, project_panel, "right")
 
     main_window.setGeometry(100, 100, 1000, 600)
@@ -173,6 +173,7 @@ This example serves as both a testing framework and a reference implementation, 
 JCDock automatically supports saving and restoring layouts when you use the registry system with `@dockable` decorated widgets:
 
 ```python
+from PySide6.QtWidgets import QLabel, QTextEdit
 from JCDock import dockable
 
 # Register widget types for automatic layout persistence
