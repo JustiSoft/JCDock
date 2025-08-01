@@ -6,7 +6,7 @@ import base64
 import os
 from datetime import datetime
 from PySide6.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem, QMenuBar, QMenu, QStyle, QHBoxLayout, QFileDialog
-from PySide6.QtCore import Qt, QObject, QEvent, Slot, QSize, QPoint, QRect
+from PySide6.QtCore import Qt, QObject, QEvent, Slot, QSize, QPoint, QRect, QTimer
 from PySide6.QtGui import QColor, QAction
 
 from JCDock.core.docking_manager import DockingManager
@@ -585,7 +585,8 @@ class DockingTestApp:
 
         self.widget_count = 0
         # Create main window using FloatingDockRoot with is_main_window=True
-        self.main_window = FloatingDockRoot(manager=self.docking_manager, is_main_window=True, title="JCDOCK Test Application")
+        self.main_window = FloatingDockRoot(manager=self.docking_manager, is_main_window=True, 
+                                          title="JCDOCK Test Application")
         self.main_window.setWindowTitle("JCDOCK Test Application")
         self.main_window.setGeometry(300, 300, 800, 600)
         self.main_window.setObjectName("MainDockArea")
@@ -797,6 +798,44 @@ class DockingTestApp:
         color_menu.addSeparator()
         reset_colors_action = color_menu.addAction("Reset All Colors to Defaults")
         reset_colors_action.triggered.connect(self.reset_all_colors)
+
+        # Add Icon Testing menu
+        icon_menu = menu_bar.addMenu("Icons")
+        
+        # Unicode emoji icons submenu
+        unicode_icons_menu = icon_menu.addMenu("Unicode Emoji Icons")
+        unicode1_action = unicode_icons_menu.addAction("Create Window with House Icon")
+        unicode1_action.triggered.connect(lambda: self.create_window_with_unicode_icon("🏠", "Home"))
+        unicode2_action = unicode_icons_menu.addAction("Create Window with Gear Icon")
+        unicode2_action.triggered.connect(lambda: self.create_window_with_unicode_icon("⚙️", "Settings"))
+        unicode3_action = unicode_icons_menu.addAction("Create Window with Chart Icon")
+        unicode3_action.triggered.connect(lambda: self.create_window_with_unicode_icon("📊", "Analytics"))
+        unicode4_action = unicode_icons_menu.addAction("Create Window with Rocket Icon")
+        unicode4_action.triggered.connect(lambda: self.create_window_with_unicode_icon("🚀", "Launch"))
+        
+        # Qt Standard icons submenu
+        qt_icons_menu = icon_menu.addMenu("Qt Standard Icons")
+        qt1_action = qt_icons_menu.addAction("Create Window with File Icon")
+        qt1_action.triggered.connect(lambda: self.create_window_with_qt_icon("SP_FileIcon", "Files"))
+        qt2_action = qt_icons_menu.addAction("Create Window with Folder Icon")
+        qt2_action.triggered.connect(lambda: self.create_window_with_qt_icon("SP_DirIcon", "Folders"))
+        qt3_action = qt_icons_menu.addAction("Create Window with Computer Icon")
+        qt3_action.triggered.connect(lambda: self.create_window_with_qt_icon("SP_ComputerIcon", "Computer"))
+        
+        # No icon test
+        icon_menu.addSeparator()
+        no_icon_action = icon_menu.addAction("Create Window with No Icon")
+        no_icon_action.triggered.connect(self.create_window_with_no_icon)
+        
+        # Dynamic icon change tests
+        icon_menu.addSeparator()
+        dynamic_menu = icon_menu.addMenu("Dynamic Icon Changes")
+        change_main_icon_action = dynamic_menu.addAction("Add Icon to Main Window")
+        change_main_icon_action.triggered.connect(self.add_icon_to_main_window)
+        remove_main_icon_action = dynamic_menu.addAction("Remove Icon from Main Window")
+        remove_main_icon_action.triggered.connect(self.remove_icon_from_main_window)
+        change_container_icon_action = dynamic_menu.addAction("Change Icon of First Container")
+        change_container_icon_action.triggered.connect(self.change_first_container_icon)
 
 
     def _create_test_content(self, name: str) -> QWidget:
@@ -1821,6 +1860,159 @@ class DockingTestApp:
         floating_root.show()
         print(f"Created floating window with title bar color {title_bar_color.name()} and text color {title_text_color.name()}")
 
+    def demo_icon_types(self):
+        """
+        Demonstrate various icon types supported by JCDock.
+        This method showcases:
+        - Unicode emoji icons (star, rocket, computer, etc.)
+        - Qt Standard Icons (SP_FileIcon, SP_DirIcon, etc.)
+        - Windows with no icons (fallback behavior)
+        - Dynamic icon changes at runtime
+        """
+        print("ICON DEMO: Creating windows with different icon types")
+        print("You should see icons in the title bars of the new windows")
+        
+        # Demo 1: Unicode emoji icons
+        unicode_icons = ["🌟", "🚀", "💻", "🎯", "🔍", "📈"]
+        for i, icon in enumerate(unicode_icons[:3]):  # Limit to 3 for demo
+            window = FloatingDockRoot(
+                manager=self.docking_manager,
+                title=f"Unicode Demo {i+1}",
+                icon=icon
+            )
+            window.setGeometry(150 + i*50, 150 + i*50, 350, 250)
+            self.docking_manager.register_dock_area(window)
+            window.show()
+            print(f"Created window with Unicode icon (index {i+1})")
+        
+        # Demo 2: Qt Standard Icons (if available)
+        qt_icons = ["SP_FileIcon", "SP_DirIcon", "SP_ComputerIcon"]
+        for i, icon in enumerate(qt_icons[:2]):  # Limit to 2 for demo
+            window = FloatingDockRoot(
+                manager=self.docking_manager,
+                title=f"Qt Standard {i+1}",
+                icon=icon
+            )
+            window.setGeometry(500 + i*50, 150 + i*50, 350, 250)
+            self.docking_manager.register_dock_area(window)
+            window.show()
+            print(f"Created window with Qt standard icon: {icon}")
+        
+        # Demo 3: No icon (test fallback)
+        window_no_icon = FloatingDockRoot(
+            manager=self.docking_manager,
+            title="No Icon Demo",
+            icon=None
+        )
+        window_no_icon.setGeometry(800, 150, 350, 250)
+        self.docking_manager.register_dock_area(window_no_icon)
+        window_no_icon.show()
+        print("Created window with no icon")
+        
+        # Demo 4: Dynamic icon change
+        demo_window = FloatingDockRoot(
+            manager=self.docking_manager,
+            title="Dynamic Icon Demo",
+            icon="🔄"
+        )
+        demo_window.setGeometry(400, 400, 400, 300)
+        self.docking_manager.register_dock_area(demo_window)
+        demo_window.show()
+        
+        # Change icon after a delay to demonstrate dynamic updates
+        def change_icon():
+            demo_window.set_icon("✨")
+            print("Changed demo window icon dynamically (spinning arrow to sparkle)")
+        
+        QTimer.singleShot(3000, change_icon)  # Change after 3 seconds
+        print("Dynamic icon change scheduled for 3 seconds")
+        
+        print("ICON DEMO: All demonstration windows created")
+
+    def create_window_with_unicode_icon(self, icon: str, title_suffix: str):
+        """Create a floating window with a Unicode emoji icon."""
+        window = FloatingDockRoot(
+            manager=self.docking_manager,
+            title=f"{title_suffix} Window",
+            icon=icon
+        )
+        window.setGeometry(200, 200, 400, 300)
+        self.docking_manager.register_dock_area(window)
+        window.show()
+        print(f"Created window '{title_suffix} Window' with Unicode icon")
+
+    def create_window_with_qt_icon(self, icon_name: str, title_suffix: str):
+        """Create a floating window with a Qt Standard icon."""
+        window = FloatingDockRoot(
+            manager=self.docking_manager,
+            title=f"{title_suffix} Window",
+            icon=icon_name
+        )
+        window.setGeometry(250, 250, 400, 300)
+        self.docking_manager.register_dock_area(window)
+        window.show()
+        print(f"Created window '{title_suffix} Window' with Qt standard icon: {icon_name}")
+
+    def create_window_with_no_icon(self):
+        """Create a floating window with no icon to test fallback behavior."""
+        window = FloatingDockRoot(
+            manager=self.docking_manager,
+            title="No Icon Window",
+            icon=None
+        )
+        window.setGeometry(300, 300, 400, 300)
+        self.docking_manager.register_dock_area(window)
+        window.show()
+        print("Created window with no icon (fallback test)")
+
+    def add_icon_to_main_window(self):
+        """Add an icon to the main window's title bar."""
+        if self.main_window.title_bar:
+            self.main_window.set_icon("🏠")
+            print("Added house icon to main window")
+        else:
+            print("Main window has no title bar")
+
+    def remove_icon_from_main_window(self):
+        """Remove the icon from the main window's title bar."""
+        if self.main_window.title_bar:
+            self.main_window.set_icon(None)
+            print("Removed icon from main window")
+        else:
+            print("Main window has no title bar")
+
+    def change_first_container_icon(self):
+        """Change the icon of the first available container (excluding main window)."""
+        # Find the first container that's not the main window and has a title bar
+        target_container = None
+        for container in self.docking_manager.containers:
+            if container != self.main_window and container.title_bar:
+                target_container = container
+                break
+        
+        if target_container:
+            # Cycle through different icons
+            current_icon = target_container.get_icon()
+            icons = ["⭐", "🔥", "💎", "🎯", "🌟"]
+            
+            # If no icon or not in our list, start with first icon
+            next_icon = icons[0]
+            
+            # If current icon exists, find next one in cycle
+            try:
+                if current_icon:
+                    # This is a simple approach - in real app you might store icon state
+                    import random
+                    next_icon = random.choice(icons)
+            except:
+                next_icon = icons[0]
+            
+            target_container.set_icon(next_icon)
+            print(f"Changed icon of container '{target_container.windowTitle()}'")
+        else:
+            print("No suitable container found (need a floating window with title bar)")
+            print("Try creating a floating window first using the 'Widgets' menu")
+
     def change_main_window_title_text_color(self, color):
         """Change the title bar text color of the main window."""
         if self.main_window.title_bar:
@@ -1854,6 +2046,7 @@ class DockingTestApp:
             print("Startup complete! Use the 'Widgets' menu to create widgets.")
         
         print("Use the 'Colors' menu to test color customization features.")
+        print("Use the 'Icons' menu to test icon functionality.")
         print("Use the 'File' menu to save/load layouts.")
         
         return self.app.exec()

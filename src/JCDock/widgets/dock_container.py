@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt, QRect, QEvent, QPoint, QRectF, QSize, QTimer, QPo
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QBrush, QRegion, QPixmap, QPen, QIcon, QPolygonF, \
     QPalette, QDragEnterEvent, QDragMoveEvent, QDragLeaveEvent, QDropEvent, QCursor
 from PySide6.QtWidgets import QTableWidget, QTreeWidget, QListWidget, QTextEdit, QPlainTextEdit, QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QSlider, QScrollBar
+from typing import Optional, Union
 
 from ..core.docking_state import DockingState
 from .tearable_tab_widget import TearableTabWidget
@@ -21,7 +22,7 @@ from .resize_overlay import ResizeOverlay
 class DockContainer(QWidget):
     def __init__(self, orientation=Qt.Horizontal, margin_size=5, parent=None, manager=None,
                  show_title_bar=True, title_bar_color=None, background_color=None, border_color=None,
-                 title_text_color=None):
+                 title_text_color=None, icon: Optional[Union[str, QIcon]] = None):
         super().__init__(parent)
 
         # Initialize tracking set early before any addWidget calls that trigger childEvent
@@ -72,7 +73,7 @@ class DockContainer(QWidget):
         self.title_bar = None
         if show_title_bar:
             self.title_bar = TitleBar("Docked Widgets", self, top_level_widget=self, 
-                                    title_text_color=self._title_text_color)
+                                    title_text_color=self._title_text_color, icon=icon)
             self.title_bar.setMouseTracking(True)
             
             self.main_layout.addWidget(self.title_bar, 0)
@@ -167,6 +168,29 @@ class DockContainer(QWidget):
             self._title_text_color = QColor(color)
         if self.title_bar:
             self.title_bar.set_title_text_color(self._title_text_color)
+
+    def set_icon(self, icon: Optional[Union[str, QIcon]]):
+        """
+        Set or update the dock container's title bar icon.
+        Only works if the container has a title bar (show_title_bar=True).
+        
+        Args:
+            icon: Icon source - can be file path, Unicode character, Qt standard icon name, or QIcon object
+        """
+        if self.title_bar:
+            self.title_bar.set_icon(icon)
+    
+    def get_icon(self) -> Optional[QIcon]:
+        """Get the current title bar icon as a QIcon object."""
+        if self.title_bar:
+            return self.title_bar.get_icon()
+        return None
+    
+    def has_icon(self) -> bool:
+        """Check if the dock container currently has a title bar icon."""
+        if self.title_bar:
+            return self.title_bar.has_icon()
+        return False
 
     def set_drag_transparency(self, opacity=0.4):
         """

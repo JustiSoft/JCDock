@@ -3,13 +3,14 @@
 from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QPushButton, QHBoxLayout, QStyle, QApplication, QGraphicsDropShadowEffect
 from PySide6.QtCore import Qt, QPoint, QRect, QEvent, QRectF
 from PySide6.QtGui import QColor, QPainter, QBrush, QMouseEvent, QPainterPath, QPalette, QRegion, QPen, QIcon, QPixmap
+from typing import Union, Optional
 
 from ..core.docking_state import DockingState
 from ..utils.icon_cache import IconCache
 
 
 class TitleBar(QWidget):
-    def __init__(self, title, parent=None, top_level_widget=None, title_text_color=None):
+    def __init__(self, title, parent=None, top_level_widget=None, title_text_color=None, icon: Optional[Union[str, QIcon]] = None):
         super().__init__(parent)
         self._top_level_widget = top_level_widget if top_level_widget is not None else parent
         self.setObjectName(f"TitleBar_{title.replace(' ', '_')}")
@@ -25,6 +26,16 @@ class TitleBar(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 0, 8, 0)
         layout.setSpacing(4)
+
+        # Create icon label (optional)
+        self.icon_label = None
+        if icon is not None:
+            self.icon_label = QLabel()
+            self.icon_label.setFixedSize(24, 24)
+            self.icon_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+            self.icon_label.setAlignment(Qt.AlignCenter)
+            self.set_icon(icon)
+            layout.addWidget(self.icon_label)
 
         self.title_label = QLabel(title)
         self.title_label.setStyleSheet(f"background: transparent; color: {self._title_text_color.name()};")
@@ -76,6 +87,49 @@ class TitleBar(QWidget):
         else:
             self._title_text_color = QColor(color)
         self.title_label.setStyleSheet(f"background: transparent; color: {self._title_text_color.name()};")
+
+    def set_icon(self, icon: Optional[Union[str, QIcon]]):
+        """
+        Set or update the title bar icon.
+        
+        Args:
+            icon: Icon source - can be file path, Unicode character, Qt standard icon name, or QIcon object
+        """
+        if self.icon_label is None:
+            # Create icon label if it doesn't exist
+            self.icon_label = QLabel()
+            self.icon_label.setFixedSize(24, 24)
+            self.icon_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+            self.icon_label.setAlignment(Qt.AlignCenter)
+            # Insert before title label (should be at index 0)
+            self.layout().insertWidget(0, self.icon_label)
+        
+        if icon is None:
+            # Remove icon
+            self.icon_label.clear()
+            self.icon_label.hide()
+            return
+        
+        # Get icon using the icon cache
+        qicon = IconCache.get_custom_icon(icon, 24, self._title_text_color.name())
+        if qicon is not None:
+            pixmap = qicon.pixmap(24, 24)
+            self.icon_label.setPixmap(pixmap)
+            self.icon_label.show()
+        else:
+            # Failed to load icon - hide the icon label
+            self.icon_label.clear()
+            self.icon_label.hide()
+
+    def get_icon(self) -> Optional[QIcon]:
+        """Get the current icon as a QIcon object."""
+        if self.icon_label and not self.icon_label.pixmap().isNull():
+            return QIcon(self.icon_label.pixmap())
+        return None
+
+    def has_icon(self) -> bool:
+        """Check if the title bar currently has an icon."""
+        return self.icon_label is not None and not self.icon_label.pixmap().isNull()
 
     def paintEvent(self, event):
         """Paint the title bar background with rounded top corners and border edges."""

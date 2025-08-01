@@ -1,4 +1,6 @@
 from PySide6.QtCore import QTimer, QEvent
+from PySide6.QtGui import QIcon
+from typing import Optional, Union
 from .dock_container import DockContainer
 from ..utils.windows_shadow import apply_native_shadow
 
@@ -9,7 +11,7 @@ class FloatingDockRoot(DockContainer):
     """
 
     def __init__(self, manager, parent=None, is_main_window=False, title=None, 
-                 title_bar_color=None, title_text_color=None):
+                 title_bar_color=None, title_text_color=None, icon: Optional[Union[str, QIcon]] = None):
         from PySide6.QtGui import QColor
         
         # Determine if we should show title bar based on title parameter
@@ -24,7 +26,8 @@ class FloatingDockRoot(DockContainer):
             manager=manager,
             show_title_bar=show_title_bar,
             title_bar_color=title_bar_color,
-            title_text_color=title_text_color
+            title_text_color=title_text_color,
+            icon=icon
         )
         self.is_main_window = is_main_window
         
@@ -61,6 +64,28 @@ class FloatingDockRoot(DockContainer):
     def update_dynamic_title(self):
         """Override to prevent dynamic title updates - FloatingDockRoot keeps its original title."""
         pass
+    
+    def set_icon(self, icon: Optional[Union[str, QIcon]]):
+        """
+        Set or update the floating dock root's title bar icon.
+        
+        Args:
+            icon: Icon source - can be file path, Unicode character, Qt standard icon name, or QIcon object
+        """
+        if self.title_bar:
+            self.title_bar.set_icon(icon)
+    
+    def get_icon(self) -> Optional[QIcon]:
+        """Get the current title bar icon as a QIcon object."""
+        if self.title_bar:
+            return self.title_bar.get_icon()
+        return None
+    
+    def has_icon(self) -> bool:
+        """Check if the floating dock root currently has a title bar icon."""
+        if self.title_bar:
+            return self.title_bar.has_icon()
+        return False
     
     def _handle_user_close(self):
         """Handle close button click by actually closing the window and all its contents."""
