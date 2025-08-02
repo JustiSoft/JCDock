@@ -1750,6 +1750,9 @@ class DockingManager(QObject):
             if root_window in self.model.roots:
                 root_window.update()
                 root_window.repaint()
+                # Update title and icon to reflect remaining widgets after undocking
+                if hasattr(root_window, 'update_dynamic_title'):
+                    root_window.update_dynamic_title()
             else:
                 root_window.update_dynamic_title()
             root_window.setUpdatesEnabled(True)
@@ -2082,9 +2085,15 @@ class DockingManager(QObject):
         Centralized event filter that intercepts all application events.
         Routes mouse events through the HitTestCache system for efficient handling.
         """
-        if not hasattr(event, 'type'):
+        # Validate object and event types before processing
+        if not isinstance(obj, QObject):
             if self.debug_mode:
-                print(f"DockingManager.eventFilter: Invalid event object type: {type(event)} from {type(obj)}")
+                print(f"DockingManager.eventFilter: Invalid obj type: {type(obj)}, expected QObject")
+            return False
+            
+        if not isinstance(event, QEvent):
+            if self.debug_mode:
+                print(f"DockingManager.eventFilter: Invalid event type: {type(event)}, expected QEvent")
             return False
         
         if self.is_rendering():

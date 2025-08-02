@@ -1037,11 +1037,41 @@ class DockContainer(QWidget):
         """
         Updates the container title based on current widget contents.
         Only updates if the container has a title bar (floating containers).
+        For single-widget containers, uses the widget's icon; for multi-widget containers, preserves existing icon.
         """
         if self.title_bar:
             new_title = self._generate_dynamic_title()
-            self.set_title(new_title)
-            QTimer.singleShot(50, lambda: self.set_title(new_title))
+            
+            # Handle icon based on number of widgets
+            if len(self.contained_widgets) == 1:
+                # Single widget: let the widget set its icon on the container
+                self.set_title(new_title)
+                # Trigger the widget to update the container's icon
+                widget = self.contained_widgets[0]
+                if hasattr(widget, '_notify_parent_container_icon_changed'):
+                    widget._notify_parent_container_icon_changed()
+            else:
+                # Multiple widgets: preserve existing icon
+                current_icon = self.get_icon()
+                self.set_title(new_title)
+                if current_icon:
+                    self.set_icon(current_icon)
+            
+            # Delayed title update with same logic
+            def delayed_update():
+                if len(self.contained_widgets) == 1:
+                    self.set_title(new_title)
+                    single_widget = self.contained_widgets[0]
+                    if hasattr(single_widget, '_notify_parent_container_icon_changed'):
+                        single_widget._notify_parent_container_icon_changed()
+                else:
+                    # Multiple widgets: preserve existing icon
+                    delayed_current_icon = self.get_icon()
+                    self.set_title(new_title)
+                    if delayed_current_icon:
+                        self.set_icon(delayed_current_icon)
+            
+            QTimer.singleShot(50, delayed_update)
 
     def show_overlay(self, preset='standard'):
         if preset == 'main_empty':

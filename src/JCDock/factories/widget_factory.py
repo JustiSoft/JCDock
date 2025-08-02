@@ -203,7 +203,10 @@ class WidgetFactory:
         
         validated_geometry = self.manager._validate_window_geometry(geometry)
         
-        new_container = DockContainer(manager=self.manager, parent=None)
+        # Extract icon from the first widget to preserve it in the floating container
+        widget_icon = widgets[0].get_icon() if widgets else None
+        
+        new_container = DockContainer(manager=self.manager, parent=None, icon=widget_icon)
         new_container.setGeometry(validated_geometry)
 
         if was_maximized:
