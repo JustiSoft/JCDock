@@ -15,7 +15,6 @@ JCDock allows you to create complex user interfaces where widgets can be docked 
 * **Performance Optimized**: Built-in caching systems for icons and hit-testing to ensure smooth performance even with complex layouts.
 * **Customizable Appearance**: Easily customize title bar colors, widget styling, and visual effects.
 * **Signal System**: Comprehensive event system to track widget docking, undocking, and layout changes.
-* **Floating Dock Roots**: Create multiple independent floating windows that can act as primary docking targets.
 
 ***
 ## Installation
@@ -58,8 +57,7 @@ JCDock uses a unified window model where all floating windows are `DockContainer
 - **DockingManager**: Central orchestrator managing all docking operations, widget registration, and layout persistence
 - **DockingState**: State machine defining operational states (IDLE, RENDERING, DRAGGING_WINDOW, RESIZING_WINDOW, DRAGGING_TAB)
 - **DockPanel**: Wrapper for any QWidget to make it dockable with title bars and controls  
-- **DockContainer**: Advanced host containers with drag-and-drop capabilities and tab/splitter management
-- **FloatingDockRoot**: Independent floating windows that can act as main windows or floating dock targets
+- **DockContainer**: Unified container system supporting both embedded and floating windows with configurable behavior (main window, persistent root, title bars, etc.)
 - **TearableTabWidget**: Enhanced tab widget supporting drag-out operations with visual feedback
 
 ### Specialized Systems
@@ -121,7 +119,7 @@ import sys
 from PySide6.QtWidgets import QApplication, QLabel, QTextEdit
 from PySide6.QtCore import Qt
 
-from JCDock import DockingManager
+from JCDock import DockingManager, DockContainer
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
@@ -129,9 +127,14 @@ if __name__ == "__main__":
     # 1. Create the Docking Manager
     manager = DockingManager()
     
-    # 2. Create a main window using a floating root
-    main_window = manager.create_new_floating_root()
-    main_window.setWindowTitle("My Application")
+    # 2. Create a main window using DockContainer
+    main_window = DockContainer(
+        manager=manager,
+        show_title_bar=True,
+        is_main_window=True,
+        window_title="My Application",
+        auto_persistent_root=True
+    )
 
     # 3. Create simple floating widgets
     project_content = QLabel("Project Explorer")
