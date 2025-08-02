@@ -14,7 +14,7 @@ from PySide6.QtCore import QSize, QPoint, QTimer
 from PySide6.QtGui import QColor
 
 from JCDock.core.widget_registry import get_registry
-from JCDock.widgets.floating_dock_root import FloatingDockRoot
+from JCDock.widgets.dock_container import DockContainer
 from ..widgets.test_widgets import TestContentWidget, TabWidget1, TabWidget2, RightWidget
 from ..widgets.financial_widgets import ChartWidget, OrderWidget, PortfolioWidget
 from ..utils.constants import (
@@ -534,13 +534,15 @@ class UIManager:
     
     def _create_colored_floating_window(self, title_bar_color: QColor, title_text_color: QColor):
         """Create a new floating window with custom colors."""
-        floating_root = FloatingDockRoot(
+        floating_root = DockContainer(
             manager=self.docking_manager,
-            title="Custom Colored Window",
+            show_title_bar=True,
+            window_title="Custom Colored Window",
             title_bar_color=title_bar_color,
-            title_text_color=title_text_color
+            title_text_color=title_text_color,
+            auto_persistent_root=True,
+            default_geometry=(100, 100, 400, 300)
         )
-        floating_root.setGeometry(100, 100, 400, 300)
         self.docking_manager.register_dock_area(floating_root)
         floating_root.show()
         print(f"Created floating window with title bar color {title_bar_color.name()} and text color {title_text_color.name()}")

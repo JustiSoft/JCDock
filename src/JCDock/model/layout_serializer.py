@@ -4,7 +4,6 @@ from PySide6.QtCore import QRect, Qt
 
 from .dock_model import LayoutModel, AnyNode, SplitterNode, TabGroupNode, WidgetNode
 from ..widgets.dock_container import DockContainer
-from ..widgets.floating_dock_root import FloatingDockRoot
 
 
 class LayoutSerializer:
@@ -153,7 +152,7 @@ class LayoutSerializer:
         for window_state in layout_data:
             window_class = window_state['class']
 
-            if window_class in ('MainDockWindow', 'FloatingDockRoot'):
+            if window_class in ('MainDockWindow', 'FloatingDockRoot', 'DockContainer'):
                 container = self.manager.main_window
                 geom_tuple = window_state['geometry']
                 self.manager.main_window.setGeometry(geom_tuple[0], geom_tuple[1], geom_tuple[2], geom_tuple[3])
@@ -195,8 +194,13 @@ class LayoutSerializer:
                 self.manager.bring_to_front(new_window)
                 self.manager._render_layout(new_window)
 
-            elif window_class == 'FloatingDockRoot':
-                new_window = FloatingDockRoot(manager=self.manager)
+            elif window_class in ('FloatingDockRoot', 'DockContainer'):
+                new_window = DockContainer(
+                    manager=self.manager,
+                    show_title_bar=True,
+                    window_title="Restored Floating Window",
+                    auto_persistent_root=True
+                )
                 self.manager.register_dock_area(new_window)
                 self.manager.model.roots[new_window] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
                 self.manager._render_layout(new_window)

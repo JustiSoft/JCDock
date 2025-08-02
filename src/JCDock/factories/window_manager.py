@@ -1,7 +1,7 @@
 from PySide6.QtCore import QRect
 from PySide6.QtWidgets import QApplication
 
-from ..widgets.floating_dock_root import FloatingDockRoot
+from ..widgets.dock_container import DockContainer
 
 
 class WindowManager:
@@ -127,9 +127,15 @@ class WindowManager:
         act as a secondary main docking area.
         
         Returns:
-            FloatingDockRoot: The newly created floating root window
+            DockContainer: The newly created floating root window
         """
-        new_root_window = FloatingDockRoot(manager=self.manager, is_main_window=False, title="Floating Dock Root")
+        new_root_window = DockContainer(
+            manager=self.manager, 
+            show_title_bar=True,
+            is_main_window=False, 
+            window_title="Floating Dock Root",
+            auto_persistent_root=True
+        )
 
         self.manager.register_dock_area(new_root_window)
 

@@ -22,7 +22,9 @@ from .resize_overlay import ResizeOverlay
 class DockContainer(QWidget):
     def __init__(self, orientation=Qt.Horizontal, margin_size=5, parent=None, manager=None,
                  show_title_bar=True, title_bar_color=None, background_color=None, border_color=None,
-                 title_text_color=None, icon: Optional[Union[str, QIcon]] = None):
+                 title_text_color=None, icon: Optional[Union[str, QIcon]] = None,
+                 is_main_window=False, preserve_title=False, auto_persistent_root=False,
+                 apply_shadow=None, window_title=None, default_geometry=(400, 400, 600, 500)):
         super().__init__(parent)
 
         # Initialize tracking set early before any addWidget calls that trigger childEvent
@@ -41,7 +43,8 @@ class DockContainer(QWidget):
         if title_bar_color is not None:
             self._title_bar_color = title_bar_color
         else:
-            self._title_bar_color = QColor("#C0D3E8")
+            # Use more pleasing defaults from FloatingDockRoot
+            self._title_bar_color = QColor("#2F4F4F")  # Dark teal - more pleasing than brown
 
         if title_text_color is not None:
             self._title_text_color = title_text_color
@@ -51,17 +54,28 @@ class DockContainer(QWidget):
         self.setObjectName("DockContainer")
         self.manager = manager
         
-        self._is_persistent_root = False
+        # Store new parameters as instance variables
+        self.is_main_window = is_main_window
+        self.preserve_title = preserve_title
+        self._is_persistent_root = auto_persistent_root
         
+        # Set window title and geometry
         if show_title_bar:
-            self.setWindowTitle("Docked Widgets")
+            title = window_title if window_title else "Docked Widgets"
+            self.setWindowTitle(title)
             self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
             self.setStyleSheet(self._generate_stylesheet())
+            
+            # Set default geometry for floating containers
+            self.setGeometry(default_geometry[0], default_geometry[1], default_geometry[2], default_geometry[3])
             
             self.main_layout = QVBoxLayout(self)
         else:
             self.setStyleSheet(self._generate_stylesheet())
             self.main_layout = QVBoxLayout(self)
+            
+        # Store original title for preserve_title functionality
+        self._original_title = self.windowTitle()
             
         # Remove the content_wrapper - no longer needed
         self.content_wrapper = None
@@ -72,7 +86,8 @@ class DockContainer(QWidget):
 
         self.title_bar = None
         if show_title_bar:
-            self.title_bar = TitleBar("Docked Widgets", self, top_level_widget=self, 
+            title_bar_text = window_title if window_title else "Docked Widgets"
+            self.title_bar = TitleBar(title_bar_text, self, top_level_widget=self, 
                                     title_text_color=self._title_text_color, icon=icon)
             self.title_bar.setMouseTracking(True)
             
@@ -117,9 +132,26 @@ class DockContainer(QWidget):
         
         self.setAcceptDrops(True)
         
-        # Apply native Windows shadow for containers with title bars
-        if show_title_bar:
+        # Apply native Windows shadow based on apply_shadow parameter
+        if apply_shadow is None:
+            # Default behavior: apply shadow if container has title bar
+            if show_title_bar:
+                apply_native_shadow(self)
+        elif apply_shadow is True:
+            # Force shadow application regardless of title bar
             apply_native_shadow(self)
+        elif apply_shadow is False:
+            # Explicitly disable shadow (even for titled containers)
+            pass
+            
+        # Install event filter for floating containers (similar to FloatingDockRoot)
+        if show_title_bar:
+            self.installEventFilter(self)
+            
+        # Handle close button for main window behavior
+        if show_title_bar and self.title_bar and self.title_bar.close_button:
+            self.title_bar.close_button.clicked.disconnect()
+            self.title_bar.close_button.clicked.connect(self._handle_user_close)
 
     def _generate_stylesheet(self):
         """Generate dynamic stylesheet using current color properties."""
@@ -236,10 +268,56 @@ class DockContainer(QWidget):
         super().resizeEvent(event)
 
     def closeEvent(self, event):
+        """Handle window close events (Alt+F4, system close, etc.)."""
         if self.manager:
-            if self in self.manager.model.roots:
-                self.manager._cleanup_widget_references(self)
-        super().closeEvent(event)
+            root_node = self.manager.model.roots.get(self)
+            if root_node:
+                all_widgets_in_container = self.manager.model.get_all_widgets_from_node(root_node)
+                for widget_node in all_widgets_in_container:
+                    if hasattr(widget_node, 'persistent_id'):
+                        self.manager.signals.widget_closed.emit(widget_node.persistent_id)
+                
+                del self.manager.model.roots[self]
+                
+                if self in self.manager.containers:
+                    self.manager.containers.remove(self)
+                
+                self.manager.signals.layout_changed.emit()
+        
+        if self.is_main_window:
+            from PySide6.QtWidgets import QApplication
+            QApplication.instance().quit()
+        
+        event.accept()
+
+    def menuBar(self):
+        """Provide QMainWindow-like menuBar() method for compatibility."""
+        if hasattr(self, '_menu_bar'):
+            return self._menu_bar
+        return None
+
+    def _handle_user_close(self):
+        """Handle close button click by actually closing the window and all its contents."""
+        if self.manager:
+            root_node = self.manager.model.roots.get(self)
+            if root_node:
+                all_widgets_in_container = self.manager.model.get_all_widgets_from_node(root_node)
+                for widget_node in all_widgets_in_container:
+                    if hasattr(widget_node, 'persistent_id'):
+                        self.manager.signals.widget_closed.emit(widget_node.persistent_id)
+                
+                del self.manager.model.roots[self]
+                
+                if self in self.manager.containers:
+                    self.manager.containers.remove(self)
+                
+                self.manager.signals.layout_changed.emit()
+        
+        if self.is_main_window:
+            from PySide6.QtWidgets import QApplication
+            QApplication.instance().quit()
+        else:
+            self.close()
 
     def paintEvent(self, event):
         # Default paint event is sufficient for opaque containers
@@ -1004,7 +1082,11 @@ class DockContainer(QWidget):
         """
         Updates the title of the dock container.
         This changes both the window's official title and the visible text in the title bar.
+        If preserve_title is True, title changes are ignored.
         """
+        if self.preserve_title:
+            return  # Prevent title changes when preserve_title is True
+            
         self.setWindowTitle(new_title)
         if self.title_bar:
             self.title_bar.title_label.setText(new_title)
@@ -1038,7 +1120,11 @@ class DockContainer(QWidget):
         Updates the container title based on current widget contents.
         Only updates if the container has a title bar (floating containers).
         For single-widget containers, uses the widget's icon; for multi-widget containers, preserves existing icon.
+        If preserve_title is True, dynamic title updates are ignored.
         """
+        if self.preserve_title:
+            return  # Prevent dynamic title updates when preserve_title is True
+            
         if self.title_bar:
             new_title = self._generate_dynamic_title()
             

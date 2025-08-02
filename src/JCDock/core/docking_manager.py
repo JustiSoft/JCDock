@@ -6,7 +6,6 @@ from PySide6.QtCore import Qt, QRect, QEvent, QPoint, QRectF, QSize, QTimer, Sig
 from PySide6.QtGui import QColor, QDrag, QPixmap, QPainter, QCursor
 
 from .docking_state import DockingState
-from ..widgets.floating_dock_root import FloatingDockRoot
 from ..model.dock_model import LayoutModel, AnyNode, SplitterNode, TabGroupNode, WidgetNode
 from ..widgets.dock_panel import DockPanel
 from ..widgets.dock_container import DockContainer
@@ -248,19 +247,21 @@ class DockingManager(QObject):
         Check if the container is a persistent root (should never be closed).
         
         This is the authoritative method for checking persistent root status.
-        It first checks the container's is_persistent_root property (if set),
-        then falls back to type-based checks for FloatingDockRoot.
+        It checks the container's is_persistent_root property and main window status.
         
         Use this method rather than checking container.is_persistent_root directly
         to ensure all persistent root types are properly identified.
         """
-        if hasattr(container, 'is_persistent_root') and container.is_persistent_root:
+        if hasattr(container, '_is_persistent_root') and container._is_persistent_root:
             return True
         
         if self.main_window and container is self.main_window:
             return True
-        if isinstance(container, FloatingDockRoot):
+            
+        # Check for main window behavior (containers marked as main window)
+        if hasattr(container, 'is_main_window') and container.is_main_window:
             return True
+            
         return False
     
     def _is_child_of_persistent_root(self, container: DockContainer) -> bool:
@@ -2019,7 +2020,7 @@ class DockingManager(QObject):
                         root_node = self.model.roots.get(w)
                         is_empty = not (root_node and root_node.children)
                         is_main_dock_area = (w is self.main_window if self.main_window else False)
-                        is_floating_root = isinstance(w, FloatingDockRoot)
+                        is_floating_root = (hasattr(w, 'is_main_window') and w.is_main_window) or self._is_persistent_root(w)
                         if is_empty and (is_main_dock_area or is_floating_root):
                             w.show_overlay(preset='main_empty')
                         else:

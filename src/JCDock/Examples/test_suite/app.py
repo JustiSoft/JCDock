@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QApplication, QMenuBar
 from PySide6.QtCore import QSize
 
 from JCDock.core.docking_manager import DockingManager
-from JCDock.widgets.floating_dock_root import FloatingDockRoot
+from JCDock.widgets.dock_container import DockContainer
 from JCDock.core.widget_registry import get_registry
 
 from .managers.test_manager import TestManager
@@ -51,18 +51,19 @@ class DockingTestApp:
     
     def _create_main_window(self):
         """Create and configure the main application window."""
-        self.main_window = FloatingDockRoot(
+        self.main_window = DockContainer(
             manager=self.docking_manager, 
+            show_title_bar=True,
             is_main_window=True, 
-            title=APPLICATION_NAME
-        )
-        self.main_window.setWindowTitle(APPLICATION_NAME)
-        self.main_window.setGeometry(
-            MAIN_WINDOW_POSITION.x(), MAIN_WINDOW_POSITION.y(),
-            LARGE_WINDOW_SIZE.width(), LARGE_WINDOW_SIZE.height()
+            window_title=APPLICATION_NAME,
+            auto_persistent_root=True,
+            preserve_title=True,
+            default_geometry=(
+                MAIN_WINDOW_POSITION.x(), MAIN_WINDOW_POSITION.y(),
+                LARGE_WINDOW_SIZE.width(), LARGE_WINDOW_SIZE.height()
+            )
         )
         self.main_window.setObjectName("MainDockArea")
-        self.main_window.set_persistent_root(True)
         
         # Add menu bar support
         self.main_window._menu_bar = QMenuBar(self.main_window)

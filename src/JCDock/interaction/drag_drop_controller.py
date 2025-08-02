@@ -75,8 +75,7 @@ class DragDropController:
                         root_node = self.manager.model.roots.get(w)
                         is_empty = not (root_node and root_node.children)
                         is_main_dock_area = (w is self.manager.main_window if self.manager.main_window else False)
-                        from ..widgets.floating_dock_root import FloatingDockRoot
-                        is_floating_root = isinstance(w, FloatingDockRoot)
+                        is_floating_root = (hasattr(w, 'is_main_window') and w.is_main_window) or self.manager._is_persistent_root(w)
                         if is_empty and (is_main_dock_area or is_floating_root):
                             w.show_overlay(preset='main_empty')
                         else:
@@ -220,7 +219,7 @@ class DragDropController:
         if not (hasattr(source_container, 'title_bar') and source_container.title_bar and source_container.title_bar.moving):
             return
 
-        if isinstance(source_container, self.manager.FloatingDockRoot if hasattr(self.manager, 'FloatingDockRoot') else type(None)):
+        if hasattr(source_container, 'is_main_window') and source_container.is_main_window:
             self.manager.destroy_all_overlays()
             self.manager.last_dock_target = None
             return
