@@ -200,6 +200,7 @@ class LayoutSerializer:
 
             elif window_class in ('DockContainer', 'FloatingDockRoot'):
                 # This is a floating container - create new floating window
+                # Note: FloatingDockRoot is deprecated but kept for backward compatibility with old layout files
                 auto_persistent_root = window_state.get('auto_persistent_root', True)  # Default to True for floating containers
                 
                 new_window = DockContainer(
