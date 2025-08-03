@@ -375,7 +375,7 @@ class DockingManager(QObject):
             panel.set_icon(kwargs['icon'])
         
         # Register the widget
-        self.register_widget(panel)
+        self._register_widget(panel)
         
         # Track persistence preference
         if persist:
@@ -416,7 +416,7 @@ class DockingManager(QObject):
             # Create panel and add to main window
             panel = DockPanel(title or "Main Content", manager=self, persistent_id=key)
             panel.setContent(content)
-            self.register_widget(panel)
+            self._register_widget(panel)
             
             # Dock to main window
             self.dock_widget(panel, main_window, "center")
@@ -593,9 +593,9 @@ class DockingManager(QObject):
             self.signals.layout_changed.connect(self._debug_report_layout_state)
             
 
-    def register_widget(self, widget: DockPanel):
+    def _register_widget(self, widget: DockPanel):
         """
-        Registers a DockPanel with the manager but does NOT create a floating window.
+        Internal method: Registers a DockPanel with the manager but does NOT create a floating window.
         DockPanel instances should only be added to DockContainers, not used as standalone windows.
         """
         widget.manager = self
@@ -607,7 +607,7 @@ class DockingManager(QObject):
             widget.setMouseTracking(True)
             widget.setAttribute(Qt.WA_Hover, True)
 
-    def register_dock_area(self, dock_area: DockContainer):
+    def _register_dock_area(self, dock_area: DockContainer):
         """
         Internal method to register a dock area with the manager.
         This is now called automatically by DockContainer.__init__().
@@ -1094,9 +1094,9 @@ class DockingManager(QObject):
         return self.window_manager.validate_window_geometry(geometry)
 
 
-    def create_floating_window(self, widgets: list[DockPanel], geometry: QRect, was_maximized=False,
-                               normal_geometry=None):
-        """Delegate to WidgetFactory for floating window creation."""
+    def _create_floating_window(self, widgets: list[DockPanel], geometry: QRect, was_maximized=False,
+                                normal_geometry=None):
+        """Internal method: Delegate to WidgetFactory for floating window creation."""
         return self.widget_factory.create_floating_window(widgets, geometry, was_maximized, normal_geometry)
 
 
@@ -1876,7 +1876,7 @@ class DockingManager(QObject):
         new_geometry = positioning_strategy.calculate_window_geometry(widget_to_undock, context)
         
         # Create floating window
-        newly_floated_window = self.create_floating_window([widget_to_undock], new_geometry)
+        newly_floated_window = self._create_floating_window([widget_to_undock], new_geometry)
         
         if newly_floated_window:
             # Finalize the undocking operation
@@ -2050,7 +2050,7 @@ class DockingManager(QObject):
         window_pos = cursor_pos - QPoint(widget_size.width() // 2, title_height // 2)
         window_geometry = QRect(window_pos, widget_size + QSize(0, title_height))
         
-        newly_floated_window = self.create_floating_window([widget], window_geometry)
+        newly_floated_window = self._create_floating_window([widget], window_geometry)
         
         if newly_floated_window:
             self.signals.widget_undocked.emit(widget)

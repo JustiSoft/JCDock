@@ -196,7 +196,7 @@ class LayoutSerializer:
 
                 if new_window:
                     self.manager.model.roots[new_window] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
-                    self.manager.register_widget(new_window)
+                    self.manager._register_widget(new_window)
 
             elif window_class == 'DockContainer':
                 # This is a floating container - create new floating window
@@ -209,7 +209,7 @@ class LayoutSerializer:
                     is_main_window=False,
                     auto_persistent_root=auto_persistent_root
                 )
-                self.manager.register_dock_area(new_window)
+                self.manager._register_dock_area(new_window)
                 self.manager.model.roots[new_window] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
                 self.manager._render_layout(new_window)
 
@@ -303,7 +303,7 @@ class LayoutSerializer:
                     new_widget = self.manager._create_panel_from_key(persistent_id)
                     if new_widget:
                         loaded_widgets_cache[cache_key] = new_widget
-                        self.manager.register_widget(new_widget)
+                        self.manager._register_widget(new_widget)
                 except ValueError as e:
                     print(f"ERROR: Cannot recreate widget '{persistent_id}': {e}")
                     new_widget = None

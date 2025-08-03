@@ -87,7 +87,7 @@ class WidgetFactory:
         
         container = self.create_floating_window([panel], geometry)
         
-        self.manager.register_widget(panel)
+        self.manager._register_widget(panel)
         
         self.manager.floating_widget_count += 1
         
@@ -142,7 +142,7 @@ class WidgetFactory:
         
         container = self.create_floating_window([panel], geometry)
         
-        self.manager.register_widget(panel)
+        self.manager._register_widget(panel)
         
         # Store state handlers if provided
         if state_provider is not None or state_restorer is not None:
@@ -177,7 +177,7 @@ class WidgetFactory:
         panel = DockPanel(title, manager=self.manager, persistent_id=f"simple_{id(content_widget)}")
         panel.setContent(content_widget)
         
-        self.manager.register_widget(panel)
+        self.manager._register_widget(panel)
         
         geometry = QRect(x, y, width, height)
         container = self.create_floating_window([panel], geometry)

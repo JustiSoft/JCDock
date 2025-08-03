@@ -61,7 +61,7 @@ class DockContainer(QWidget):
         
         # Auto-register with manager if provided
         if self.manager:
-            self.manager.register_dock_area(self)
+            self.manager._register_dock_area(self)
         
         # Set window title and geometry
         if show_title_bar:

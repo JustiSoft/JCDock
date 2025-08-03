@@ -585,7 +585,7 @@ class DragDropController:
         
         window_geometry = self.manager._validate_window_geometry(window_geometry)
         
-        floating_window = self.manager.create_floating_window([widget], window_geometry)
+        floating_window = self.manager._create_floating_window([widget], window_geometry)
         
         if floating_window:
             self.manager.signals.widget_undocked.emit(widget)
