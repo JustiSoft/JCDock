@@ -91,7 +91,7 @@ class TestManager:
             
             if not floating_widgets:
                 # Find widgets that are in floating containers (not main dock area)
-                main_dock_area = self.main_window.dock_area
+                main_dock_area = self.main_window
                 floating_container_widgets = []
                 
                 for root_window in self.docking_manager.model.roots.keys():
@@ -256,7 +256,7 @@ class TestManager:
                 TestUtilities.print_failure("No widgets exist to test with")
                 return
             
-            target_container = self.main_window.dock_area
+            target_container = self.main_window
             source_widget = all_widgets[0]
             
             TestUtilities.print_info(f"Testing move with widget: '{source_widget.windowTitle()}'")
