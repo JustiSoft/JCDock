@@ -198,9 +198,8 @@ class LayoutSerializer:
                     self.manager.model.roots[new_window] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
                     self.manager.register_widget(new_window)
 
-            elif window_class in ('DockContainer', 'FloatingDockRoot'):
+            elif window_class == 'DockContainer':
                 # This is a floating container - create new floating window
-                # Note: FloatingDockRoot is deprecated but kept for backward compatibility with old layout files
                 auto_persistent_root = window_state.get('auto_persistent_root', True)  # Default to True for floating containers
                 
                 new_window = DockContainer(
