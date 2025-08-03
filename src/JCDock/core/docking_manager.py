@@ -335,7 +335,7 @@ class DockingManager(QObject):
         Universal window creation for all scenarios.
         
         Args:
-            content: Widget to make dockable (optional for main windows)
+            content: Widget to make dockable (optional for main windows and floating dock roots)
             key: User-provided persistent key (auto-generated if None)  
             title: Window title
             is_main_window: Create main window that exits app on close
@@ -351,9 +351,13 @@ class DockingManager(QObject):
         if is_main_window:
             return self._create_main_window(content, title, x, y, width, height, **kwargs)
         
+        # Handle floating dock root creation (empty containers with auto_persistent_root=True)
+        if content is None and kwargs.get('auto_persistent_root', False):
+            return self._create_floating_dock_root(title, x, y, width, height, **kwargs)
+        
         # Handle regular widget windows
         if content is None:
-            raise ValueError("content parameter is required for non-main windows")
+            raise ValueError("content parameter is required for non-main windows unless auto_persistent_root=True")
         
         # Generate key if not provided
         if key is None:
@@ -418,6 +422,32 @@ class DockingManager(QObject):
             self.dock_widget(panel, main_window, "center")
         
         return main_window
+    
+    def _create_floating_dock_root(self, title, x, y, width, height, **kwargs):
+        """Create a floating dock root container (empty persistent container)."""
+        # Set up floating dock root specific parameters
+        floating_root_kwargs = {
+            'is_main_window': False,
+            'show_title_bar': True,
+            'window_title': title or "Floating Dock Root",
+            'auto_persistent_root': True,
+            'preserve_title': True,  # Ensure title doesn't change to "Empty Container"
+            'default_geometry': (x, y, width, height),
+            **kwargs
+        }
+        
+        # Create floating dock root container (auto-registers due to DockContainer enhancement)
+        floating_root = DockContainer(manager=self, **floating_root_kwargs)
+        
+        # Show and activate the new floating root
+        floating_root.show()
+        floating_root.raise_()
+        floating_root.activateWindow()
+        
+        # Bring to front in the window stack
+        self.bring_to_front(floating_root)
+        
+        return floating_root
     
     def _generate_auto_key(self, content, title):
         """Generate unique auto key for widget when user doesn't provide one."""
@@ -1781,9 +1811,6 @@ class DockingManager(QObject):
         else:
             return False
 
-    def create_new_floating_root(self):
-        """Delegate to WindowManager for floating root creation."""
-        return self.window_manager.create_new_floating_root()
 
     def _perform_undock_operation(self, widget_to_undock: DockPanel, positioning_strategy: UndockPositioningStrategy, context: dict = None) -> DockContainer | None:
         """

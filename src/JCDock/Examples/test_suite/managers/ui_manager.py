@@ -93,7 +93,7 @@ class UIManager:
         widget_menu.addSeparator()
         
         create_floating_root_action = widget_menu.addAction("Create New Floating Root")
-        create_floating_root_action.triggered.connect(self.docking_manager.create_new_floating_root)
+        create_floating_root_action.triggered.connect(self._create_new_floating_root)
     
     def _add_widget_type_actions(self, menu):
         """Add widget type actions to menu."""
@@ -556,6 +556,17 @@ class UIManager:
             persist=True
         )
         print(f"Simplified method created: {container}")
+
+    def _create_new_floating_root(self):
+        """Create a new floating dock root using the unified API."""
+        container = self.docking_manager.create_window(
+            content=None,
+            title="Floating Dock Root",
+            x=400, y=300, width=600, height=500,
+            auto_persistent_root=True,
+            preserve_title=True
+        )
+        print(f"Created floating dock root: {container}")
     
     # Color management methods
     def _set_container_background_color(self, color: QColor):

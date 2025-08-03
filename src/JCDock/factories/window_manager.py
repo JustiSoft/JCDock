@@ -121,28 +121,3 @@ class WindowManager:
         geometry.setWidth(max_width)
         geometry.setHeight(max_height)
 
-    def create_new_floating_root(self):
-        """
-        Creates, registers, and shows a new floating root window that can
-        act as a secondary main docking area.
-        
-        Returns:
-            DockContainer: The newly created floating root window
-        """
-        new_root_window = DockContainer(
-            manager=self.manager, 
-            show_title_bar=True,
-            is_main_window=False, 
-            window_title="Floating Dock Root",
-            auto_persistent_root=True
-        )
-
-        self.manager.register_dock_area(new_root_window)
-
-        new_root_window.show()
-        new_root_window.raise_()
-        new_root_window.activateWindow()
-        
-        self.bring_to_front(new_root_window)
-        
-        return new_root_window
