@@ -62,20 +62,9 @@ class UIManager:
         """Create the Widgets menu."""
         widget_menu = menu_bar.addMenu("Widgets")
         
-        # By Type submenu
-        by_type_menu = widget_menu.addMenu("Create By Type (Registry)")
-        self._add_widget_type_actions(by_type_menu)
-        
-        # By Instance submenu
-        by_instance_menu = widget_menu.addMenu("Create By Instance (Existing)")
-        self._add_widget_instance_actions(by_instance_menu)
-        
-        widget_menu.addSeparator()
-        
-        # By Factory submenu
-        by_factory_menu = widget_menu.addMenu("Create By Factory (Advanced)")
-        by_factory_menu.aboutToShow.connect(self._setup_factory_examples)
-        self._add_factory_actions(by_factory_menu)
+        # Test Widgets submenu
+        test_widgets_menu = widget_menu.addMenu("Create Test Widgets")
+        self._add_test_widget_actions(test_widgets_menu)
         
         widget_menu.addSeparator()
         
@@ -86,52 +75,23 @@ class UIManager:
         
         widget_menu.addSeparator()
         
-        # Legacy option
-        legacy_widget_action = widget_menu.addAction("Create Widget (Legacy Method)")
-        legacy_widget_action.triggered.connect(self._create_and_register_new_widget)
-        
-        widget_menu.addSeparator()
-        
-        create_floating_root_action = widget_menu.addAction("Create New Floating Root")
-        create_floating_root_action.triggered.connect(self._create_new_floating_root)
+        create_layout_window_action = widget_menu.addAction("Create Layout Window")
+        create_layout_window_action.triggered.connect(self._create_layout_window)
     
-    def _add_widget_type_actions(self, menu):
-        """Add widget type actions to menu."""
+    def _add_test_widget_actions(self, menu):
+        """Add test widget actions to menu."""
         widget_types = [
-            ("test_widget", "Test Widget"),
-            ("tab_widget_1", "Tab Widget 1"),
-            ("tab_widget_2", "Tab Widget 2"),
-            ("right_widget", "Right Widget"),
-            ("chart_widget", "Chart Widget"),
-            ("order_widget", "Order Widget"),
-            ("portfolio_widget", "Portfolio Widget")
+            ("test_widget", "Test Widget (State Persistence)"),
+            ("tooltip_widget", "Tooltip Widget"),
+            ("context_menu_widget", "Context Menu Widget"),
+            ("form_widget", "Form Widget"),
+            ("complex_layout_widget", "Complex Layout Widget")
         ]
         
         for widget_key, display_name in widget_types:
             action = menu.addAction(display_name)
-            action.triggered.connect(lambda checked, key=widget_key: self._create_widget_by_type(key))
+            action.triggered.connect(lambda checked, key=widget_key: self._create_test_widget(key))
     
-    def _add_widget_instance_actions(self, menu):
-        """Add widget instance actions to menu."""
-        widget_types = [
-            ("test_widget", "Test Widget Instance"),
-            ("tab_widget_1", "Tab Widget 1 Instance"),
-            ("chart_widget", "Chart Widget Instance"),
-            ("order_widget", "Order Widget Instance"),
-            ("portfolio_widget", "Portfolio Widget Instance")
-        ]
-        
-        for widget_key, display_name in widget_types:
-            action = menu.addAction(display_name)
-            action.triggered.connect(lambda checked, key=widget_key: self._create_widget_by_instance(key))
-    
-    def _add_factory_actions(self, menu):
-        """Add factory widget actions to menu."""
-        factory_custom_action = menu.addAction("Custom Factory Widget")
-        factory_custom_action.triggered.connect(lambda: self._create_widget_by_factory("custom_factory_widget"))
-        
-        factory_complex_action = menu.addAction("Complex Initialization Widget")
-        factory_complex_action.triggered.connect(lambda: self._create_widget_by_factory("complex_init_widget"))
     
     def _create_test_menu(self, menu_bar: QMenuBar):
         """Create the Tests menu."""
@@ -261,9 +221,9 @@ class UIManager:
         change_widget_icon_action.triggered.connect(self._change_first_widget_icon)
     
     # Widget creation methods
-    def _create_widget_by_type(self, widget_key: str):
-        """Create a widget using the 'By Type' path - registry-based creation."""
-        print(f"Creating widget using 'By Type' path: {widget_key}")
+    def _create_test_widget(self, widget_key: str):
+        """Create a test widget using the unified API."""
+        print(f"Creating test widget: {widget_key}")
         
         count = len(self.docking_manager.widgets)
         x = DEFAULT_POSITION.x() + count * CASCADE_OFFSET
@@ -273,52 +233,37 @@ class UIManager:
         if not widget_instance:
             return
             
+        # Create descriptive titles based on widget purpose
+        title_map = {
+            "test_widget": "Test Widget (State Persistence)",
+            "tooltip_widget": "Tooltip Widget", 
+            "context_menu_widget": "Context Menu Widget",
+            "form_widget": "Form Widget",
+            "complex_layout_widget": "Complex Layout Widget"
+        }
+        
+        title = title_map.get(widget_key, widget_key.replace('_', ' ').title())
+        
         container = self.docking_manager.create_window(
             widget_instance,
             key=widget_key,
-            title=widget_key.replace('_', ' ').title(),
+            title=title,
             x=x, y=y,
             width=DEFAULT_WINDOW_SIZE.width(),
             height=DEFAULT_WINDOW_SIZE.height(),
             persist=True
         )
         
-        print(f"Created widget container: {container}")
-    
-    def _create_widget_by_instance(self, widget_key: str):
-        """Create a widget using the 'By Instance' path - make existing widget dockable."""
-        print(f"Creating widget using 'By Instance' path: {widget_key}")
-        
-        count = len(self.docking_manager.widgets)
-        x = DEFAULT_POSITION.x() + 50 + count * CASCADE_OFFSET
-        y = DEFAULT_POSITION.y() + 50 + count * CASCADE_OFFSET
-        
-        widget_instance = self._create_widget_instance(widget_key)
-        if not widget_instance:
-            return
-            
-        container = self.docking_manager.create_window(
-            widget_instance,
-            key=widget_key,
-            title=f"Custom {widget_key}",
-            x=x, y=y,
-            width=DEFAULT_WINDOW_SIZE.width(),
-            height=DEFAULT_WINDOW_SIZE.height(),
-            persist=True
-        )
-        
-        print(f"Made widget instance dockable: {container}")
+        print(f"Created test widget container: {container}")
     
     def _create_widget_instance(self, widget_key: str) -> QWidget:
         """Create a widget instance based on the key."""
         widget_map = {
-            "test_widget": lambda: TestContentWidget("Custom Instance Widget"),
-            "tab_widget_1": TabWidget1,
-            "tab_widget_2": TabWidget2,
-            "right_widget": RightWidget,
-            "chart_widget": ChartWidget,
-            "order_widget": OrderWidget,
-            "portfolio_widget": PortfolioWidget
+            "test_widget": lambda: TestContentWidget("Test Widget"),
+            "tooltip_widget": TabWidget1,
+            "context_menu_widget": TabWidget2,
+            "form_widget": OrderWidget,
+            "complex_layout_widget": PortfolioWidget
         }
         
         if widget_key in widget_map:
@@ -327,100 +272,7 @@ class UIManager:
             print(f"Unknown widget key: {widget_key}")
             return None
     
-    def _create_widget_by_factory(self, factory_key: str):
-        """Create a widget using the 'By Factory' path - factory function registration."""
-        print(f"Creating widget using 'By Factory' path: {factory_key}")
-        
-        count = len(self.docking_manager.widgets)
-        x = DEFAULT_POSITION.x() + 100 + count * CASCADE_OFFSET
-        y = DEFAULT_POSITION.y() + 100 + count * CASCADE_OFFSET
-        
-        # Create widget using factory methods directly
-        if factory_key == "custom_factory_widget":
-            widget_instance = self._create_custom_factory_widget("Factory Example", "green")
-        elif factory_key == "complex_init_widget":
-            widget_instance = self._create_complex_init_widget()
-        else:
-            print(f"Unknown factory key: {factory_key}")
-            return
-            
-        container = self.docking_manager.create_window(
-            widget_instance,
-            key=factory_key,
-            title=factory_key.replace('_', ' ').title(),
-            x=x, y=y,
-            width=DEFAULT_WINDOW_SIZE.width(),
-            height=DEFAULT_WINDOW_SIZE.height(),
-            persist=True
-        )
-        
-        print(f"Created widget from factory: {container}")
     
-    def _setup_factory_examples(self):
-        """Setup factory examples when the factory menu is accessed."""
-        try:
-            registry = get_registry()
-            
-            if not registry.is_registered("custom_factory_widget"):
-                self.docking_manager.register_widget_factory(
-                    "custom_factory_widget",
-                    lambda: self._create_custom_factory_widget("Factory Example", "green"),
-                    "Custom Factory Widget"
-                )
-            
-            if not registry.is_registered("complex_init_widget"):
-                self.docking_manager.register_widget_factory(
-                    "complex_init_widget",
-                    self._create_complex_init_widget,
-                    "Complex Initialization Widget"
-                )
-        except ValueError:
-            # Already registered, ignore
-            pass
-    
-    def _create_custom_factory_widget(self, title: str, color: str) -> QWidget:
-        """Factory function that creates a widget with custom arguments."""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        
-        label = QLabel(f"Factory Created: {title}")
-        label.setStyleSheet(f"color: {color}; font-weight: bold; padding: 10px; background: #f0f0f0; border-radius: 5px;")
-        layout.addWidget(label)
-        
-        info_label = QLabel("This widget was created using a factory function!")
-        layout.addWidget(info_label)
-        
-        button = QPushButton("Factory Button")
-        button.clicked.connect(lambda: print(f"Factory widget '{title}' button clicked!"))
-        layout.addWidget(button)
-        
-        return widget
-    
-    def _create_complex_init_widget(self) -> QWidget:
-        """Factory function demonstrating complex initialization logic."""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        
-        session_id = random.randint(1000, 9999)
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        
-        header_label = QLabel(f"Complex Widget (Session: {session_id})")
-        header_label.setStyleSheet("color: purple; font-weight: bold; padding: 10px; background: #f8f0ff; border-radius: 5px;")
-        layout.addWidget(header_label)
-        
-        info_label = QLabel(f"Initialized at: {timestamp}")
-        layout.addWidget(info_label)
-        
-        data_list = QListWidget()
-        for i in range(DYNAMIC_ITEMS_COUNT):
-            data_list.addItem(f"Dynamic Item {i+1} (Generated at runtime)")
-        layout.addWidget(data_list)
-        
-        footer_label = QLabel("This demonstrates complex initialization that requires factory functions!")
-        footer_label.setStyleSheet("font-style: italic; color: #666;")
-        layout.addWidget(footer_label)
-        
-        return widget
     
     def _create_widget_with_adhoc_handlers(self):
         """Create a widget using ad-hoc state handlers for persistence."""
@@ -535,38 +387,17 @@ class UIManager:
         except Exception as e:
             widget.status_label.setText(f"Clicks: 0 (RESTORE FAILED - {str(e)})")
     
-    def _create_and_register_new_widget(self):
-        """Updated method showing new simplified API."""
-        self.widget_count += 1
-        
-        x = 300 + self.widget_count * CASCADE_OFFSET
-        y = 300 + self.widget_count * CASCADE_OFFSET
-        
-        widget_instance = self._create_widget_instance("test_widget")
-        if not widget_instance:
-            return
-        
-        container = self.docking_manager.create_window(
-            widget_instance,
-            key="test_widget", 
-            title="Test Widget",
-            x=x, y=y,
-            width=DEFAULT_WINDOW_SIZE.width(),
-            height=DEFAULT_WINDOW_SIZE.height(),
-            persist=True
-        )
-        print(f"Simplified method created: {container}")
 
-    def _create_new_floating_root(self):
-        """Create a new floating dock root using the unified API."""
+    def _create_layout_window(self):
+        """Create a new layout window (persistent container for docking widgets)."""
         container = self.docking_manager.create_window(
             content=None,
-            title="Floating Dock Root",
+            title="Layout Window",
             x=400, y=300, width=600, height=500,
             auto_persistent_root=True,
             preserve_title=True
         )
-        print(f"Created floating dock root: {container}")
+        print(f"Created layout window: {container}")
     
     # Color management methods
     def _set_container_background_color(self, color: QColor):
