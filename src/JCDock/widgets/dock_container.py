@@ -97,11 +97,27 @@ class DockContainer(QWidget):
             
             self.main_layout.addWidget(self.title_bar, 0)
 
-        self.content_area = QWidget()
-        self.content_area.setObjectName("ContentArea")
-        self.content_area.setAutoFillBackground(False)
-        self.main_layout.addWidget(self.content_area, 1)
+        # Initialize toolbar management (must be before _setup_toolbar_layout)
+        if not hasattr(self, '_toolbars'):
+            self._toolbars = {
+                'top': [],
+                'bottom': [],
+                'left': [],
+                'right': []
+            }
+        
+        if not hasattr(self, '_toolbar_areas'):
+            self._toolbar_areas = {
+                'top': None,
+                'bottom': None,
+                'left': None,
+                'right': None
+            }
 
+        # Setup complex toolbar-aware layout structure
+        self._setup_toolbar_layout(margin_size)
+        
+        # Content area is now created within _setup_toolbar_layout
         self.inner_content_layout = QVBoxLayout(self.content_area)
         self.inner_content_layout.setContentsMargins(margin_size, margin_size, margin_size, margin_size)
         self.inner_content_layout.setSpacing(0)
@@ -134,15 +150,9 @@ class DockContainer(QWidget):
         self._resize_overlay = None  # Created on-demand during resize operations
         self._content_updates_disabled = False  # Track content update state
         
-        self.setAcceptDrops(True)
+        # Toolbar management is initialized just before _setup_toolbar_layout
         
-        # Initialize toolbar management
-        self._toolbars = {
-            'top': [],
-            'bottom': [],
-            'left': [],
-            'right': []
-        }
+        self.setAcceptDrops(True)
         
         # Apply native Windows shadow based on apply_shadow parameter
         if apply_shadow is None:
@@ -164,6 +174,83 @@ class DockContainer(QWidget):
         if show_title_bar and self.title_bar and self.title_bar.close_button:
             self.title_bar.close_button.clicked.disconnect()
             self.title_bar.close_button.clicked.connect(self._handle_user_close)
+
+    def _setup_toolbar_layout(self, margin_size):
+        """
+        Create a complex layout structure to support proper toolbar positioning.
+        
+        Layout Structure:
+        Main Layout (Vertical):
+        ├── Title Bar (already added)
+        ├── Menu Bar (external insertion)
+        ├── Top Toolbar Area
+        ├── Middle Layout (Horizontal):
+        │   ├── Left Toolbar Area
+        │   ├── Content Area (docking space)
+        │   └── Right Toolbar Area
+        ├── Bottom Toolbar Area
+        └── Status Bar (external insertion)
+        """
+        # Create top toolbar area
+        self._toolbar_areas['top'] = QWidget()
+        self._toolbar_areas['top'].setObjectName("TopToolbarArea")
+        self._top_toolbar_layout = QVBoxLayout(self._toolbar_areas['top'])
+        self._top_toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        self._top_toolbar_layout.setSpacing(0)
+        
+        # Create middle horizontal layout for left-content-right arrangement
+        self._middle_widget = QWidget()
+        self._middle_widget.setObjectName("MiddleLayoutWidget")
+        self._middle_layout = QHBoxLayout(self._middle_widget)
+        self._middle_layout.setContentsMargins(0, 0, 0, 0)
+        self._middle_layout.setSpacing(0)
+        
+        # Create left toolbar area
+        self._toolbar_areas['left'] = QWidget()
+        self._toolbar_areas['left'].setObjectName("LeftToolbarArea")
+        self._left_toolbar_layout = QVBoxLayout(self._toolbar_areas['left'])
+        self._left_toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        self._left_toolbar_layout.setSpacing(0)
+        
+        # Create content area (the protected docking space)
+        self.content_area = QWidget()
+        self.content_area.setObjectName("ContentArea")
+        self.content_area.setAutoFillBackground(False)
+        
+        # Create right toolbar area
+        self._toolbar_areas['right'] = QWidget()
+        self._toolbar_areas['right'].setObjectName("RightToolbarArea")
+        self._right_toolbar_layout = QVBoxLayout(self._toolbar_areas['right'])
+        self._right_toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        self._right_toolbar_layout.setSpacing(0)
+        
+        # Assemble middle layout: left toolbars | content area | right toolbars
+        self._middle_layout.addWidget(self._toolbar_areas['left'], 0)  # No stretch
+        self._middle_layout.addWidget(self.content_area, 1)  # Stretch to fill
+        self._middle_layout.addWidget(self._toolbar_areas['right'], 0)  # No stretch
+        
+        # Create bottom toolbar area
+        self._toolbar_areas['bottom'] = QWidget()
+        self._toolbar_areas['bottom'].setObjectName("BottomToolbarArea")
+        self._bottom_toolbar_layout = QVBoxLayout(self._toolbar_areas['bottom'])
+        self._bottom_toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        self._bottom_toolbar_layout.setSpacing(0)
+        
+        # Add all areas to main layout
+        # Note: Menu bar will be inserted at index 1 externally if present
+        self.main_layout.addWidget(self._toolbar_areas['top'], 0)  # After title bar
+        self.main_layout.addWidget(self._middle_widget, 1)  # Main content with stretch
+        self.main_layout.addWidget(self._toolbar_areas['bottom'], 0)  # Before status bar
+        # Note: Status bar will be added externally at the end
+        
+        # Initially hide empty toolbar areas
+        self._update_toolbar_area_visibility()
+
+    def _update_toolbar_area_visibility(self):
+        """Show/hide toolbar areas based on whether they contain toolbars."""
+        for area_name, area_widget in self._toolbar_areas.items():
+            has_toolbars = len(self._toolbars.get(area_name, [])) > 0
+            area_widget.setVisible(has_toolbars)
 
     def _generate_stylesheet(self):
         """Generate dynamic stylesheet using current color properties."""
@@ -356,15 +443,21 @@ class DockContainer(QWidget):
         if not isinstance(toolbar, QToolBar):
             return
 
-        # Find and remove from storage
+        # Find which area the toolbar belongs to and remove it
         for area_name, toolbar_list in self._toolbars.items():
             if toolbar in toolbar_list:
                 toolbar_list.remove(toolbar)
+                # Remove from the appropriate layout
+                area_layout = getattr(self, f'_{area_name}_toolbar_layout', None)
+                if area_layout:
+                    area_layout.removeWidget(toolbar)
                 break
 
-        # Remove from layout
-        self.main_layout.removeWidget(toolbar)
+        # Clean up the toolbar
         toolbar.setParent(None)
+        
+        # Update visibility of toolbar areas
+        self._update_toolbar_area_visibility()
 
     def toolBars(self, area=None):
         """
@@ -397,46 +490,61 @@ class DockContainer(QWidget):
         return area_map.get(qt_area, 'top')
 
     def _insert_toolbar_in_layout(self, toolbar, area_name):
-        """Insert toolbar into the main layout at the appropriate position."""
+        """Insert toolbar into the appropriate toolbar area using the new layout structure."""
         if area_name == 'top':
-            # Insert after menu bar and before content area
-            # Count existing elements before content area
-            insert_index = 1  # Start after title bar (index 0)
-            
-            # Account for menu bar if present
-            if hasattr(self, '_menu_bar'):
-                insert_index += 1
-                
-            # Add existing top toolbars count, but subtract 1 since we already added current toolbar to list
-            insert_index += len(self._toolbars['top']) - 1
-            
-            self.main_layout.insertWidget(insert_index, toolbar)
+            self._top_toolbar_layout.addWidget(toolbar)
             
         elif area_name == 'bottom':
-            # Insert before status bar or at the very end
-            total_items = self.main_layout.count()
+            self._bottom_toolbar_layout.addWidget(toolbar)
             
-            # If there's a status bar, insert before it and other bottom toolbars
-            if hasattr(self, '_status_bar'):
-                insert_index = total_items - 1 - len(self._toolbars['bottom']) + 1  # +1 because we already added to list
-            else:
-                insert_index = total_items
-                
-            self.main_layout.insertWidget(insert_index, toolbar)
-            
-        elif area_name in ['left', 'right']:
-            # For side toolbars, we need to create a horizontal layout wrapper
-            # This is more complex - for now, fallback to top with vertical orientation
+        elif area_name == 'left':
             toolbar.setOrientation(Qt.Vertical)
+            self._left_toolbar_layout.addWidget(toolbar)
             
-            # Insert like top toolbar but with different orientation
-            insert_index = 1
-            if hasattr(self, '_menu_bar'):
-                insert_index += 1
-            insert_index += len([tb for tb in self._toolbars['top'] + self._toolbars['left'] + self._toolbars['right']])
-            insert_index -= 1  # Adjust for current toolbar already being in list
-            
-            self.main_layout.insertWidget(insert_index, toolbar)
+        elif area_name == 'right':
+            toolbar.setOrientation(Qt.Vertical)
+            self._right_toolbar_layout.addWidget(toolbar)
+        
+        # Update visibility of the toolbar area
+        self._update_toolbar_area_visibility()
+        
+        # Apply toolbar styling
+        self._apply_toolbar_styling(toolbar)
+
+    def _apply_toolbar_styling(self, toolbar):
+        """Apply consistent styling to toolbars for better visual distinction."""
+        toolbar.setStyleSheet("""
+            QToolBar {
+                background-color: #f0f0f0;
+                border: 1px solid #c0c0c0;
+                padding: 2px;
+                spacing: 2px;
+            }
+            QToolBar::handle {
+                background-color: #d0d0d0;
+                width: 8px;
+                height: 8px;
+            }
+            QToolBar QToolButton {
+                background-color: transparent;
+                border: 1px solid transparent;
+                padding: 3px;
+                margin: 1px;
+                border-radius: 2px;
+            }
+            QToolBar QToolButton:hover {
+                background-color: #e0e0e0;
+                border: 1px solid #b0b0b0;
+            }
+            QToolBar QToolButton:pressed {
+                background-color: #d0d0d0;
+                border: 1px solid #a0a0a0;
+            }
+        """)
+        
+        # Ensure toolbar stays visible and properly parented
+        toolbar.setVisible(True)
+        toolbar.setAttribute(Qt.WA_DeleteOnClose, False)
 
     def createPopupMenu(self):
         """
