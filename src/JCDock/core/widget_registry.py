@@ -70,3 +70,34 @@ def get_registry() -> WidgetRegistry:
     return _global_registry
 
 
+def persistable(key: str, title: str):
+    """
+    Decorator to register a widget class for layout persistence.
+    
+    This decorator enables widgets to be saved and restored in layout files.
+    The decorated widget class will be automatically registered in the global
+    widget registry, allowing it to be recreated during layout loading.
+    
+    Args:
+        key: Unique string identifier for the widget type
+        title: Default title for widgets of this type
+        
+    Usage:
+        @persistable("my_widget", "My Custom Widget")
+        class MyWidget(QWidget):
+            def get_dock_state(self):
+                return {"data": self.some_data}
+            
+            def set_dock_state(self, state):
+                self.some_data = state["data"]
+    
+    Raises:
+        ValueError: If the key is already registered
+    """
+    def decorator(widget_class: Type[QWidget]) -> Type[QWidget]:
+        _global_registry.register(key, widget_class, title)
+        return widget_class
+    
+    return decorator
+
+
