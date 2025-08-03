@@ -300,6 +300,12 @@ class DockContainer(QWidget):
             return self._menu_bar
         return None
 
+    def statusBar(self):
+        """Provide QMainWindow-like statusBar() method for compatibility."""
+        if hasattr(self, '_status_bar'):
+            return self._status_bar
+        return None
+
     def _handle_user_close(self):
         """Handle close button click by actually closing the window and all its contents."""
         if self.manager:
