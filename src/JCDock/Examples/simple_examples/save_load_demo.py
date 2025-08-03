@@ -17,8 +17,10 @@ from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt
 from JCDock.core.docking_manager import DockingManager
 from JCDock.widgets.dock_container import DockContainer
+from JCDock import persistable
 
 
+@persistable("note_widget", "Note Widget")
 class NoteWidget(QWidget):
     """A simple note widget for demonstration."""
     
@@ -46,6 +48,7 @@ class NoteWidget(QWidget):
         layout.addWidget(button)
 
 
+@persistable("task_widget", "Task Widget")
 class TaskWidget(QWidget):
     """A simple task widget for demonstration."""
     
