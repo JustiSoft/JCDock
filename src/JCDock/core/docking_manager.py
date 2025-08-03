@@ -351,9 +351,9 @@ class DockingManager(QObject):
         if is_main_window:
             return self._create_main_window(content, title, x, y, width, height, **kwargs)
         
-        # Handle floating dock root creation (empty containers with auto_persistent_root=True)
+        # Handle persistent container creation (empty containers with auto_persistent_root=True)
         if content is None and kwargs.get('auto_persistent_root', False):
-            return self._create_floating_dock_root(title, x, y, width, height, **kwargs)
+            return self._create_persistent_container(title, x, y, width, height, **kwargs)
         
         # Handle regular widget windows
         if content is None:
@@ -423,31 +423,31 @@ class DockingManager(QObject):
         
         return main_window
     
-    def _create_floating_dock_root(self, title, x, y, width, height, **kwargs):
-        """Create a floating dock root container (empty persistent container)."""
-        # Set up floating dock root specific parameters
-        floating_root_kwargs = {
+    def _create_persistent_container(self, title, x, y, width, height, **kwargs):
+        """Create a persistent container (empty container for docking widgets)."""
+        # Set up persistent container specific parameters
+        container_kwargs = {
             'is_main_window': False,
             'show_title_bar': True,
-            'window_title': title or "Floating Dock Root",
+            'window_title': title or "Persistent Container",
             'auto_persistent_root': True,
             'preserve_title': True,  # Ensure title doesn't change to "Empty Container"
             'default_geometry': (x, y, width, height),
             **kwargs
         }
         
-        # Create floating dock root container (auto-registers due to DockContainer enhancement)
-        floating_root = DockContainer(manager=self, **floating_root_kwargs)
+        # Create persistent container (auto-registers due to DockContainer enhancement)
+        container = DockContainer(manager=self, **container_kwargs)
         
-        # Show and activate the new floating root
-        floating_root.show()
-        floating_root.raise_()
-        floating_root.activateWindow()
+        # Show and activate the new container
+        container.show()
+        container.raise_()
+        container.activateWindow()
         
         # Bring to front in the window stack
-        self.bring_to_front(floating_root)
+        self.bring_to_front(container)
         
-        return floating_root
+        return container
     
     def _generate_auto_key(self, content, title):
         """Generate unique auto key for widget when user doesn't provide one."""
