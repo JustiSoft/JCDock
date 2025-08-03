@@ -1,9 +1,9 @@
 import re
 from PySide6.QtWidgets import QWidget, QSplitter, QVBoxLayout, QTabWidget, QHBoxLayout, QPushButton, QStyle, \
-    QApplication
+    QApplication, QToolBar, QMenu
 from PySide6.QtCore import Qt, QRect, QEvent, QPoint, QRectF, QSize, QTimer, QPointF, QLineF, QObject
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QBrush, QRegion, QPixmap, QPen, QIcon, QPolygonF, \
-    QPalette, QDragEnterEvent, QDragMoveEvent, QDragLeaveEvent, QDropEvent, QCursor
+    QPalette, QDragEnterEvent, QDragMoveEvent, QDragLeaveEvent, QDropEvent, QCursor, QAction
 from PySide6.QtWidgets import QTableWidget, QTreeWidget, QListWidget, QTextEdit, QPlainTextEdit, QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QSlider, QScrollBar
 from typing import Optional, Union
 
@@ -135,6 +135,14 @@ class DockContainer(QWidget):
         self._content_updates_disabled = False  # Track content update state
         
         self.setAcceptDrops(True)
+        
+        # Initialize toolbar management
+        self._toolbars = {
+            'top': [],
+            'bottom': [],
+            'left': [],
+            'right': []
+        }
         
         # Apply native Windows shadow based on apply_shadow parameter
         if apply_shadow is None:
@@ -305,6 +313,227 @@ class DockContainer(QWidget):
         if hasattr(self, '_status_bar'):
             return self._status_bar
         return None
+
+    def addToolBar(self, toolbar_or_title, area=Qt.TopToolBarArea):
+        """
+        Add a toolbar to the container, similar to QMainWindow.addToolBar().
+        
+        Args:
+            toolbar_or_title: Either a QToolBar instance or a string title for a new toolbar
+            area: Qt.ToolBarArea where to place the toolbar (TopToolBarArea, BottomToolBarArea, etc.)
+        
+        Returns:
+            QToolBar: The toolbar that was added
+        """
+        if isinstance(toolbar_or_title, str):
+            toolbar = QToolBar(toolbar_or_title, self)
+        elif isinstance(toolbar_or_title, QToolBar):
+            toolbar = toolbar_or_title
+            toolbar.setParent(self)
+        else:
+            raise TypeError("Expected QToolBar or string title")
+
+        # Determine area and index for insertion
+        area_name = self._get_area_name(area)
+        if area_name not in self._toolbars:
+            area_name = 'top'  # Fallback to top
+
+        # Store toolbar reference
+        self._toolbars[area_name].append(toolbar)
+        
+        # Insert toolbar into layout based on area
+        self._insert_toolbar_in_layout(toolbar, area_name)
+        
+        return toolbar
+
+    def removeToolBar(self, toolbar):
+        """
+        Remove a toolbar from the container.
+        
+        Args:
+            toolbar: QToolBar instance to remove
+        """
+        if not isinstance(toolbar, QToolBar):
+            return
+
+        # Find and remove from storage
+        for area_name, toolbar_list in self._toolbars.items():
+            if toolbar in toolbar_list:
+                toolbar_list.remove(toolbar)
+                break
+
+        # Remove from layout
+        self.main_layout.removeWidget(toolbar)
+        toolbar.setParent(None)
+
+    def toolBars(self, area=None):
+        """
+        Get list of toolbars, optionally filtered by area.
+        
+        Args:
+            area: Optional Qt.ToolBarArea to filter by
+        
+        Returns:
+            List[QToolBar]: List of toolbars
+        """
+        if area is None:
+            # Return all toolbars
+            all_toolbars = []
+            for toolbar_list in self._toolbars.values():
+                all_toolbars.extend(toolbar_list)
+            return all_toolbars
+        else:
+            area_name = self._get_area_name(area)
+            return self._toolbars.get(area_name, []).copy()
+
+    def _get_area_name(self, qt_area):
+        """Convert Qt.ToolBarArea enum to area name string."""
+        area_map = {
+            Qt.TopToolBarArea: 'top',
+            Qt.BottomToolBarArea: 'bottom',
+            Qt.LeftToolBarArea: 'left',
+            Qt.RightToolBarArea: 'right'
+        }
+        return area_map.get(qt_area, 'top')
+
+    def _insert_toolbar_in_layout(self, toolbar, area_name):
+        """Insert toolbar into the main layout at the appropriate position."""
+        if area_name == 'top':
+            # Insert after menu bar and before content area
+            # Count existing elements before content area
+            insert_index = 1  # Start after title bar (index 0)
+            
+            # Account for menu bar if present
+            if hasattr(self, '_menu_bar'):
+                insert_index += 1
+                
+            # Add existing top toolbars count, but subtract 1 since we already added current toolbar to list
+            insert_index += len(self._toolbars['top']) - 1
+            
+            self.main_layout.insertWidget(insert_index, toolbar)
+            
+        elif area_name == 'bottom':
+            # Insert before status bar or at the very end
+            total_items = self.main_layout.count()
+            
+            # If there's a status bar, insert before it and other bottom toolbars
+            if hasattr(self, '_status_bar'):
+                insert_index = total_items - 1 - len(self._toolbars['bottom']) + 1  # +1 because we already added to list
+            else:
+                insert_index = total_items
+                
+            self.main_layout.insertWidget(insert_index, toolbar)
+            
+        elif area_name in ['left', 'right']:
+            # For side toolbars, we need to create a horizontal layout wrapper
+            # This is more complex - for now, fallback to top with vertical orientation
+            toolbar.setOrientation(Qt.Vertical)
+            
+            # Insert like top toolbar but with different orientation
+            insert_index = 1
+            if hasattr(self, '_menu_bar'):
+                insert_index += 1
+            insert_index += len([tb for tb in self._toolbars['top'] + self._toolbars['left'] + self._toolbars['right']])
+            insert_index -= 1  # Adjust for current toolbar already being in list
+            
+            self.main_layout.insertWidget(insert_index, toolbar)
+
+    def createPopupMenu(self):
+        """
+        Create a popup menu for toolbar and dock widget management, similar to QMainWindow.
+        This is typically called when right-clicking on the window.
+        
+        Returns:
+            QMenu: Popup menu with toolbar visibility toggles
+        """
+        menu = QMenu("Window Options", self)
+        
+        # Add toolbar section if there are any toolbars
+        all_toolbars = self.toolBars()
+        if all_toolbars:
+            toolbar_menu = menu.addMenu("Toolbars")
+            
+            for toolbar in all_toolbars:
+                action = QAction(toolbar.windowTitle() or "Toolbar", menu)
+                action.setCheckable(True)
+                action.setChecked(toolbar.isVisible())
+                
+                # Create a closure to capture the toolbar reference
+                def toggle_toolbar(checked, tb=toolbar):
+                    tb.setVisible(checked)
+                    if hasattr(self, '_status_bar') and self._status_bar:
+                        status = "shown" if checked else "hidden"
+                        self._status_bar.showMessage(f"Toolbar '{tb.windowTitle()}' {status}", 2000)
+                
+                action.triggered.connect(toggle_toolbar)
+                toolbar_menu.addAction(action)
+        
+        # Add docking options if this container has docked widgets
+        if hasattr(self, 'contained_widgets') and self.contained_widgets:
+            if all_toolbars:  # Add separator if we had toolbars
+                menu.addSeparator()
+                
+            dock_menu = menu.addMenu("Docking")
+            
+            # Add option to undock all widgets
+            undock_all_action = QAction("Undock All Widgets", menu)
+            undock_all_action.triggered.connect(self._undock_all_widgets)
+            dock_menu.addAction(undock_all_action)
+            
+            # Add option to close all widgets
+            close_all_action = QAction("Close All Widgets", menu)
+            close_all_action.triggered.connect(self._close_all_widgets)
+            dock_menu.addAction(close_all_action)
+        
+        # Add window options
+        if all_toolbars or (hasattr(self, 'contained_widgets') and self.contained_widgets):
+            menu.addSeparator()
+            
+        # Add refresh option
+        refresh_action = QAction("Refresh Layout", menu)
+        refresh_action.triggered.connect(self._refresh_layout)
+        menu.addAction(refresh_action)
+        
+        return menu
+
+    def _undock_all_widgets(self):
+        """Undock all widgets from this container."""
+        if self.manager and hasattr(self, 'contained_widgets'):
+            for widget in self.contained_widgets.copy():
+                self.manager.undock_widget(widget)
+            
+            if hasattr(self, '_status_bar') and self._status_bar:
+                self._status_bar.showMessage("All widgets undocked", 2000)
+
+    def _close_all_widgets(self):
+        """Close all widgets in this container."""
+        if self.manager and hasattr(self, 'contained_widgets'):
+            widget_count = len(self.contained_widgets)
+            for widget in self.contained_widgets.copy():
+                self.manager.request_close_widget(widget)
+            
+            if hasattr(self, '_status_bar') and self._status_bar:
+                self._status_bar.showMessage(f"Closed {widget_count} widgets", 2000)
+
+    def _refresh_layout(self):
+        """Refresh the container layout."""
+        self.update()
+        self.repaint()
+        
+        if hasattr(self, '_status_bar') and self._status_bar:
+            self._status_bar.showMessage("Layout refreshed", 1000)
+
+    def contextMenuEvent(self, event):
+        """Handle right-click context menu events."""
+        # Only show context menu for main windows or containers with title bars
+        if self.is_main_window or (self.title_bar and self.title_bar.isVisible()):
+            menu = self.createPopupMenu()
+            if menu and not menu.isEmpty():
+                menu.exec(event.globalPos())
+            return
+        
+        # For other containers, use default behavior
+        super().contextMenuEvent(event)
 
     def _handle_user_close(self):
         """Handle close button click by actually closing the window and all its contents."""
