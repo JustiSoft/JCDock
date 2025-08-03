@@ -328,16 +328,153 @@ class DockingManager(QObject):
         """Delegate to WidgetFactory for panel creation."""
         return self.widget_factory.create_panel_from_key(key)
 
-    def create_floating_widget_from_key(self, key: str, position=None, size=None) -> DockContainer:
-        """Delegate to WidgetFactory for floating widget creation."""
-        return self.widget_factory.create_floating_widget_from_key(key, position, size)
-
-    def add_as_floating_widget(self, widget_instance: QWidget, persistent_key: str, title: str = None, 
-                              position=None, size=None,
-                              state_provider: Optional[Callable[[QWidget], Dict[str, Any]]] = None,
-                              state_restorer: Optional[Callable[[QWidget, Dict[str, Any]], None]] = None) -> DockContainer:
-        """Delegate to WidgetFactory for floating widget creation from instance."""
-        return self.widget_factory.add_as_floating_widget(widget_instance, persistent_key, title, position, size, state_provider, state_restorer)
+    
+    def create_window(self, content=None, key=None, title=None, is_main_window=False, 
+                     persist=False, x=300, y=300, width=400, height=300, **kwargs):
+        """
+        Universal window creation for all scenarios.
+        
+        Args:
+            content: Widget to make dockable (optional for main windows)
+            key: User-provided persistent key (auto-generated if None)  
+            title: Window title
+            is_main_window: Create main window that exits app on close
+            persist: Whether to include in layout serialization
+            x, y: Window position (defaults: 300, 300)
+            width, height: Window size (defaults: 400, 300)
+            **kwargs: Additional DockContainer parameters (colors, etc.)
+            
+        Returns:
+            DockContainer: The created window
+        """
+        # Handle main window creation
+        if is_main_window:
+            return self._create_main_window(content, title, x, y, width, height, **kwargs)
+        
+        # Handle regular widget windows
+        if content is None:
+            raise ValueError("content parameter is required for non-main windows")
+        
+        # Generate key if not provided
+        if key is None:
+            key = self._generate_auto_key(content, title)
+        
+        # Auto-register widget class if not already registered
+        self._ensure_widget_registered(content, key, title or "Widget")
+        
+        # Create the dockable panel
+        panel = DockPanel(title or "Widget", manager=self, persistent_id=key)
+        panel.setContent(content)
+        
+        # Set icon if provided
+        if 'icon' in kwargs:
+            panel.set_icon(kwargs['icon'])
+        
+        # Register the widget
+        self.register_widget(panel)
+        
+        # Track persistence preference
+        if persist:
+            self._mark_for_persistence(key)
+        
+        # Create the container window
+        geometry = QRect(x, y, width, height)
+        container = self.widget_factory.create_floating_window([panel], geometry)
+        
+        return container
+    
+    def _create_main_window(self, content, title, x, y, width, height, **kwargs):
+        """Create a main window container."""
+        # Set up main window specific parameters
+        main_window_kwargs = {
+            'is_main_window': True,
+            'show_title_bar': True,
+            'window_title': title or "Main Window",
+            'auto_persistent_root': True,
+            'default_geometry': (x, y, width, height),
+            **kwargs
+        }
+        
+        # Create main window container (auto-registers due to DockContainer enhancement)
+        main_window = DockContainer(manager=self, **main_window_kwargs)
+        
+        # Set as the manager's main window
+        self.set_main_window(main_window)
+        
+        # If content is provided, add it to the main window
+        if content:
+            # Generate key for main window content
+            key = self._generate_auto_key(content, title or "Main Content")
+            
+            # Auto-register widget class
+            self._ensure_widget_registered(content, key, title or "Main Content")
+            
+            # Create panel and add to main window
+            panel = DockPanel(title or "Main Content", manager=self, persistent_id=key)
+            panel.setContent(content)
+            self.register_widget(panel)
+            
+            # Dock to main window
+            self.dock_widget(panel, main_window, "center")
+        
+        return main_window
+    
+    def _generate_auto_key(self, content, title):
+        """Generate unique auto key for widget when user doesn't provide one."""
+        class_name = content.__class__.__name__
+        
+        # Initialize counter if needed
+        if not hasattr(self, '_auto_key_counter'):
+            self._auto_key_counter = 0
+        
+        # Find next available key to avoid collisions
+        base_name = class_name
+        counter = 1
+        while True:
+            candidate = f"{base_name}_{counter}"
+            if not self._key_exists(candidate):
+                return candidate
+            counter += 1
+    
+    def _key_exists(self, key):
+        """Check if a key already exists in the registry or widget list."""
+        from .widget_registry import get_registry
+        registry = get_registry()
+        
+        # Check registry
+        if registry.is_registered(key):
+            return True
+        
+        # Check existing widgets
+        for widget in self.widgets:
+            if hasattr(widget, 'persistent_id') and widget.persistent_id == key:
+                return True
+        
+        return False
+    
+    def _ensure_widget_registered(self, content, key, title):
+        """Auto-register widget class if not already registered."""
+        from .widget_registry import get_registry
+        registry = get_registry()
+        
+        # Register this specific instance key if not already registered
+        if not registry.is_registered(key):
+            widget_class = type(content)
+            # Create factory function for this class
+            factory = lambda: widget_class()
+            registry.register_factory(key, factory, title)
+    
+    def _mark_for_persistence(self, key):
+        """Mark a widget key for persistence in layout serialization."""
+        if not hasattr(self, '_persistent_keys'):
+            self._persistent_keys = set()
+        self._persistent_keys.add(key)
+    
+    def _is_marked_for_persistence(self, key):
+        """Check if a widget key is marked for persistence."""
+        if not hasattr(self, '_persistent_keys'):
+            self._persistent_keys = set()
+        return key in self._persistent_keys
 
     def bring_to_front(self, widget):
         """Delegate to WindowManager for window stacking."""
@@ -440,8 +577,11 @@ class DockingManager(QObject):
             widget.setMouseTracking(True)
             widget.setAttribute(Qt.WA_Hover, True)
 
-
     def register_dock_area(self, dock_area: DockContainer):
+        """
+        Internal method to register a dock area with the manager.
+        This is now called automatically by DockContainer.__init__().
+        """
         dock_area.manager = self
         self.model.roots[dock_area] = SplitterNode(orientation=Qt.Horizontal)
         if dock_area not in self.containers:
@@ -923,10 +1063,6 @@ class DockingManager(QObject):
         """Delegate to WindowManager for geometry validation."""
         return self.window_manager.validate_window_geometry(geometry)
 
-    def create_simple_floating_widget(self, content_widget: QWidget, title: str = "Widget", 
-                                     x: int = 300, y: int = 300, width: int = 400, height: int = 300) -> tuple[DockContainer, DockPanel]:
-        """Delegate to WidgetFactory for simple floating widget creation."""
-        return self.widget_factory.create_simple_floating_widget(content_widget, title, x, y, width, height)
 
     def create_floating_window(self, widgets: list[DockPanel], geometry: QRect, was_maximized=False,
                                normal_geometry=None):
@@ -1517,7 +1653,6 @@ class DockingManager(QObject):
             self.request_close_widget(widget)
 
     def undock_tab_group(self, tab_widget: QTabWidget):
-        print(f"\n=== DEBUG: undock_tab_group() called with tab_widget: {tab_widget} ===")
         
         self._set_state(DockingState.RENDERING)
         try:
@@ -1531,7 +1666,6 @@ class DockingManager(QObject):
             if not container: 
                 return
             
-            print(f"DEBUG: Found container: {container}")
 
             current_content = tab_widget.currentWidget()
             if not current_content: 

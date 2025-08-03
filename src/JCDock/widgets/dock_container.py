@@ -43,7 +43,7 @@ class DockContainer(QWidget):
         if title_bar_color is not None:
             self._title_bar_color = title_bar_color
         else:
-            # Use more pleasing defaults from FloatingDockRoot
+            # Use pleasing dark teal default color for title bars
             self._title_bar_color = QColor("#2F4F4F")  # Dark teal - more pleasing than brown
 
         if title_text_color is not None:
@@ -58,6 +58,10 @@ class DockContainer(QWidget):
         self.is_main_window = is_main_window
         self.preserve_title = preserve_title
         self._is_persistent_root = auto_persistent_root
+        
+        # Auto-register with manager if provided
+        if self.manager:
+            self.manager.register_dock_area(self)
         
         # Set window title and geometry
         if show_title_bar:
@@ -144,7 +148,7 @@ class DockContainer(QWidget):
             # Explicitly disable shadow (even for titled containers)
             pass
             
-        # Install event filter for floating containers (similar to FloatingDockRoot)
+        # Install event filter for floating containers with title bars
         if show_title_bar:
             self.installEventFilter(self)
             

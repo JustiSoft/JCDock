@@ -70,17 +70,3 @@ def get_registry() -> WidgetRegistry:
     return _global_registry
 
 
-def dockable(key: str, title: str = None):
-    """
-    Decorator to register a widget class as dockable.
-    
-    Args:
-        key: Unique string identifier for the widget type
-        title: Default title for the widget (uses key if not provided)
-    """
-    def decorator(widget_class: Type[QWidget]) -> Type[QWidget]:
-        default_title = title if title is not None else key
-        _global_registry.register(key, widget_class, default_title)
-        return widget_class
-    
-    return decorator

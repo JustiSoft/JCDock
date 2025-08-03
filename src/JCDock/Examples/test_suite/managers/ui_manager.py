@@ -269,10 +269,18 @@ class UIManager:
         x = DEFAULT_POSITION.x() + count * CASCADE_OFFSET
         y = DEFAULT_POSITION.y() + count * CASCADE_OFFSET
         
-        container = self.docking_manager.create_floating_widget_from_key(
-            widget_key,
-            position=(x, y),
-            size=DEFAULT_WINDOW_SIZE
+        widget_instance = self._create_widget_instance(widget_key)
+        if not widget_instance:
+            return
+            
+        container = self.docking_manager.create_window(
+            widget_instance,
+            key=widget_key,
+            title=widget_key.replace('_', ' ').title(),
+            x=x, y=y,
+            width=DEFAULT_WINDOW_SIZE.width(),
+            height=DEFAULT_WINDOW_SIZE.height(),
+            persist=True
         )
         
         print(f"Created widget container: {container}")
@@ -289,12 +297,14 @@ class UIManager:
         if not widget_instance:
             return
             
-        container = self.docking_manager.add_as_floating_widget(
+        container = self.docking_manager.create_window(
             widget_instance,
-            widget_key,
+            key=widget_key,
             title=f"Custom {widget_key}",
-            position=(x, y),
-            size=DEFAULT_WINDOW_SIZE
+            x=x, y=y,
+            width=DEFAULT_WINDOW_SIZE.width(),
+            height=DEFAULT_WINDOW_SIZE.height(),
+            persist=True
         )
         
         print(f"Made widget instance dockable: {container}")
@@ -325,10 +335,23 @@ class UIManager:
         x = DEFAULT_POSITION.x() + 100 + count * CASCADE_OFFSET
         y = DEFAULT_POSITION.y() + 100 + count * CASCADE_OFFSET
         
-        container = self.docking_manager.create_floating_widget_from_key(
-            factory_key,
-            position=(x, y),
-            size=DEFAULT_WINDOW_SIZE
+        # Create widget using factory methods directly
+        if factory_key == "custom_factory_widget":
+            widget_instance = self._create_custom_factory_widget("Factory Example", "green")
+        elif factory_key == "complex_init_widget":
+            widget_instance = self._create_complex_init_widget()
+        else:
+            print(f"Unknown factory key: {factory_key}")
+            return
+            
+        container = self.docking_manager.create_window(
+            widget_instance,
+            key=factory_key,
+            title=factory_key.replace('_', ' ').title(),
+            x=x, y=y,
+            width=DEFAULT_WINDOW_SIZE.width(),
+            height=DEFAULT_WINDOW_SIZE.height(),
+            persist=True
         )
         
         print(f"Created widget from factory: {container}")
@@ -414,15 +437,18 @@ class UIManager:
         x = DEFAULT_POSITION.x() + 200 + count * CASCADE_OFFSET
         y = DEFAULT_POSITION.y() + 200 + count * CASCADE_OFFSET
         
-        container = self.docking_manager.add_as_floating_widget(
+        container = self.docking_manager.create_window(
             widget_instance,
-            "adhoc_stateful_widget",
+            key="adhoc_stateful_widget",
             title="Widget with Ad-Hoc State Handlers",
-            position=(x, y),
-            size=QSize(450, 350),
-            state_provider=self._extract_adhoc_widget_state,
-            state_restorer=self._restore_adhoc_widget_state
+            x=x, y=y,
+            width=450, height=350,
+            persist=True
         )
+        
+        # TODO: State handlers not yet supported in create_window()
+        # state_provider=self._extract_adhoc_widget_state,
+        # state_restorer=self._restore_adhoc_widget_state
         
         print(f"Created widget with ad-hoc state handlers: {container}")
     
@@ -510,16 +536,26 @@ class UIManager:
             widget.status_label.setText(f"Clicks: 0 (RESTORE FAILED - {str(e)})")
     
     def _create_and_register_new_widget(self):
-        """Legacy method for comparison - shows the old complexity."""
+        """Updated method showing new simplified API."""
         self.widget_count += 1
         
-        position = QPoint(300 + self.widget_count * CASCADE_OFFSET, 300 + self.widget_count * CASCADE_OFFSET)
-        container = self.docking_manager.create_floating_widget_from_key(
-            "test_widget", 
-            position=position,
-            size=DEFAULT_WINDOW_SIZE
+        x = 300 + self.widget_count * CASCADE_OFFSET
+        y = 300 + self.widget_count * CASCADE_OFFSET
+        
+        widget_instance = self._create_widget_instance("test_widget")
+        if not widget_instance:
+            return
+        
+        container = self.docking_manager.create_window(
+            widget_instance,
+            key="test_widget", 
+            title="Test Widget",
+            x=x, y=y,
+            width=DEFAULT_WINDOW_SIZE.width(),
+            height=DEFAULT_WINDOW_SIZE.height(),
+            persist=True
         )
-        print(f"Legacy method created: {container}")
+        print(f"Simplified method created: {container}")
     
     # Color management methods
     def _set_container_background_color(self, color: QColor):
@@ -534,16 +570,14 @@ class UIManager:
     
     def _create_colored_floating_window(self, title_bar_color: QColor, title_text_color: QColor):
         """Create a new floating window with custom colors."""
-        floating_root = DockContainer(
-            manager=self.docking_manager,
-            show_title_bar=True,
-            window_title="Custom Colored Window",
+        floating_root = self.docking_manager.create_window(
+            is_main_window=False,
+            title="Custom Colored Window",
+            x=100, y=100, width=400, height=300,
             title_bar_color=title_bar_color,
             title_text_color=title_text_color,
-            auto_persistent_root=True,
-            default_geometry=(100, 100, 400, 300)
+            auto_persistent_root=True
         )
-        self.docking_manager.register_dock_area(floating_root)
         floating_root.show()
         print(f"Created floating window with title bar color {title_bar_color.name()} and text color {title_text_color.name()}")
     
@@ -572,14 +606,12 @@ class UIManager:
         content_widget = TestContentWidget(f"{title_suffix} Content")
         
         # Create dockable widget container
-        container, dock_panel = self.docking_manager.create_simple_floating_widget(
+        container = self.docking_manager.create_window(
             content_widget,
             title=f"{title_suffix} Window",
-            x=200, y=200, width=400, height=300
+            x=200, y=200, width=400, height=300,
+            icon=icon
         )
-        
-        # Set icon on the DockPanel
-        dock_panel.set_icon(icon)
         print(f"Created dockable widget '{title_suffix} Window' with Unicode icon")
     
     def _create_window_with_qt_icon(self, icon_name: str, title_suffix: str):
@@ -590,14 +622,12 @@ class UIManager:
         content_widget = TestContentWidget(f"{title_suffix} Content")
         
         # Create dockable widget container
-        container, dock_panel = self.docking_manager.create_simple_floating_widget(
+        container = self.docking_manager.create_window(
             content_widget,
             title=f"{title_suffix} Window",
-            x=250, y=250, width=400, height=300
+            x=250, y=250, width=400, height=300,
+            icon=icon_name
         )
-        
-        # Set icon on the DockPanel
-        dock_panel.set_icon(icon_name)
         print(f"Created dockable widget '{title_suffix} Window' with Qt standard icon")
     
     def _create_window_with_no_icon(self):
@@ -608,7 +638,7 @@ class UIManager:
         content_widget = TestContentWidget("No Icon Content")
         
         # Create dockable widget container
-        container, dock_panel = self.docking_manager.create_simple_floating_widget(
+        container = self.docking_manager.create_window(
             content_widget,
             title="No Icon Window",
             x=300, y=300, width=400, height=300

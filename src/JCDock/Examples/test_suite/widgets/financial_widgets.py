@@ -9,7 +9,6 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QColor
 
-from JCDock import dockable
 from ..utils.data_generator import DataGenerator
 from ..utils.constants import (
     CHART_ROWS, CHART_COLUMNS, ORDERS_ROWS, ORDERS_COLUMNS,
@@ -17,7 +16,6 @@ from ..utils.constants import (
 )
 
 
-@dockable("chart_widget", "Chart Widget")
 class ChartWidget(QWidget):
     """Chart widget displaying financial data in table format with controls."""
     
@@ -105,7 +103,6 @@ class ChartWidget(QWidget):
         print("Export chart clicked")
 
 
-@dockable("order_widget", "Order Widget")
 class OrderWidget(QWidget):
     """Order management widget for trading operations."""
     
@@ -209,7 +206,6 @@ class OrderWidget(QWidget):
         print("Symbol selector opened")
 
 
-@dockable("portfolio_widget", "Portfolio Widget")
 class PortfolioWidget(QWidget):
     """Portfolio overview widget showing holdings and performance."""
     

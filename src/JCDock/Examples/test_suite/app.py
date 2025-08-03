@@ -51,17 +51,15 @@ class DockingTestApp:
     
     def _create_main_window(self):
         """Create and configure the main application window."""
-        self.main_window = DockContainer(
-            manager=self.docking_manager, 
-            show_title_bar=True,
-            is_main_window=True, 
-            window_title=APPLICATION_NAME,
+        self.main_window = self.docking_manager.create_window(
+            is_main_window=True,
+            title=APPLICATION_NAME,
+            x=MAIN_WINDOW_POSITION.x(),
+            y=MAIN_WINDOW_POSITION.y(),
+            width=LARGE_WINDOW_SIZE.width(),
+            height=LARGE_WINDOW_SIZE.height(),
             auto_persistent_root=True,
-            preserve_title=True,
-            default_geometry=(
-                MAIN_WINDOW_POSITION.x(), MAIN_WINDOW_POSITION.y(),
-                LARGE_WINDOW_SIZE.width(), LARGE_WINDOW_SIZE.height()
-            )
+            preserve_title=True
         )
         self.main_window.setObjectName("MainDockArea")
         
@@ -71,11 +69,6 @@ class DockingTestApp:
         # Update layout to include menu bar
         if self.main_window.layout():
             self.main_window.layout().insertWidget(1, self.main_window._menu_bar)
-
-        # Register with docking manager
-        if self.docking_manager:
-            self.docking_manager.register_dock_area(self.main_window)
-            self.docking_manager.set_main_window(self.main_window)
     
     def _setup_event_handling(self):
         """Setup signal connections for docking events."""

@@ -8,12 +8,10 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QTableW
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 
-from JCDock import dockable
 from ..utils.data_generator import DataGenerator
 from ..utils.constants import TABLE_ROWS_DEFAULT, TABLE_COLUMNS_DEFAULT
 
 
-@dockable("test_widget", "Test Widget")
 class TestContentWidget(QWidget):
     """Registered widget class for the new registry system with state persistence support."""
     
@@ -113,7 +111,6 @@ class TestContentWidget(QWidget):
             self._populate_table(table_data)
 
 
-@dockable("tab_widget_1", "Tab Widget 1")
 class TabWidget1(QWidget):
     """First widget type for tab testing."""
     
@@ -135,7 +132,6 @@ class TabWidget1(QWidget):
         print("Tooltip button clicked!")
 
 
-@dockable("tab_widget_2", "Tab Widget 2") 
 class TabWidget2(QWidget):
     """Second widget type for tab testing."""
     
@@ -181,7 +177,6 @@ class TabWidget2(QWidget):
         context_menu.exec(global_pos)
 
 
-@dockable("right_widget", "Right Widget")
 class RightWidget(QWidget):
     """Widget type for right-side testing."""
     

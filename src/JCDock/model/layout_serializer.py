@@ -42,6 +42,8 @@ class LayoutSerializer:
                 'geometry': self.manager.main_window.geometry().getRect(),
                 'is_maximized': self.manager.main_window.isMaximized(),
                 'normal_geometry': None,
+                'is_main_window': getattr(self.manager.main_window, 'is_main_window', True),
+                'auto_persistent_root': getattr(self.manager.main_window, '_is_persistent_root', False),
                 'content': self._serialize_node(main_root_node)
             }
             layout_data.append(main_window_state)
@@ -61,6 +63,8 @@ class LayoutSerializer:
                 'geometry': window.geometry().getRect(),
                 'is_maximized': getattr(window, '_is_maximized', False),
                 'normal_geometry': None,
+                'is_main_window': getattr(window, 'is_main_window', False),
+                'auto_persistent_root': getattr(window, '_is_persistent_root', False),
                 'content': self._serialize_node(root_node)
             }
             if window_state['is_maximized']:
@@ -151,8 +155,17 @@ class LayoutSerializer:
 
         for window_state in layout_data:
             window_class = window_state['class']
+            new_window = None
 
-            if window_class in ('MainDockWindow', 'FloatingDockRoot', 'DockContainer'):
+            # Use property-based detection instead of class-based detection
+            is_main_window = window_state.get('is_main_window', False)
+            
+            # Backward compatibility: if no is_main_window property, fall back to class-based detection
+            if 'is_main_window' not in window_state:
+                is_main_window = window_class in ('MainDockWindow')
+
+            if is_main_window and window_class in ('DockContainer', 'MainDockWindow'):
+                # This is the main window - restore to existing main window
                 container = self.manager.main_window
                 geom_tuple = window_state['geometry']
                 self.manager.main_window.setGeometry(geom_tuple[0], geom_tuple[1], geom_tuple[2], geom_tuple[3])
@@ -164,8 +177,7 @@ class LayoutSerializer:
                 self.manager._render_layout(container)
                 continue
 
-                new_window = None
-            if window_class == 'DockPanel':
+            elif window_class == 'DockPanel':
                 widget_data = window_state['content']['children'][0]
                 persistent_id = widget_data.get('id')
 
@@ -186,20 +198,16 @@ class LayoutSerializer:
                     self.manager.model.roots[new_window] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
                     self.manager.register_widget(new_window)
 
-            elif window_class == 'DockContainer':
-                new_window = DockContainer(manager=self.manager, parent=None)
-                self.manager.model.roots[new_window] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
-                self.manager.containers.append(new_window)
-                self.manager.add_widget_handlers(new_window)
-                self.manager.bring_to_front(new_window)
-                self.manager._render_layout(new_window)
-
-            elif window_class in ('FloatingDockRoot', 'DockContainer'):
+            elif window_class in ('DockContainer', 'FloatingDockRoot'):
+                # This is a floating container - create new floating window
+                auto_persistent_root = window_state.get('auto_persistent_root', True)  # Default to True for floating containers
+                
                 new_window = DockContainer(
                     manager=self.manager,
                     show_title_bar=True,
                     window_title="Restored Floating Window",
-                    auto_persistent_root=True
+                    is_main_window=False,
+                    auto_persistent_root=auto_persistent_root
                 )
                 self.manager.register_dock_area(new_window)
                 self.manager.model.roots[new_window] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
