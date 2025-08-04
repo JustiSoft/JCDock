@@ -2,7 +2,7 @@
 Save/Load Demo - JCDock Simple Example
 
 This script demonstrates:
-- Widget registration using @dockable decorator
+- Widget registration using @persistable decorator
 - Layout persistence (save/load functionality)
 - Basic widget content without complex state management
 

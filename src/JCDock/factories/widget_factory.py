@@ -41,7 +41,7 @@ class WidgetFactory:
         registration = registry.get_registration(key)
         
         if registration is None:
-            raise ValueError(f"Widget key '{key}' is not registered. Use @dockable decorator to register widget types.")
+            raise ValueError(f"Widget key '{key}' is not registered. Use @persistable decorator to register widget types.")
         
         # Create widget instance based on registration type
         if registration.reg_type == 'class':
@@ -120,7 +120,7 @@ class WidgetFactory:
         if not registry.is_registered(persistent_key):
             raise ValueError(f"Persistent key '{persistent_key}' is not registered. "
                            f"The system must know how to recreate this widget type for layout loading. "
-                           f"Use @dockable decorator to register the widget type first.")
+                           f"Use @persistable decorator to register the widget type first.")
         
         registration = registry.get_registration(persistent_key)
         if title is None:
