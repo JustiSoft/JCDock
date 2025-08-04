@@ -44,7 +44,8 @@ class LayoutSerializer:
                 'normal_geometry': None,
                 'is_main_window': getattr(self.manager.main_window, 'is_main_window', True),
                 'auto_persistent_root': getattr(self.manager.main_window, '_is_persistent_root', False),
-                'content': self._serialize_node(main_root_node)
+                'content': self._serialize_node(main_root_node),
+                'toolbar_state': self._serialize_toolbar_state(self.manager.main_window)
             }
             layout_data.append(main_window_state)
 
@@ -65,7 +66,8 @@ class LayoutSerializer:
                 'normal_geometry': None,
                 'is_main_window': getattr(window, 'is_main_window', False),
                 'auto_persistent_root': getattr(window, '_is_persistent_root', False),
-                'content': self._serialize_node(root_node)
+                'content': self._serialize_node(root_node),
+                'toolbar_state': self._serialize_toolbar_state(window)
             }
             if window_state['is_maximized']:
                 normal_geom = getattr(window, '_normal_geometry', None)
@@ -175,6 +177,11 @@ class LayoutSerializer:
 
                 self.manager.model.roots[container] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
                 self.manager._render_layout(container)
+                
+                # Restore toolbar state if present
+                if 'toolbar_state' in window_state:
+                    self._deserialize_toolbar_state(container, window_state['toolbar_state'])
+                
                 continue
 
             elif window_class == 'DockPanel':
@@ -212,6 +219,10 @@ class LayoutSerializer:
                 self.manager._register_dock_area(new_window)
                 self.manager.model.roots[new_window] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
                 self.manager._render_layout(new_window)
+                
+                # Restore toolbar state if present
+                if 'toolbar_state' in window_state:
+                    self._deserialize_toolbar_state(new_window, window_state['toolbar_state'])
 
             if new_window:
                 geom_tuple = window_state['geometry']
@@ -379,3 +390,94 @@ class LayoutSerializer:
             child_widget = widget.widget(i)
             child_node = node.children[i]
             self._save_splitter_sizes_to_model(child_widget, child_node)
+
+    def _serialize_toolbar_state(self, container):
+        """
+        Serialize the toolbar state for a DockContainer.
+        
+        Args:
+            container: DockContainer instance
+            
+        Returns:
+            dict: Serialized toolbar state including positions, breaks, and visibility
+        """
+        if not hasattr(container, '_toolbars') or not hasattr(container, '_toolbar_breaks'):
+            return {}
+        
+        toolbar_state = {}
+        
+        for area_name in ['top', 'bottom', 'left', 'right']:
+            area_data = []
+            toolbar_sequence = container._toolbar_breaks.get(area_name, [])
+            
+            for item in toolbar_sequence:
+                if item == 'BREAK':
+                    area_data.append({'type': 'BREAK'})
+                else:
+                    # Serialize toolbar info
+                    toolbar_info = {
+                        'type': 'TOOLBAR',
+                        'title': item.windowTitle() or '',
+                        'object_name': item.objectName() or '',
+                        'visible': item.isVisible(),
+                        'orientation': item.orientation()
+                    }
+                    area_data.append(toolbar_info)
+            
+            if area_data:  # Only include areas that have toolbars or breaks
+                toolbar_state[area_name] = area_data
+        
+        return toolbar_state
+
+    def _deserialize_toolbar_state(self, container, toolbar_state):
+        """
+        Restore toolbar state for a DockContainer.
+        
+        Args:
+            container: DockContainer instance
+            toolbar_state: Dict containing serialized toolbar state
+        """
+        if not toolbar_state or not hasattr(container, '_toolbars'):
+            return
+        
+        # Import here to avoid circular imports
+        from PySide6.QtWidgets import QToolBar
+        from PySide6.QtCore import Qt
+        
+        # Clear existing toolbars first
+        for area_name in ['top', 'bottom', 'left', 'right']:
+            toolbars_to_remove = container._toolbars.get(area_name, []).copy()
+            for toolbar in toolbars_to_remove:
+                container.removeToolBar(toolbar)
+        
+        # Restore toolbars for each area
+        for area_name, area_data in toolbar_state.items():
+            if area_name not in ['top', 'bottom', 'left', 'right']:
+                continue
+                
+            # Map area name to Qt enum
+            area_map = {
+                'top': Qt.TopToolBarArea,
+                'bottom': Qt.BottomToolBarArea,
+                'left': Qt.LeftToolBarArea,
+                'right': Qt.RightToolBarArea
+            }
+            qt_area = area_map.get(area_name, Qt.TopToolBarArea)
+            
+            for item_data in area_data:
+                if item_data.get('type') == 'BREAK':
+                    # Add toolbar break
+                    container.addToolBarBreak(qt_area)
+                elif item_data.get('type') == 'TOOLBAR':
+                    # Create and add toolbar
+                    title = item_data.get('title', 'Toolbar')
+                    toolbar = container.addToolBar(title, qt_area)
+                    
+                    # Restore properties
+                    if item_data.get('object_name'):
+                        toolbar.setObjectName(item_data['object_name'])
+                    
+                    toolbar.setVisible(item_data.get('visible', True))
+                    
+                    # Note: Toolbar actions/content would need to be handled
+                    # by the application - we can only restore structure here

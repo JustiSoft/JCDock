@@ -106,6 +106,15 @@ class DockContainer(QWidget):
                 'right': []
             }
         
+        # Track toolbar breaks - list of items that can be toolbars or 'BREAK' strings
+        if not hasattr(self, '_toolbar_breaks'):
+            self._toolbar_breaks = {
+                'top': [],
+                'bottom': [],
+                'left': [],
+                'right': []
+            }
+        
         if not hasattr(self, '_toolbar_areas'):
             self._toolbar_areas = {
                 'top': None,
@@ -191,12 +200,20 @@ class DockContainer(QWidget):
         ├── Bottom Toolbar Area
         └── Status Bar (external insertion)
         """
-        # Create top toolbar area
+        # Create top toolbar area with support for multiple rows (breaks)
         self._toolbar_areas['top'] = QWidget()
         self._toolbar_areas['top'].setObjectName("TopToolbarArea")
         self._top_toolbar_layout = QVBoxLayout(self._toolbar_areas['top'])
         self._top_toolbar_layout.setContentsMargins(0, 0, 0, 0)
-        self._top_toolbar_layout.setSpacing(0)
+        self._top_toolbar_layout.setSpacing(2)
+        
+        # Track current row layouts for breaks
+        self._toolbar_row_layouts = {
+            'top': [],
+            'bottom': [],
+            'left': [],
+            'right': []
+        }
         
         # Create middle horizontal layout for left-content-right arrangement
         self._middle_widget = QWidget()
@@ -205,36 +222,36 @@ class DockContainer(QWidget):
         self._middle_layout.setContentsMargins(0, 0, 0, 0)
         self._middle_layout.setSpacing(0)
         
-        # Create left toolbar area
+        # Create left toolbar area with support for multiple columns (breaks)
         self._toolbar_areas['left'] = QWidget()
         self._toolbar_areas['left'].setObjectName("LeftToolbarArea")
-        self._left_toolbar_layout = QVBoxLayout(self._toolbar_areas['left'])
+        self._left_toolbar_layout = QHBoxLayout(self._toolbar_areas['left'])
         self._left_toolbar_layout.setContentsMargins(0, 0, 0, 0)
-        self._left_toolbar_layout.setSpacing(0)
+        self._left_toolbar_layout.setSpacing(2)
         
         # Create content area (the protected docking space)
         self.content_area = QWidget()
         self.content_area.setObjectName("ContentArea")
         self.content_area.setAutoFillBackground(False)
         
-        # Create right toolbar area
+        # Create right toolbar area with support for multiple columns (breaks)
         self._toolbar_areas['right'] = QWidget()
         self._toolbar_areas['right'].setObjectName("RightToolbarArea")
-        self._right_toolbar_layout = QVBoxLayout(self._toolbar_areas['right'])
+        self._right_toolbar_layout = QHBoxLayout(self._toolbar_areas['right'])
         self._right_toolbar_layout.setContentsMargins(0, 0, 0, 0)
-        self._right_toolbar_layout.setSpacing(0)
+        self._right_toolbar_layout.setSpacing(2)
         
         # Assemble middle layout: left toolbars | content area | right toolbars
         self._middle_layout.addWidget(self._toolbar_areas['left'], 0)  # No stretch
         self._middle_layout.addWidget(self.content_area, 1)  # Stretch to fill
         self._middle_layout.addWidget(self._toolbar_areas['right'], 0)  # No stretch
         
-        # Create bottom toolbar area
+        # Create bottom toolbar area with support for multiple rows (breaks)
         self._toolbar_areas['bottom'] = QWidget()
         self._toolbar_areas['bottom'].setObjectName("BottomToolbarArea")
         self._bottom_toolbar_layout = QVBoxLayout(self._toolbar_areas['bottom'])
         self._bottom_toolbar_layout.setContentsMargins(0, 0, 0, 0)
-        self._bottom_toolbar_layout.setSpacing(0)
+        self._bottom_toolbar_layout.setSpacing(2)
         
         # Add all areas to main layout
         # Note: Menu bar will be inserted at index 1 externally if present
@@ -425,8 +442,9 @@ class DockContainer(QWidget):
         if area_name not in self._toolbars:
             area_name = 'top'  # Fallback to top
 
-        # Store toolbar reference
+        # Store toolbar reference in both tracking systems
         self._toolbars[area_name].append(toolbar)
+        self._toolbar_breaks[area_name].append(toolbar)
         
         # Insert toolbar into layout based on area
         self._insert_toolbar_in_layout(toolbar, area_name)
@@ -447,10 +465,12 @@ class DockContainer(QWidget):
         for area_name, toolbar_list in self._toolbars.items():
             if toolbar in toolbar_list:
                 toolbar_list.remove(toolbar)
-                # Remove from the appropriate layout
-                area_layout = getattr(self, f'_{area_name}_toolbar_layout', None)
-                if area_layout:
-                    area_layout.removeWidget(toolbar)
+                # Also remove from break tracking
+                if toolbar in self._toolbar_breaks[area_name]:
+                    self._toolbar_breaks[area_name].remove(toolbar)
+                
+                # Rebuild the area layout to reflect the removal
+                self._rebuild_toolbar_area_layout(area_name)
                 break
 
         # Clean up the toolbar
@@ -489,27 +509,272 @@ class DockContainer(QWidget):
         }
         return area_map.get(qt_area, 'top')
 
-    def _insert_toolbar_in_layout(self, toolbar, area_name):
-        """Insert toolbar into the appropriate toolbar area using the new layout structure."""
-        if area_name == 'top':
-            self._top_toolbar_layout.addWidget(toolbar)
+    def addToolBarBreak(self, area=Qt.TopToolBarArea):
+        """
+        Add a toolbar break to the specified area, similar to QMainWindow.addToolBarBreak().
+        This creates a new row (top/bottom areas) or column (left/right areas) for subsequent toolbars.
+        
+        Args:
+            area: Qt.ToolBarArea where to add the break
+        """
+        area_name = self._get_area_name(area)
+        
+        # Add break marker to tracking system
+        self._toolbar_breaks[area_name].append('BREAK')
+        
+        # Create new row/column for future toolbars
+        self._create_new_toolbar_row(area_name)
+        
+        # Update visibility
+        self._update_toolbar_area_visibility()
+
+    def insertToolBar(self, before_toolbar, new_toolbar_or_title):
+        """
+        Insert a toolbar before an existing toolbar, similar to QMainWindow.insertToolBar().
+        
+        Args:
+            before_toolbar: QToolBar to insert before
+            new_toolbar_or_title: QToolBar instance or string title for new toolbar
             
-        elif area_name == 'bottom':
-            self._bottom_toolbar_layout.addWidget(toolbar)
+        Returns:
+            QToolBar: The toolbar that was inserted
+        """
+        # Create toolbar if needed
+        if isinstance(new_toolbar_or_title, str):
+            new_toolbar = QToolBar(new_toolbar_or_title, self)
+        elif isinstance(new_toolbar_or_title, QToolBar):
+            new_toolbar = new_toolbar_or_title
+            new_toolbar.setParent(self)
+        else:
+            raise TypeError("Expected QToolBar or string title")
+        
+        # Find the area and position of the before_toolbar
+        target_area = None
+        target_position = None
+        
+        for area_name, toolbar_sequence in self._toolbar_breaks.items():
+            try:
+                position = toolbar_sequence.index(before_toolbar)
+                target_area = area_name
+                target_position = position
+                break
+            except ValueError:
+                continue
+        
+        if target_area is None:
+            # Fallback: add to top area if before_toolbar not found
+            return self.addToolBar(new_toolbar_or_title)
+        
+        # Insert into tracking systems
+        self._toolbars[target_area].insert(
+            self._toolbars[target_area].index(before_toolbar), new_toolbar)
+        self._toolbar_breaks[target_area].insert(target_position, new_toolbar)
+        
+        # Insert into layout
+        self._insert_toolbar_in_layout(new_toolbar, target_area, target_position)
+        
+        return new_toolbar
+
+    def insertToolBarBreak(self, before_toolbar):
+        """
+        Insert a toolbar break before an existing toolbar, similar to QMainWindow.insertToolBarBreak().
+        
+        Args:
+            before_toolbar: QToolBar to insert break before
+        """
+        # Find the area and position of the before_toolbar
+        for area_name, toolbar_sequence in self._toolbar_breaks.items():
+            try:
+                position = toolbar_sequence.index(before_toolbar)
+                # Insert break at this position
+                self._toolbar_breaks[area_name].insert(position, 'BREAK')
+                
+                # Rebuild the layout for this area to reflect the new break
+                self._rebuild_toolbar_area_layout(area_name)
+                break
+            except ValueError:
+                continue
+
+    def toolBarArea(self, toolbar):
+        """
+        Get the area that contains the specified toolbar.
+        
+        Args:
+            toolbar: QToolBar to find
             
-        elif area_name == 'left':
+        Returns:
+            Qt.ToolBarArea: The area containing the toolbar, or None if not found
+        """
+        for area_name, toolbar_list in self._toolbars.items():
+            if toolbar in toolbar_list:
+                area_map = {
+                    'top': Qt.TopToolBarArea,
+                    'bottom': Qt.BottomToolBarArea,
+                    'left': Qt.LeftToolBarArea,
+                    'right': Qt.RightToolBarArea
+                }
+                return area_map.get(area_name)
+        return None
+
+    def toolBarBreak(self, toolbar):
+        """
+        Check if the specified toolbar is followed by a toolbar break.
+        
+        Args:
+            toolbar: QToolBar to check
+            
+        Returns:
+            bool: True if toolbar is followed by a break, False otherwise
+        """
+        for area_name, toolbar_sequence in self._toolbar_breaks.items():
+            try:
+                position = toolbar_sequence.index(toolbar)
+                # Check if next item is a break
+                if position + 1 < len(toolbar_sequence):
+                    return toolbar_sequence[position + 1] == 'BREAK'
+            except ValueError:
+                continue
+        return False
+
+    def _insert_toolbar_in_layout(self, toolbar, area_name, position=None):
+        """Insert toolbar into the appropriate toolbar area with break support."""
+        # Ensure we have at least one row/column layout for this area
+        if not self._toolbar_row_layouts[area_name]:
+            self._create_new_toolbar_row(area_name)
+        
+        # Get the current row/column layout (last one if position not specified)
+        if position is not None:
+            # Insert at specific position - may need to create new row/column
+            self._insert_toolbar_at_position(toolbar, area_name, position)
+        else:
+            # Add to current (last) row/column
+            current_layout = self._toolbar_row_layouts[area_name][-1]
+            current_layout.addWidget(toolbar)
+        
+        # Set toolbar orientation based on area
+        if area_name in ['left', 'right']:
             toolbar.setOrientation(Qt.Vertical)
-            self._left_toolbar_layout.addWidget(toolbar)
-            
-        elif area_name == 'right':
-            toolbar.setOrientation(Qt.Vertical)
-            self._right_toolbar_layout.addWidget(toolbar)
+        else:
+            toolbar.setOrientation(Qt.Horizontal)
         
         # Update visibility of the toolbar area
         self._update_toolbar_area_visibility()
         
         # Apply toolbar styling
         self._apply_toolbar_styling(toolbar)
+
+    def _create_new_toolbar_row(self, area_name):
+        """Create a new row/column layout for toolbars in the specified area."""
+        if area_name in ['top', 'bottom']:
+            # Horizontal rows for top/bottom areas
+            row_widget = QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(2)
+            
+            # Add to the vertical area layout
+            if area_name == 'top':
+                self._top_toolbar_layout.addWidget(row_widget)
+            else:
+                self._bottom_toolbar_layout.addWidget(row_widget)
+                
+        else:  # left, right
+            # Vertical columns for left/right areas
+            col_widget = QWidget()
+            col_layout = QVBoxLayout(col_widget)
+            col_layout.setContentsMargins(0, 0, 0, 0)
+            col_layout.setSpacing(2)
+            
+            # Add to the horizontal area layout
+            if area_name == 'left':
+                self._left_toolbar_layout.addWidget(col_widget)
+            else:
+                self._right_toolbar_layout.addWidget(col_widget)
+        
+        # Track the new layout
+        self._toolbar_row_layouts[area_name].append(row_layout if area_name in ['top', 'bottom'] else col_layout)
+        
+    def _insert_toolbar_at_position(self, toolbar, area_name, position):
+        """Insert toolbar at specific position, handling breaks and row/column creation."""
+        toolbar_sequence = self._toolbar_breaks[area_name]
+        
+        # Find which row/column this position maps to and local position within that row/column
+        current_row_idx = 0
+        local_position = 0
+        
+        for i, item in enumerate(toolbar_sequence[:position]):
+            if item == 'BREAK':
+                current_row_idx += 1
+                local_position = 0
+            else:
+                local_position += 1
+        
+        # Ensure we have enough rows/columns
+        while len(self._toolbar_row_layouts[area_name]) <= current_row_idx:
+            self._create_new_toolbar_row(area_name)
+        
+        # Insert into the appropriate row/column at local position
+        target_layout = self._toolbar_row_layouts[area_name][current_row_idx]
+        target_layout.insertWidget(local_position, toolbar)
+
+    def _rebuild_toolbar_area_layout(self, area_name):
+        """Rebuild the entire layout for a toolbar area to reflect current breaks."""
+        # Clear existing row/column layouts
+        self._clear_toolbar_area_layouts(area_name)
+        self._toolbar_row_layouts[area_name] = []
+        
+        # Rebuild from toolbar_breaks sequence
+        current_row_toolbars = []
+        
+        for item in self._toolbar_breaks[area_name]:
+            if item == 'BREAK':
+                # End current row/column and start new one
+                if current_row_toolbars:
+                    self._create_toolbar_row_with_toolbars(area_name, current_row_toolbars)
+                    current_row_toolbars = []
+            else:
+                # Add toolbar to current row/column
+                current_row_toolbars.append(item)
+        
+        # Add final row/column if any toolbars remain
+        if current_row_toolbars:
+            self._create_toolbar_row_with_toolbars(area_name, current_row_toolbars)
+        
+        # Update visibility
+        self._update_toolbar_area_visibility()
+
+    def _clear_toolbar_area_layouts(self, area_name):
+        """Clear all toolbar row/column layouts for the specified area."""
+        # Get the main area layout
+        if area_name == 'top':
+            main_layout = self._top_toolbar_layout
+        elif area_name == 'bottom':
+            main_layout = self._bottom_toolbar_layout
+        elif area_name == 'left':
+            main_layout = self._left_toolbar_layout
+        else:  # right
+            main_layout = self._right_toolbar_layout
+        
+        # Remove all row/column widgets
+        while main_layout.count() > 0:
+            child = main_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+    def _create_toolbar_row_with_toolbars(self, area_name, toolbars):
+        """Create a new row/column and populate it with the specified toolbars."""
+        self._create_new_toolbar_row(area_name)
+        current_layout = self._toolbar_row_layouts[area_name][-1]
+        
+        for toolbar in toolbars:
+            current_layout.addWidget(toolbar)
+            # Set toolbar orientation based on area
+            if area_name in ['left', 'right']:
+                toolbar.setOrientation(Qt.Vertical)
+            else:
+                toolbar.setOrientation(Qt.Horizontal)
+            # Apply styling
+            self._apply_toolbar_styling(toolbar)
 
     def _apply_toolbar_styling(self, toolbar):
         """Apply consistent styling to toolbars for better visual distinction."""
