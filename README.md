@@ -17,7 +17,7 @@ For detailed API documentation, see the [wiki/](wiki/) directory.
 * **Performance Optimized**: Built-in caching systems for icons and hit-testing to ensure smooth performance even with complex layouts.
 * **Customizable Appearance**: Easily customize title bar colors, widget styling, and visual effects.
 * **Signal System**: Comprehensive event system to track widget docking, undocking, and layout changes.
-* **Enhanced Toolbar Support**: Create dynamic toolbars with breaks, insertion control, and persistent layouts.
+* **Enhanced Toolbar Support**: Full QMainWindow-style toolbar system with multi-area support (top, bottom, left, right), breaks for row/column organization, precise insertion control, and automatic persistence across sessions.
 * **Multi-Area Layout**: Support for complex layouts with multiple independent docking areas.
 
 ***
@@ -170,6 +170,84 @@ if __name__ == "__main__":
 
     sys.exit(app.exec())
 ```
+
+### Toolbar Integration Example
+
+JCDock provides comprehensive toolbar support with automatic persistence:
+
+```python
+import sys
+from PySide6.QtWidgets import QApplication, QTextEdit, QToolBar, QAction
+from PySide6.QtCore import Qt
+
+from JCDock import DockingManager
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+
+    # 1. Create the Docking Manager
+    manager = DockingManager()
+    
+    # 2. Create main window with toolbar support
+    main_window = manager.create_window(
+        title="Text Editor with Toolbars",
+        is_main_window=True,
+        persist=True,
+        width=1000,
+        height=600
+    )
+    
+    # 3. Create editor content
+    editor = QTextEdit("Start typing...")
+    manager.register_widget(editor)
+    manager.dock_widget(editor, main_window, "center")
+    
+    # 4. Add comprehensive toolbar layout
+    
+    # File operations toolbar
+    file_toolbar = main_window.addToolBar("File")
+    file_toolbar.addAction("New")
+    file_toolbar.addAction("Open")
+    file_toolbar.addAction("Save")
+    
+    # Edit operations toolbar (same row)
+    edit_toolbar = main_window.addToolBar("Edit")  
+    edit_toolbar.addAction("Cut")
+    edit_toolbar.addAction("Copy")
+    edit_toolbar.addAction("Paste")
+    
+    # Create toolbar break for new row
+    main_window.addToolBarBreak()
+    
+    # Format toolbar (new row)
+    format_toolbar = main_window.addToolBar("Format")
+    format_toolbar.addAction("Bold")
+    format_toolbar.addAction("Italic")
+    format_toolbar.addAction("Underline")
+    
+    # Status toolbar at bottom
+    status_toolbar = main_window.addToolBar("Status", Qt.BottomToolBarArea)
+    status_toolbar.addAction("Status: Ready")
+    
+    # 5. Demonstrate dynamic toolbar insertion
+    # Insert priority toolbar before edit toolbar
+    priority_toolbar = main_window.insertToolBar(edit_toolbar, "Priority")
+    priority_toolbar.addAction("Important Action")
+    
+    # Add break before priority toolbar to reorganize layout
+    main_window.insertToolBarBreak(priority_toolbar)
+    
+    main_window.show()
+
+    # Toolbar state is automatically saved/restored with layout
+    sys.exit(app.exec())
+```
+
+This example demonstrates:
+- **Multi-area toolbar support**: Top and bottom toolbar areas
+- **Toolbar breaks**: Creating rows/columns within areas  
+- **Dynamic insertion**: Adding toolbars between existing ones
+- **Automatic persistence**: Toolbar layouts saved with application state
 
 ## Complete Examples and Testing
 
