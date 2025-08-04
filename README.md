@@ -6,6 +6,8 @@ JCDock allows you to create complex user interfaces where widgets can be docked 
 
 ## Features
 
+For detailed API documentation, see the [wiki/](wiki/) directory.
+
 * **Advanced Docking**: Dock widgets to the top, bottom, left, right, or center of other widgets and containers with visual overlay guides.
 * **Floating Windows**: Undock any widget or group of widgets into its own floating window with native-like appearance including drop shadows and proper window management.
 * **Tearable Tabs**: Users can tear individual tabs away from a tab group to instantly create new floating windows with smooth visual feedback.
@@ -15,6 +17,8 @@ JCDock allows you to create complex user interfaces where widgets can be docked 
 * **Performance Optimized**: Built-in caching systems for icons and hit-testing to ensure smooth performance even with complex layouts.
 * **Customizable Appearance**: Easily customize title bar colors, widget styling, and visual effects.
 * **Signal System**: Comprehensive event system to track widget docking, undocking, and layout changes.
+* **Enhanced Toolbar Support**: Create dynamic toolbars with breaks, insertion control, and persistent layouts.
+* **Multi-Area Layout**: Support for complex layouts with multiple independent docking areas.
 
 ***
 ## Installation
@@ -168,28 +172,30 @@ python run_test_suite.py
 ![JCDock Demo](src/JCDock/Examples/sample.png)
 *Example of JCDock in action showing floating windows, docked panels, and tearable tabs*
 
-The test suite (`src/JCDock/Examples/test_suite/`) features a modular architecture with:
+The test suite (`src/JCDock/Examples/test_suite/`) provides comprehensive testing through a modular architecture:
 
 #### Core Components
-- **`main.py`** - Application entry point and configuration
-- **`app.py`** - Main application class with UI coordination
+- **Entry Point**: `main.py` for configuration and execution
+- **Application Core**: `app.py` handling test orchestration
 
-#### Managers (`managers/`)
-- **`test_manager.py`** - Test execution and validation
-- **`ui_manager.py`** - Menu system and user interface management  
-- **`layout_manager.py`** - Layout persistence and file operations
+#### Specialized Managers
+- **Test Manager**: Test execution and validation (`managers/test_manager.py`)
+- **UI Manager**: Menu system and interaction (`managers/ui_manager.py`)
+- **Layout Manager**: Layout persistence testing (`managers/layout_manager.py`)
 
-#### Test Widgets (`widgets/`)
-- **`test_widgets.py`** - Registry-based widgets with `@dockable` decorators
-- **`financial_widgets.py`** - Complex financial dashboard widgets (Chart, Order, Portfolio)
+#### Test Widgets
+- **Base Widgets**: Registry and decorator examples (`widgets/test_widgets.py`)
+- **Complex Widgets**: Financial dashboard demos (`widgets/financial_widgets.py`)
 
-#### Utilities (`utils/`)
-- **`constants.py`** - Application constants and configuration
-- **`data_generator.py`** - Random data generation for testing
-- **`test_utilities.py`** - Testing helper functions and validation
+#### Testing Features
+- **Registry Testing**: `@persistable` decorator and widget registration
+- **API Coverage**: Both registry and instance-based operations
+- **Layout Testing**: Serialization and state preservation
+- **Performance**: Visual feedback and drag operation metrics
+- **Event System**: Signal listeners and lifecycle events
 
 #### Key Testing Features
-- **Registry-based widget creation** using `@dockable` decorators
+- **Registry-based widget creation** using `@persistable` decorators
 - **Both API paths**: "By Type" (registry-based) and "By Instance" (existing widgets)
 - **Comprehensive testing functions** for all API methods including widget finding, listing, docking operations, and state management
 - **Signal system usage** with event listeners for layout changes
@@ -204,6 +210,7 @@ The test suite demonstrates automatic layout persistence using the standard layo
 ```
 layouts/
 └── jcdock_layout.ini  # Automatically saved/loaded layout file
+└── toolbar_demo_layout.bin  # Example toolbar layout persistence
 ```
 
 The layout file preserves:
@@ -211,25 +218,26 @@ The layout file preserves:
 - **Window geometry** and multi-monitor positioning
 - **Widget state** (custom data via `get_dock_state()`/`set_dock_state()`)
 - **Tab ordering** and splitter proportions
+- **Toolbar layouts** including breaks, insertion points, and custom item states
 
 ## Advanced Features
 
 ### Layout Persistence
 
-JCDock automatically supports saving and restoring layouts when you use the registry system with `@dockable` decorated widgets:
+JCDock automatically supports saving and restoring layouts when you use the registry system with `@persistable` decorated widgets:
 
 ```python
 from PySide6.QtWidgets import QLabel, QTextEdit
 from JCDock import dockable
 
 # Register widget types for automatic layout persistence
-@dockable("project_explorer", "Project Explorer")
+@persistable("project_explorer", "Project Explorer")
 class ProjectWidget(QLabel):
     def __init__(self):
         super().__init__()
         self.setText("Project Files")
 
-@dockable("code_editor", "Code Editor")
+@persistable("code_editor", "Code Editor")
 class EditorWidget(QTextEdit):
     def __init__(self):
         super().__init__()
@@ -274,6 +282,11 @@ manager.signals.layout_changed.connect(lambda:
 - `layout_changed()` - Any layout modification occurred
 
 ***
+## Additional Documentation
+
+- **[wiki/](wiki/)** - Comprehensive API documentation and usage guides
+- **CLAUDE.md** - Development guidelines and context for development tools
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.

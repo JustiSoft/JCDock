@@ -164,9 +164,9 @@ class LayoutSerializer:
             
             # Backward compatibility: if no is_main_window property, fall back to class-based detection
             if 'is_main_window' not in window_state:
-                is_main_window = window_class in ('MainDockWindow')
+                is_main_window = False  # Legacy main window check removed
 
-            if is_main_window and window_class in ('DockContainer', 'MainDockWindow'):
+            if is_main_window and window_class == 'DockContainer':
                 # This is the main window - restore to existing main window
                 container = self.manager.main_window
                 geom_tuple = window_state['geometry']
