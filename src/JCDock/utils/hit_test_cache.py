@@ -200,11 +200,20 @@ class HitTestCache:
         for container in dock_containers:
             try:
                 if container and container.isVisible():
-                    container_z_order = 0
+                    container_z_order = -1  # Default to very low priority if not found in window_stack
                     for window, (rect, z_index) in self._window_rects.items():
                         if window is container:
                             container_z_order = z_index
                             break
+                    
+                    # Ensure main windows get proper priority even if not found in window_rects
+                    if container_z_order == -1 and hasattr(container, 'is_main_window') and container.is_main_window:
+                        # Find main window's actual position in window_stack
+                        for idx, window in enumerate(window_stack):
+                            if window is container:
+                                container_z_order = idx
+                                break
+                    
                     self._cache_container_targets(container, container_z_order)
             except RuntimeError:
                 # Container was deleted, skip it
@@ -320,6 +329,10 @@ class HitTestCache:
                 # Also exclude widgets that belong to the dragging container
                 if excluded_widget and target.parent_container is excluded_widget:
                     continue
+                
+                # Check if this target is completely obscured by higher Z-order windows
+                if self._is_target_obscured_at_position(target, global_pos):
+                    continue
                     
                 matching_targets.append(target)
                 
@@ -336,6 +349,27 @@ class HitTestCache:
             return best_target
             
         return None
+    
+    def _is_target_obscured_at_position(self, target, global_pos: QPoint) -> bool:
+        """
+        Check if the given target is completely obscured by higher Z-order windows at the specific position.
+        This prevents hidden containers from intercepting drag operations.
+        """
+        # Check if any higher Z-order window completely covers this position
+        for window, (window_rect, window_z_order) in self._window_rects.items():
+            # Skip windows with lower or equal Z-order (they're behind or at same level)
+            if window_z_order <= target.z_order:
+                continue
+            
+            # Skip the target window itself
+            if window is target.widget:
+                continue
+                
+            # If a higher Z-order window contains this position, the target is obscured
+            if window_rect.contains(global_pos):
+                return True
+                
+        return False
         
     def find_tab_bar_at_position(self, global_pos: QPoint) -> Optional[CachedTabBarInfo]:
         """
