@@ -58,36 +58,42 @@ Using the `-e` or `--editable` flag is recommended for development. It installs 
 JCDock uses a unified window model where all floating windows are `DockContainer` instances. The architecture is built around a central state machine with specialized components:
 
 ### Core Components
-- **DockingManager**: Central orchestrator managing all docking operations, widget registration, and layout persistence
-- **DockingState**: State machine defining operational states (IDLE, RENDERING, DRAGGING_WINDOW, RESIZING_WINDOW, DRAGGING_TAB)
-- **DockPanel**: Wrapper for any QWidget to make it dockable with title bars and controls  
-- **DockContainer**: Unified container system supporting both embedded and floating windows with configurable behavior (main window, persistent root, title bars, etc.)
-- **TearableTabWidget**: Enhanced tab widget supporting drag-out operations with visual feedback
+- **DockingManager** (`src/JCDock/core/docking_manager.py`): Central orchestrator managing all docking operations, widget registration, and layout persistence
+- **DockingState** (`src/JCDock/core/docking_manager.py`): State machine defining operational states (IDLE, RENDERING, DRAGGING_WINDOW, RESIZING_WINDOW, DRAGGING_TAB)
+- **DockPanel** (`src/JCDock/widgets/dock_panel.py`): Wrapper for any QWidget to make it dockable with title bars and controls  
+- **DockContainer** (`src/JCDock/widgets/dock_container.py`): Unified container system supporting both embedded and floating windows with configurable behavior (main window, persistent root, title bars, etc.)
+- **TearableTabWidget** (`src/JCDock/widgets/tearable_tab_widget.py`): Enhanced tab widget supporting drag-out operations with visual feedback
 
 ### Specialized Systems
 
-#### Core (`core/`)
-- **WidgetRegistry**: Registry system for widget types enabling automatic layout persistence
-- **DockingState**: State machine enum defining operational states
+#### Core (`src/JCDock/core/`)
+- **WidgetRegistry** (`src/JCDock/core/widget_registry.py`): Registry system for widget types enabling automatic layout persistence
+- **DockingState** (`src/JCDock/core/docking_manager.py`): State machine enum defining operational states
 
-#### Model (`model/`)
-- **LayoutSerializer**: Handles serialization and deserialization of dock layout state
-- **LayoutRenderer**: Handles layout rendering and state transitions
-- **LayoutModel**: Core data structures for layout representation
+#### Model (`src/JCDock/model/`)
+- **LayoutSerializer** (`src/JCDock/model/layout_serializer.py`): Handles serialization and deserialization of dock layout state
+- **LayoutRenderer** (`src/JCDock/model/layout_renderer.py`): Handles layout rendering and state transitions
+- **LayoutModel** (`src/JCDock/model/dock_model.py`): Core data structures for layout representation
 
-#### Interaction (`interaction/`)
-- **DragDropController**: Manages drag-and-drop operations and visual feedback
-- **OverlayManager**: Manages visual overlay system during drag operations
-- **DockingOverlay**: Visual feedback overlays for drop zones
+#### Interaction (`src/JCDock/interaction/`)
+- **DragDropController** (`src/JCDock/interaction/drag_drop_controller.py`): Manages drag-and-drop operations and visual feedback
+- **DragProxy** (`src/JCDock/interaction/drag_proxy.py`): Drag preview widgets for visual feedback
+- **OverlayManager** (`src/JCDock/interaction/overlay_manager.py`): Manages visual overlay system during drag operations
+- **DockingOverlay** (`src/JCDock/interaction/docking_overlay.py`): Visual feedback overlays for drop zones
 
-#### Factories (`factories/`)
-- **WidgetFactory**: Creates and manages widget instances
-- **WindowManager**: Handles window creation and management
-- **ModelUpdateEngine**: Manages model state updates
+#### Factories (`src/JCDock/factories/`)
+- **WidgetFactory** (`src/JCDock/factories/widget_factory.py`): Creates and manages widget instances
+- **WindowManager** (`src/JCDock/factories/window_manager.py`): Handles window creation and management
+- **ModelUpdateEngine** (`src/JCDock/factories/model_update_engine.py`): Manages model state updates
 
-#### Utils (`utils/`)
-- **HitTestCache**: Performance optimization for overlay hit-testing during drag operations
-- **IconCache**: LRU cache system for icon rendering performance optimization
+#### Utils (`src/JCDock/utils/`)
+- **HitTestCache** (`src/JCDock/utils/hit_test_cache.py`): Performance optimization for overlay hit-testing during drag operations
+- **IconCache** (`src/JCDock/utils/icon_cache.py`): LRU cache system for icon rendering performance optimization
+- **PerformanceMonitor** (`src/JCDock/utils/performance_monitor.py`): Runtime performance tracking and metrics collection
+- **ResizeCache** (`src/JCDock/utils/resize_cache.py`): Resize constraint caching and validation
+- **ResizeGestureManager** (`src/JCDock/utils/resize_gesture_manager.py`): Advanced resize gesture handling
+- **ResizeThrottler** (`src/JCDock/utils/resize_throttler.py`): Throttling system for resize operations
+- **WindowsShadow** (`src/JCDock/utils/windows_shadow.py`): Native Windows DWM shadow effects
 
 ## Basic Usage
 
@@ -109,7 +115,13 @@ if __name__ == "__main__":
     # 2. Create content and make it a floating dockable widget
     content = QLabel("Hello, JCDock!")
     content.setAlignment(Qt.AlignCenter)
-    manager.create_simple_floating_widget(content, "My Widget")
+    
+    window = manager.create_window(
+        content=content,
+        title="My Widget",
+        persist=True
+    )
+    window.show()
 
     sys.exit(app.exec())
 ```
@@ -123,7 +135,7 @@ import sys
 from PySide6.QtWidgets import QApplication, QLabel, QTextEdit
 from PySide6.QtCore import Qt
 
-from JCDock import DockingManager, DockContainer
+from JCDock import DockingManager
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
@@ -131,27 +143,29 @@ if __name__ == "__main__":
     # 1. Create the Docking Manager
     manager = DockingManager()
     
-    # 2. Create a main window using DockContainer
-    main_window = DockContainer(
-        manager=manager,
-        show_title_bar=True,
+    # 2. Create a main window
+    main_window = manager.create_window(
+        title="My Application",
         is_main_window=True,
-        window_title="My Application",
-        auto_persistent_root=True
+        persist=True,
+        x=100,
+        y=100,
+        width=1000,
+        height=600
     )
 
-    # 3. Create simple floating widgets
+    # 3. Create widget content
     project_content = QLabel("Project Explorer")
-    _, project_panel = manager.create_simple_floating_widget(project_content, "Project")
-
     editor_content = QTextEdit("Your code here...")
-    _, editor_panel = manager.create_simple_floating_widget(editor_content, "Editor")
+    
+    # 4. Register widgets with manager
+    manager.register_widget(project_content)
+    manager.register_widget(editor_content)
 
-    # 4. Dock widgets to create layout
-    manager.dock_widget(project_panel, main_window, "left")
-    manager.dock_widget(editor_panel, project_panel, "right")
+    # 5. Dock widgets to create layout
+    manager.dock_widget(project_content, main_window, "left")
+    manager.dock_widget(editor_content, main_window, "center")
 
-    main_window.setGeometry(100, 100, 1000, 600)
     main_window.show()
 
     sys.exit(app.exec())
@@ -164,15 +178,15 @@ if __name__ == "__main__":
 JCDock includes a modular test suite that demonstrates all framework capabilities and serves as both a testing framework and reference implementation. To run the test suite:
 
 ```bash
-# From the Examples directory
+# From the project root
 cd src/JCDock/Examples
-python run_test_suite.py
+../../../.venv/Scripts/python.exe run_test_suite.py
 ```
 
 ![JCDock Demo](src/JCDock/Examples/sample.png)
 *Example of JCDock in action showing floating windows, docked panels, and tearable tabs*
 
-The test suite (`src/JCDock/Examples/test_suite/`) provides comprehensive testing through a modular architecture:
+The test suite (`src/JCDock/Examples/test_suite/`), which can be run from the Examples directory: provides comprehensive testing through a modular architecture:
 
 #### Core Components
 - **Entry Point**: `main.py` for configuration and execution
@@ -228,7 +242,7 @@ JCDock automatically supports saving and restoring layouts when you use the regi
 
 ```python
 from PySide6.QtWidgets import QLabel, QTextEdit
-from JCDock import dockable
+from JCDock import persistable
 
 # Register widget types for automatic layout persistence
 @persistable("project_explorer", "Project Explorer")
@@ -243,9 +257,24 @@ class EditorWidget(QTextEdit):
         super().__init__()
         self.setPlainText("# Your code here")
 
-# Create widgets using registry keys
-manager.create_floating_widget_from_key("project_explorer")
-manager.create_floating_widget_from_key("code_editor")
+# Create widgets using registered types
+project = ProjectWidget()
+editor = EditorWidget()
+
+# Create windows for widgets
+project_window = manager.create_window(
+    content=project,
+    key="project_explorer",
+    title="Project Explorer",
+    persist=True
+)
+
+editor_window = manager.create_window(
+    content=editor,
+    key="code_editor", 
+    title="Code Editor",
+    persist=True
+)
 
 # Save and restore layouts (binary format)
 layout_data = manager.save_layout_to_bytearray()
