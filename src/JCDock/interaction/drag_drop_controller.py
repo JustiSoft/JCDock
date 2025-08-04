@@ -207,6 +207,10 @@ class DragDropController:
                 self.manager._set_state(DockingState.DRAGGING_WINDOW)
                 self.manager.hit_test_cache.set_drag_operation_state(True, source_container)
                 
+                # Just-in-time cache rebuild: ensure cache is valid before starting drag
+                if not self.manager.hit_test_cache.is_cache_valid():
+                    self.manager.hit_test_cache.build_cache(self.manager.window_stack, self.manager.containers)
+                
                 # Create and show drag proxy
                 self._create_drag_proxy(source_container)
                 if self._drag_proxy:

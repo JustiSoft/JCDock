@@ -386,6 +386,9 @@ class DockContainer(QWidget):
     def closeEvent(self, event):
         """Handle window close events (Alt+F4, system close, etc.)."""
         if self.manager:
+            # Invalidate hit test cache since window is closing
+            self.manager.hit_test_cache.invalidate()
+            
             root_node = self.manager.model.roots.get(self)
             if root_node:
                 all_widgets_in_container = self.manager.model.get_all_widgets_from_node(root_node)
@@ -1189,6 +1192,11 @@ class DockContainer(QWidget):
         event filters are correctly installed every time the container becomes visible.
         """
         self.update_content_event_filters()
+        
+        # Invalidate hit test cache since window visibility/geometry may have changed
+        if self.manager:
+            self.manager.hit_test_cache.invalidate()
+            
         super().showEvent(event)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:

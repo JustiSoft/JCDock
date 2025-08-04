@@ -130,6 +130,22 @@ def main():
     # Show main window
     main_window.show()
     
+    # Defer initial cache build to allow window manager to position windows properly
+    from PySide6.QtCore import QTimer
+    def build_initial_cache():
+        """
+        Build the initial hit test cache after the Qt event loop has processed
+        window positioning and rendering events. This ensures accurate geometry
+        data for overlay detection from the very first drag operation.
+        """
+        if manager.containers:
+            if manager.debug_mode:
+                print(f"CACHE: Building initial cache after window manager positioning - {len(manager.containers)} containers")
+            manager.hit_test_cache.build_cache(manager.window_stack, manager.containers)
+    
+    # Use QTimer.singleShot(0) to defer cache building until after event loop processing
+    QTimer.singleShot(0, build_initial_cache)
+    
     print("\nMain Window with Menu and Status Bar Demo Instructions:")
     print("1. Use 'Widgets > Create Widget' to create new floating widgets")
     print("2. Drag tabs between windows to dock widgets together")

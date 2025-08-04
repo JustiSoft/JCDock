@@ -385,6 +385,9 @@ class DockingManager(QObject):
         geometry = QRect(x, y, width, height)
         container = self.widget_factory.create_floating_window([panel], geometry)
         
+        # Mark cache as needing rebuild - will be built just-in-time when needed
+        self.hit_test_cache.invalidate()
+        
         return container
     
     def _create_main_window(self, content, title, x, y, width, height, **kwargs):
@@ -422,6 +425,9 @@ class DockingManager(QObject):
             # Dock to main window
             self.dock_widget(panel, main_window, "center")
         
+        # Mark cache as needing rebuild - will be built just-in-time when needed
+        self.hit_test_cache.invalidate()
+        
         return main_window
     
     def _create_persistent_container(self, title, x, y, width, height, **kwargs):
@@ -447,6 +453,9 @@ class DockingManager(QObject):
         
         # Bring to front in the window stack
         self.bring_to_front(container)
+        
+        # Mark cache as needing rebuild - will be built just-in-time when needed  
+        self.hit_test_cache.invalidate()
         
         return container
     
@@ -2284,7 +2293,10 @@ class DockingManager(QObject):
         
         global_pos = event.globalPosition().toPoint()
         
-        if not hasattr(self.hit_test_cache, '_cache_valid') or not self.hit_test_cache._cache_valid:
+        # Just-in-time cache validation: only rebuild if invalid and we have containers
+        if not self.hit_test_cache.is_cache_valid() and self.containers:
+            if self.debug_mode:
+                print(f"CACHE: Just-in-time cache rebuild - {len(self.containers)} containers, {len(self.window_stack)} windows")
             self.hit_test_cache.build_cache(self.window_stack, self.containers)
         
         if self.is_idle():

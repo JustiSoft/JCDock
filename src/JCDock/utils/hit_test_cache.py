@@ -184,9 +184,15 @@ class HitTestCache:
         for z_index, window in enumerate(window_stack):
             try:
                 if window and window.isVisible():
+                    # Ensure window has stable geometry before caching
+                    if hasattr(window, 'isValid') and callable(getattr(window, 'isValid')):
+                        if not window.isValid():
+                            continue
+                    
                     global_pos = window.mapToGlobal(QPoint(0, 0))
                     global_rect = QRect(global_pos, window.size())
                     
+                    # Validate geometry is reasonable
                     if (global_pos.x() < -50000 or global_pos.y() < -50000 or 
                         global_pos.x() > 50000 or global_pos.y() > 50000 or
                         window.size().width() <= 0 or window.size().height() <= 0):
@@ -331,7 +337,7 @@ class HitTestCache:
                     continue
                 
                 # Check if this target is completely obscured by higher Z-order windows
-                if self._is_target_obscured_at_position(target, global_pos):
+                if self._is_target_obscured_at_position(target, global_pos, excluded_widget):
                     continue
                     
                 matching_targets.append(target)
@@ -350,10 +356,15 @@ class HitTestCache:
             
         return None
     
-    def _is_target_obscured_at_position(self, target, global_pos: QPoint) -> bool:
+    def _is_target_obscured_at_position(self, target, global_pos: QPoint, excluded_widget: Optional[QWidget] = None) -> bool:
         """
         Check if the given target is completely obscured by higher Z-order windows at the specific position.
         This prevents hidden containers from intercepting drag operations.
+        
+        Args:
+            target: The target to check for obscurity
+            global_pos: The position to check at
+            excluded_widget: Widget being dragged that should be ignored when checking for obscurity
         """
         # Check if any higher Z-order window completely covers this position
         for window, (window_rect, window_z_order) in self._window_rects.items():
@@ -364,8 +375,12 @@ class HitTestCache:
             # Skip the target window itself
             if window is target.widget:
                 continue
+
+            # CRITICAL FIX: The widget being dragged cannot obscure other widgets
+            if window is excluded_widget:
+                continue
                 
-            # If a higher Z-order window contains this position, the target is obscured
+            # If a higher Z-order window (that isn't being dragged) contains this position, the target is obscured
             if window_rect.contains(global_pos):
                 return True
                 
@@ -511,6 +526,54 @@ class HitTestCache:
             
         return False
     
+    def validate_window_geometries(self) -> bool:
+        """
+        Validate all cached window geometries and update if they've changed.
+        This is useful after window manager repositioning.
+        
+        Returns:
+            bool: True if any geometries were updated, False otherwise
+        """
+        if not self._cache_valid:
+            return False
+            
+        geometries_updated = False
+        windows_to_remove = []
+        
+        for window, (cached_rect, z_index) in list(self._window_rects.items()):
+            try:
+                if not window or not window.isVisible():
+                    windows_to_remove.append(window)
+                    continue
+                    
+                current_pos = window.mapToGlobal(QPoint(0, 0))
+                current_rect = QRect(current_pos, window.size())
+                
+                # Check if geometry has changed significantly
+                if (abs(current_rect.x() - cached_rect.x()) > 5 or 
+                    abs(current_rect.y() - cached_rect.y()) > 5 or
+                    abs(current_rect.width() - cached_rect.width()) > 5 or
+                    abs(current_rect.height() - cached_rect.height()) > 5):
+                    
+                    self._window_rects[window] = (current_rect, z_index)
+                    geometries_updated = True
+                    
+                    # Clear position cache to force recalculation
+                    self._last_mouse_pos = None
+                    self._last_hit_result = None
+                    
+            except RuntimeError:
+                # Window was deleted
+                windows_to_remove.append(window)
+        
+        # Remove invalid windows
+        for window in windows_to_remove:
+            if window in self._window_rects:
+                del self._window_rects[window]
+                geometries_updated = True
+        
+        return geometries_updated
+
     def get_geometry_cache_stats(self) -> dict:
         """
         Get statistics about the geometry cache for performance monitoring.

@@ -174,7 +174,10 @@ class TearableTabWidget(QTabWidget):
         
         self.manager._set_state(DockingState.DRAGGING_TAB)
         self.manager.destroy_all_overlays()
-        self.manager.hit_test_cache.build_cache(self.manager.window_stack, self.manager.containers)
+        
+        # Just-in-time cache rebuild: ensure cache is valid before starting tab drag
+        if not self.manager.hit_test_cache.is_cache_valid():
+            self.manager.hit_test_cache.build_cache(self.manager.window_stack, self.manager.containers)
         
         # Find parent container to exclude from overlay targets
         parent_container = self.parent()
