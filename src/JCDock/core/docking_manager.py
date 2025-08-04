@@ -395,6 +395,7 @@ class DockingManager(QObject):
             'show_title_bar': True,
             'window_title': title or "Main Window",
             'auto_persistent_root': True,
+            'preserve_title': True,  # Ensure main window title doesn't change to "Empty Container"
             'default_geometry': (x, y, width, height),
             **kwargs
         }
