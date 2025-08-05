@@ -24,7 +24,8 @@ class DockContainer(QWidget):
                  show_title_bar=True, title_bar_color=None, background_color=None, border_color=None,
                  title_text_color=None, icon: Optional[Union[str, QIcon]] = None,
                  is_main_window=False, preserve_title=False, auto_persistent_root=False,
-                 apply_shadow=None, window_title=None, default_geometry=(400, 400, 600, 500)):
+                 apply_shadow=None, window_title=None, default_geometry=(400, 400, 600, 500),
+                 auto_register=True):
         super().__init__(parent)
 
         # Initialize tracking set early before any addWidget calls that trigger childEvent
@@ -59,8 +60,8 @@ class DockContainer(QWidget):
         self.preserve_title = preserve_title
         self._is_persistent_root = auto_persistent_root
         
-        # Auto-register with manager if provided
-        if self.manager:
+        # Auto-register with manager if provided and enabled
+        if self.manager and auto_register:
             self.manager._register_dock_area(self)
         
         # Set window title and geometry
@@ -385,29 +386,54 @@ class DockContainer(QWidget):
 
     def closeEvent(self, event):
         """Handle window close events (Alt+F4, system close, etc.)."""
+        
+        # Check if application is shutting down - if so, don't modify manager state
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        is_closing_down = app and app.closingDown()
+        manager_shutting_down = self.manager and getattr(self.manager, '_is_shutting_down', False)
+        
+        
         if self.manager:
-            # Invalidate hit test cache since window is closing
-            self.manager.hit_test_cache.invalidate()
-            
-            root_node = self.manager.model.roots.get(self)
-            if root_node:
-                all_widgets_in_container = self.manager.model.get_all_widgets_from_node(root_node)
-                for widget_node in all_widgets_in_container:
-                    if hasattr(widget_node, 'persistent_id'):
-                        self.manager.signals.widget_closed.emit(widget_node.persistent_id)
+            if is_closing_down or manager_shutting_down:
+                # Application is shutting down - skip manager cleanup to preserve state for save
+                pass
+            else:
+                # Normal close - perform full cleanup
+                # 1. Invalidate cache
+                self.manager.hit_test_cache.invalidate()
+
+                # 2. Notify manager to remove strong reference and unregister from model.
+                self.manager._remove_top_level_container(self)
                 
-                del self.manager.model.roots[self]
-                
+                # 3. Unregister from other manager lists.
                 if self in self.manager.containers:
                     self.manager.containers.remove(self)
+                if self in self.manager.window_stack:
+                    self.manager.window_stack.remove(self)
                 
-                self.manager.signals.layout_changed.emit()
-        
+                # 4. Remove from model AFTER other cleanup.
+                if self in self.manager.model.roots:
+                    del self.manager.model.roots[self]
+
+            # 5. Emit signals
+            self.manager.signals.layout_changed.emit()
+            # Note: widget_closed signals should be emitted by a higher-level controller
+            # that knows which widgets were inside this container.
+            
         if self.is_main_window:
             from PySide6.QtWidgets import QApplication
             QApplication.instance().quit()
-        
+
         event.accept()
+
+    def __del__(self):
+        """Python destructor. Useful for confirming garbage collection."""
+        try:
+            title = self.windowTitle()
+        except RuntimeError:
+            # Qt object already deleted - this is normal during shutdown
+            pass
 
     def menuBar(self):
         """Provide QMainWindow-like menuBar() method for compatibility."""
@@ -913,6 +939,26 @@ class DockContainer(QWidget):
 
     def _handle_user_close(self):
         """Handle close button click by actually closing the window and all its contents."""
+        
+        # If this is the main window, handle controlled application shutdown
+        if getattr(self, 'is_main_window', False):
+            self._handle_main_window_close()
+            return
+            
+        # Check if application is shutting down - if so, don't modify manager state
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        is_closing_down = app and app.closingDown()
+        manager_shutting_down = self.manager and getattr(self.manager, '_is_shutting_down', False)
+        
+        
+        if is_closing_down or manager_shutting_down:
+            # Application is shutting down - just close the window without modifying manager state
+            # This prevents containers from removing themselves during shutdown before layout save
+            if not self.is_main_window:
+                self.close()
+            return
+        
         if self.manager:
             root_node = self.manager.model.roots.get(self)
             if root_node:
@@ -929,10 +975,36 @@ class DockContainer(QWidget):
                 self.manager.signals.layout_changed.emit()
         
         if self.is_main_window:
-            from PySide6.QtWidgets import QApplication
             QApplication.instance().quit()
         else:
             self.close()
+
+    def _handle_main_window_close(self):
+        """
+        Handle main window close with controlled shutdown process.
+        Saves layout before closing to prevent widget loss during shutdown.
+        """
+        
+        if self.manager:
+            # Set shutdown flag to prevent other containers from cleaning up during close
+            self.manager._is_shutting_down = True
+            
+            # Check if manager has a layout save method
+            if hasattr(self.manager, 'save_layout_to_bytearray'):
+                try:
+                    layout_data = self.manager.save_layout_to_bytearray()
+                    
+                    # Emit signal for applications that want to handle their own saving
+                    if hasattr(self.manager, 'signals') and hasattr(self.manager.signals, 'application_closing'):
+                        self.manager.signals.application_closing.emit(layout_data)
+                        
+                except Exception as e:
+                    # Continue with shutdown even if save fails
+                    pass
+        
+        # Now proceed with application quit
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance().quit()
 
     def paintEvent(self, event):
         # Default paint event is sufficient for opaque containers

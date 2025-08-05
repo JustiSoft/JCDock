@@ -137,6 +137,8 @@ class DockingSignals(QObject):
     widget_closed = Signal(str)
 
     layout_changed = Signal()
+    
+    application_closing = Signal(object)  # Emitted with layout data when main window closes
 
 class DockingManager(QObject):
     def __init__(self):
@@ -176,6 +178,10 @@ class DockingManager(QObject):
         self.window_manager = WindowManager(self)
         self.overlay_manager = OverlayManager(self)
         self.model_update_engine = ModelUpdateEngine(self)
+        
+        # This list holds strong references to all top-level containers
+        # to prevent them from being prematurely garbage collected.
+        self._top_level_containers = []
         
         # Connect performance monitor to hit test cache
         self.hit_test_cache.set_performance_monitor(self.performance_monitor)
@@ -629,6 +635,9 @@ class DockingManager(QObject):
         if dock_area not in self.window_stack:
             self.window_stack.append(dock_area)
 
+        # Keep a strong reference to prevent premature garbage collection.
+        self._add_top_level_container(dock_area)
+
         self.add_widget_handlers(dock_area)
 
         if not self.is_deleted(dock_area):
@@ -687,6 +696,36 @@ class DockingManager(QObject):
         if widget_to_remove in self.window_stack:
             self.window_stack.remove(widget_to_remove)
         self.model.unregister_widget(widget_to_remove)
+
+    def _unregister_container(self, container_to_remove: DockContainer):
+        """
+        Centralized method to completely unregister a container from all
+        manager tracking lists, including the strong reference list.
+        """
+        if container_to_remove in self.containers:
+            self.containers.remove(container_to_remove)
+        if container_to_remove in self.model.roots:
+            del self.model.roots[container_to_remove]
+        if container_to_remove in self.window_stack:
+            self.window_stack.remove(container_to_remove)
+        self._remove_top_level_container(container_to_remove)
+
+    def _add_top_level_container(self, container: 'DockContainer'):
+        """
+        Adds a container to the strong reference list, making the manager
+        its effective owner and preventing premature garbage collection.
+        This is the definitive method for tracking top-level windows.
+        """
+        if container not in self._top_level_containers:
+            self._top_level_containers.append(container)
+
+    def _remove_top_level_container(self, container: 'DockContainer'):
+        """
+        Removes a container from the strong reference list, allowing it
+        to be garbage collected. Called when the container is intentionally closed.
+        """
+        if container in self._top_level_containers:
+            self._top_level_containers.remove(container)
 
     def _render_layout(self, container: DockContainer, widget_to_activate: DockPanel = None):
         """Delegate to LayoutRenderer. Used by drag_drop_controller and layout_serializer."""

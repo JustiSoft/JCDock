@@ -168,12 +168,29 @@ class LayoutSerializer:
 
             if is_main_window and window_class == 'DockContainer':
                 # This is the main window - restore to existing main window
-                container = self.manager.main_window
+                if self.manager.main_window is None:
+                    # No main window exists - create one as a floating container instead
+                    auto_persistent_root = window_state.get('auto_persistent_root', True)
+                    new_window = DockContainer(
+                        manager=self.manager,
+                        show_title_bar=True,
+                        window_title="Restored Main Window",
+                        is_main_window=True,
+                        auto_persistent_root=auto_persistent_root,
+                        auto_register=False
+                    )
+                    # Manually register container after creation
+                    self.manager._register_dock_area(new_window)
+                    self.manager.set_main_window(new_window)
+                    container = new_window
+                else:
+                    container = self.manager.main_window
+                
                 geom_tuple = window_state['geometry']
-                self.manager.main_window.setGeometry(geom_tuple[0], geom_tuple[1], geom_tuple[2], geom_tuple[3])
+                container.setGeometry(geom_tuple[0], geom_tuple[1], geom_tuple[2], geom_tuple[3])
 
                 if window_state.get('is_maximized', False):
-                    self.manager.main_window.showMaximized()
+                    container.showMaximized()
 
                 self.manager.model.roots[container] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
                 self.manager._render_layout(container)
@@ -214,8 +231,10 @@ class LayoutSerializer:
                     show_title_bar=True,
                     window_title="Restored Floating Window",
                     is_main_window=False,
-                    auto_persistent_root=auto_persistent_root
+                    auto_persistent_root=auto_persistent_root,
+                    auto_register=False
                 )
+                # Manually register container after creation (auto_register=False prevents double registration)
                 self.manager._register_dock_area(new_window)
                 self.manager.model.roots[new_window] = self._deserialize_node(window_state['content'], loaded_widgets_cache)
                 self.manager._render_layout(new_window)
@@ -245,30 +264,48 @@ class LayoutSerializer:
     def _clear_layout(self):
         """
         Closes all managed windows and resets the model to a clean state.
+        MODIFIED to use the definitive strong reference list.
         """
-        windows_to_close = list(self.manager.model.roots.keys())
-
+        # Iterate over a copy, as closing windows will modify the list.
+        windows_to_close = list(self.manager._top_level_containers)
+        
         for window in windows_to_close:
+            if self.manager.is_deleted(window):
+                self.manager._remove_top_level_container(window)
+                continue
+
+            # For persistent roots, just clear their content, don't close them.
             if self.manager._is_persistent_root(window):
+                root_node = self.manager.model.roots.get(window)
+                if root_node:
+                    all_widgets = self.manager.model.get_all_widgets_from_node(root_node)
+                    for widget_node in all_widgets:
+                        self.manager.signals.widget_closed.emit(widget_node.widget.persistent_id)
+                
                 if hasattr(window, 'splitter') and window.splitter:
                     window.splitter.setParent(None)
                     window.splitter.deleteLater()
                     window.splitter = None
                 self.manager.model.roots[window] = SplitterNode(orientation=Qt.Horizontal)
                 self.manager._render_layout(window)
-                continue
-            if window in self.manager.model.roots:
-                self.manager.model.unregister_widget(window)
-
-            window.setParent(None)
-            window.close()
+            else:
+                # For non-persistent windows, close them, which will trigger unregistration.
+                window.close()
+        
+        # Cleanup any dangling references
         self.manager.widgets.clear()
         self.manager.containers.clear()
         self.manager.window_stack.clear()
         self.manager.floating_widget_count = 0
+        
+        # Clear top-level containers to stay synchronized
+        self.manager._top_level_containers.clear()
+        
+        # Re-add the main window if it exists, as it's a persistent root.
         if self.manager.main_window:
             self.manager.containers.append(self.manager.main_window)
             self.manager.window_stack.append(self.manager.main_window)
+            self.manager._add_top_level_container(self.manager.main_window)
 
     def _deserialize_node(self, node_data: dict, loaded_widgets_cache: dict) -> AnyNode:
         """
