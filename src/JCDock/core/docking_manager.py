@@ -1,4 +1,5 @@
 import pickle
+import inspect
 from typing import Callable, Optional, Dict, Any
 
 from PySide6.QtWidgets import QWidget, QTabWidget, QApplication
@@ -331,8 +332,44 @@ class DockingManager(QObject):
 
 
     def _create_panel_from_key(self, key: str) -> DockPanel:
-        """Delegate to WidgetFactory for panel creation."""
-        return self.widget_factory.create_panel_from_key(key)
+        """Create panel from key with enhanced resolution for auto-generated keys."""
+        try:
+            # First try direct key lookup
+            return self.widget_factory.create_panel_from_key(key)
+        except ValueError:
+            # If direct lookup fails, try resolving auto-generated key to base key
+            resolved_key = self._resolve_auto_generated_key(key)
+            if resolved_key and resolved_key != key:
+                try:
+                    return self.widget_factory.create_panel_from_key(resolved_key)
+                except ValueError:
+                    pass
+            
+            # If all resolution attempts fail, re-raise the original error
+            raise ValueError(f"Widget key '{key}' is not registered. Use @persistable decorator to register widget types.")
+    
+    def _resolve_auto_generated_key(self, auto_key: str) -> Optional[str]:
+        """
+        Resolve auto-generated keys like 'FinancialChartWidget_1' to base registered keys.
+        
+        For auto-generated keys with pattern 'ClassName_Number', try to find a registered
+        key that matches the class name.
+        """
+        from .widget_registry import get_registry
+        registry = get_registry()
+        
+        # Check if key matches auto-generation pattern (ClassName_Number)
+        if '_' in auto_key and auto_key.split('_')[-1].isdigit():
+            class_name = '_'.join(auto_key.split('_')[:-1])  # Handle multi-underscore class names
+            
+            # Look for registered keys that might match this class
+            for registered_key in registry.get_all_keys():
+                registration = registry.get_registration(registered_key)
+                if registration and registration.widget_class:
+                    if registration.widget_class.__name__ == class_name:
+                        return registered_key
+        
+        return None
 
     
     def create_window(self, content=None, key=None, title=None, is_main_window=False, 
@@ -499,16 +536,94 @@ class DockingManager(QObject):
         return False
     
     def _ensure_widget_registered(self, content, key, title):
-        """Auto-register widget class if not already registered."""
+        """Auto-register widget class with intelligent parameter handling."""
         from .widget_registry import get_registry
         registry = get_registry()
         
         # Register this specific instance key if not already registered
         if not registry.is_registered(key):
             widget_class = type(content)
-            # Create factory function for this class
-            factory = lambda: widget_class()
+            
+            # Analyze constructor to determine parameter requirements
+            factory = self._create_smart_factory(content, widget_class)
             registry.register_factory(key, factory, title)
+    
+    def _create_smart_factory(self, instance, widget_class):
+        """Create an intelligent factory function based on widget constructor analysis."""
+        try:
+            # Get constructor signature
+            sig = inspect.signature(widget_class.__init__)
+            
+            # Filter out 'self' parameter
+            params = [p for name, p in sig.parameters.items() if name != 'self']
+            
+            # If no parameters or all have defaults, use simple factory
+            if not params or all(p.default != inspect.Parameter.empty for p in params):
+                return lambda: widget_class()
+            
+            # For parameterized widgets, capture current instance state
+            return self._create_instance_based_factory(instance, widget_class)
+            
+        except Exception:
+            # Fallback to simple factory if inspection fails
+            return lambda: widget_class()
+    
+    def _create_instance_based_factory(self, instance, widget_class):
+        """Create factory that recreates widget with captured parameters and state."""
+        # Capture constructor parameters from current instance
+        constructor_params = self._capture_constructor_params(instance)
+        
+        # Capture current state if widget supports it
+        current_state = None
+        if hasattr(instance, 'get_dock_state'):
+            try:
+                current_state = instance.get_dock_state()
+            except Exception:
+                pass
+        
+        def instance_factory():
+            """Factory that recreates widget with original parameters and state."""
+            try:
+                # Create widget with captured constructor parameters
+                if constructor_params:
+                    new_widget = widget_class(**constructor_params)
+                else:
+                    new_widget = widget_class()
+                
+                # Restore state if available
+                if current_state and hasattr(new_widget, 'set_dock_state'):
+                    try:
+                        new_widget.set_dock_state(current_state)
+                    except Exception:
+                        pass
+                
+                return new_widget
+                
+            except Exception:
+                # Ultimate fallback - try parameterless construction
+                return widget_class()
+        
+        return instance_factory
+    
+    def _capture_constructor_params(self, instance):
+        """Attempt to capture constructor parameters from widget instance."""
+        try:
+            widget_class = type(instance)
+            sig = inspect.signature(widget_class.__init__)
+            
+            # Get parameter names (excluding 'self')
+            param_names = [name for name in sig.parameters.keys() if name != 'self']
+            
+            # Try to extract values from instance attributes
+            params = {}
+            for param_name in param_names:
+                if hasattr(instance, param_name):
+                    params[param_name] = getattr(instance, param_name)
+            
+            return params if params else None
+            
+        except Exception:
+            return None
     
     def _mark_for_persistence(self, key):
         """Mark a widget key for persistence in layout serialization."""

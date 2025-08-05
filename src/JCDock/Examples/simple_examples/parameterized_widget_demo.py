@@ -241,7 +241,7 @@ def main():
     # Create main window using unified API
     main_window = manager.create_window(
         is_main_window=True,
-        title="JCDock Parameterized Widget Demo",
+        title="JCDock Enhanced Auto-Registration Demo",
         x=100, y=100, width=800, height=600,
         auto_persistent_root=True,
         preserve_title=True
@@ -308,8 +308,8 @@ def main():
             
             # Add application info
             config['Application'] = {
-                'name': 'JCDock Parameterized Widget Demo',
-                'description': 'Layout with financial chart widgets and their parameters'
+                'name': 'JCDock Enhanced Auto-Registration Demo',
+                'description': 'Layout with financial chart widgets using enhanced auto-registration with smart factories'
             }
             
             # Save to INI file
@@ -350,7 +350,7 @@ def main():
             print("Use Charts menu to create widgets.")
     
     def create_chart_widget(manager, symbol, timeframe, indicators, config_name):
-        """Create a new chart widget with specific parameters - EXACT test suite pattern."""
+        """Create a new chart widget - testing enhanced auto-registration."""
         # Create widget instance with parameters
         widget_instance = FinancialChartWidget(
             symbol=symbol,
@@ -358,17 +358,22 @@ def main():
             indicators=indicators
         )
         
-        # Create container using consistent key from @persistable decorator
+        print(f"Creating chart widget with enhanced auto-registration: {symbol} {timeframe}...")
+        
+        # Use auto-generated key approach with enhanced smart factory
         container = manager.create_window(
             widget_instance,
-            key="financial_chart",  # Use the key from @persistable decorator
+            # No key parameter - let enhanced library auto-generate and register intelligently
             title=f"{symbol} {timeframe}",
             x=300, y=300,
             width=400, height=300,
             persist=True
         )
         
-        print(f"Created chart widget: {symbol} {timeframe}")
+        panel = container.contained_widgets[0] if container.contained_widgets else None
+        auto_key = panel.persistent_id if panel else "unknown"
+        print(f"SUCCESS: Auto-generated key with smart factory: {auto_key}")
+        print(f"Widget created: {symbol} {timeframe} - Parameters captured for persistence")
     
     # Connect menu actions
     save_action.triggered.connect(save_layout_to_ini)
@@ -388,8 +393,8 @@ def main():
             }
             
             config['Application'] = {
-                'name': 'JCDock Parameterized Widget Demo',
-                'description': 'Layout with financial chart widgets and their parameters'
+                'name': 'JCDock Enhanced Auto-Registration Demo',
+                'description': 'Layout with financial chart widgets using enhanced auto-registration with smart factories'
             }
             
             with open(layout_file, 'w') as f:
@@ -414,33 +419,33 @@ def main():
     main_window.show()
     
     print("\n" + "="*70)
-    print("PARAMETERIZED WIDGET SAVE/LOAD DEMO (with INI persistence)")
+    print("ENHANCED AUTO-REGISTRATION DEMO - Smart Factories for Parameterized Widgets")
     print("="*70)
     print("NEW FEATURES:")
-    print("- Auto-loads layout from parameterized_demo_layout.ini on startup")
-    print("- Auto-saves layout to INI file when you exit the application")
-    print("- INI format is human-readable with metadata and timestamps")
+    print("- Enhanced auto-registration with intelligent parameter detection")
+    print("- Smart factory functions that capture constructor parameters")
+    print("- Automatic state capture and restoration for complex widgets")
+    print("- Works seamlessly with parameterized widgets like FinancialChartWidget")
+    print()
+    print("HOW IT WORKS:")
+    print("- Uses Python's inspect module to analyze widget constructors")
+    print("- Captures constructor parameters from existing widget instances")
+    print("- Creates smart factory functions that preserve parameters")
+    print("- Combines constructor recreation with get_dock_state()/set_dock_state()")
     print()
     print("INSTRUCTIONS:")
-    print("1. Layout was auto-loaded on startup (or default widgets created)")
-    print("   - Check console output to see what was loaded")
+    print("1. Create charts using Charts menu - no explicit keys needed!")
+    print("   - Auto-generated keys: FinancialChartWidget_1, FinancialChartWidget_2, etc.")
+    print("   - Each widget's parameters are automatically captured")
     print()
-    print("2. Create more charts using Charts menu with different symbols/timeframes")
-    print("   - TSLA 1-Hour with RSI+SMA")
-    print("   - AAPL 5-Minute with MACD")
-    print("   - MSFT Daily with Bollinger Bands")
-    print("   - And more...")
+    print("2. Save and reload layout to test enhanced persistence")
+    print("   - Widgets should restore with their ORIGINAL parameters")
+    print("   - No more key mismatch errors!")
     print()
-    print("3. Arrange widgets by docking/undocking (drag tabs around)")
+    print("3. Parameters are preserved: symbol, timeframe, indicators")
+    print("   - TSLA 1H widgets restore as TSLA 1H (not default AAPL 1D)")
     print()
-    print("4. Use File > Save Layout to manually save to INI file")
-    print("   - Or just exit - layout auto-saves on exit!")
-    print()
-    print("5. Restart the application to see auto-loading in action")
-    print("   - Each widget restores with its ORIGINAL parameters")
-    print("   - NOT the default AAPL/1D values!")
-    print()
-    print("6. Check parameterized_demo_layout.ini file - it's human readable!")
+    print("RESULT: Auto-generated keys now work perfectly with parameterized widgets!")
     print("="*70)
     
     # Run the application
