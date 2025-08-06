@@ -53,47 +53,75 @@ pip install -e .
 Using the `-e` or `--editable` flag is recommended for development. It installs the package by creating a link to the source code, so any changes you make to the code will be immediately reflected in your environment.
 
 ***
-## Architecture Overview
+## Simplified Architecture
 
-JCDock uses a unified window model where all floating windows are `DockContainer` instances. The architecture is built around a central state machine with specialized components:
+JCDock uses a **streamlined, single-method architecture** that eliminates complexity while providing full docking capabilities.
 
-### Core Components
-- **DockingManager** (`src/JCDock/core/docking_manager.py`): Central orchestrator managing all docking operations, widget registration, and layout persistence
-- **DockingState** (`src/JCDock/core/docking_manager.py`): State machine defining operational states (IDLE, RENDERING, DRAGGING_WINDOW, RESIZING_WINDOW, DRAGGING_TAB)
-- **DockPanel** (`src/JCDock/widgets/dock_panel.py`): Wrapper for any QWidget to make it dockable with title bars and controls  
-- **DockContainer** (`src/JCDock/widgets/dock_container.py`): Unified container system supporting both embedded and floating windows with configurable behavior (main window, persistent root, title bars, etc.)
-- **TearableTabWidget** (`src/JCDock/widgets/tearable_tab_widget.py`): Enhanced tab widget supporting drag-out operations with visual feedback
+### Universal API Design
+**One method handles all scenarios:**
+```python
+manager = DockingManager()
+
+# Main windows, floating widgets, persistent widgets - all use the same method
+window = manager.create_window(
+    content=widget,      # Any QWidget (optional for main windows)
+    title="My Window",
+    is_main_window=True, # For main application window
+    persist=True,        # For layout persistence
+    x=100, y=100, width=400, height=300
+)
+```
+
+### Key Architecture Benefits
+1. **Single Entry Point**: `create_window()` replaces multiple creation methods
+2. **Automatic Management**: DockPanel wrapping and DockContainer creation handled internally
+3. **Persistent by Design**: `@persistable` decorator + `persist=True` enables layout restoration
+4. **User-Friendly**: No need to understand internal component relationships
+
+### Implementation Components (Internal)
+- **DockingManager**: Public API facade and central coordinator
+- **DockPanel**: Automatic wrapper for making widgets dockable
+- **DockContainer**: Internal container implementation for windows
+- **Widget Registry**: Automatic widget type management via `@persistable`
 
 ### Specialized Systems
 
-#### Core (`src/JCDock/core/`)
-- **WidgetRegistry** (`src/JCDock/core/widget_registry.py`): Registry system for widget types enabling automatic layout persistence
-- **DockingState** (`src/JCDock/core/docking_manager.py`): State machine enum defining operational states
+### Why This Architecture?
 
-#### Model (`src/JCDock/model/`)
-- **LayoutSerializer** (`src/JCDock/model/layout_serializer.py`): Handles serialization and deserialization of dock layout state
-- **LayoutRenderer** (`src/JCDock/model/layout_renderer.py`): Handles layout rendering and state transitions
-- **LayoutModel** (`src/JCDock/model/dock_model.py`): Core data structures for layout representation
+**Before:** Multiple complex methods, manual component management
+```python
+# Old complex approach (deprecated)
+container, panel = manager.create_simple_floating_widget(...)
+other_container = manager.create_floating_widget_from_key(...)
+manager.register_widget(...)
+# Multiple methods, complex relationships
+```
 
-#### Interaction (`src/JCDock/interaction/`)
-- **DragDropController** (`src/JCDock/interaction/drag_drop_controller.py`): Manages drag-and-drop operations and visual feedback
-- **DragProxy** (`src/JCDock/interaction/drag_proxy.py`): Drag preview widgets for visual feedback
-- **OverlayManager** (`src/JCDock/interaction/overlay_manager.py`): Manages visual overlay system during drag operations
-- **DockingOverlay** (`src/JCDock/interaction/docking_overlay.py`): Visual feedback overlays for drop zones
+**Now:** Single universal method, automatic management
+```python
+# New streamlined approach
+window = manager.create_window(content=widget, title="Widget", persist=True)
+# One method, automatic internal management
+```
 
-#### Factories (`src/JCDock/factories/`)
-- **WidgetFactory** (`src/JCDock/factories/widget_factory.py`): Creates and manages widget instances
-- **WindowManager** (`src/JCDock/factories/window_manager.py`): Handles window creation and management
-- **ModelUpdateEngine** (`src/JCDock/factories/model_update_engine.py`): Manages model state updates
+### Internal System Overview (Advanced)
+The simplified API is built on a sophisticated internal architecture:
 
-#### Utils (`src/JCDock/utils/`)
-- **HitTestCache** (`src/JCDock/utils/hit_test_cache.py`): Performance optimization for overlay hit-testing during drag operations
-- **IconCache** (`src/JCDock/utils/icon_cache.py`): LRU cache system for icon rendering performance optimization
-- **PerformanceMonitor** (`src/JCDock/utils/performance_monitor.py`): Runtime performance tracking and metrics collection
-- **ResizeCache** (`src/JCDock/utils/resize_cache.py`): Resize constraint caching and validation
-- **ResizeGestureManager** (`src/JCDock/utils/resize_gesture_manager.py`): Advanced resize gesture handling
-- **ResizeThrottler** (`src/JCDock/utils/resize_throttler.py`): Throttling system for resize operations
-- **WindowsShadow** (`src/JCDock/utils/windows_shadow.py`): Native Windows DWM shadow effects
+- **State Management**: Coordinated state machine prevents conflicts
+- **Performance Optimization**: Automatic caching and throttling systems
+- **Layout Persistence**: Binary serialization with widget state preservation
+- **Drag & Drop**: Visual overlay system with smooth interactions
+- **Multi-Platform**: Native window effects and cross-platform compatibility
+
+### Development Philosophy
+
+JCDock prioritizes **developer experience** over architectural exposure:
+
+1. **Simple API Surface**: One creation method vs. many specialized methods
+2. **Automatic Lifecycle**: Internal components managed transparently  
+3. **Sensible Defaults**: Minimal configuration required for common scenarios
+4. **Progressive Enhancement**: Advanced features available when needed
+5. **Future-Proof**: Internal changes don't break application code
 
 ## Basic Usage
 
@@ -256,7 +284,7 @@ This example demonstrates:
 JCDock includes a modular test suite that demonstrates all framework capabilities and serves as both a testing framework and reference implementation. To run the test suite:
 
 ```bash
-# From the project root
+# From project root directory
 cd src/JCDock/Examples
 ../../../.venv/Scripts/python.exe run_test_suite.py
 ```
@@ -387,6 +415,38 @@ manager.signals.layout_changed.connect(lambda:
 - `widget_undocked(widget)` - Widget undocked to floating window  
 - `widget_closed(persistent_id)` - Widget closed and removed
 - `layout_changed()` - Any layout modification occurred
+- `application_closing(layout_data)` - Application closing with current layout data
+
+***
+## API Reference
+
+### Public API (Recommended)
+The streamlined public API focuses on the universal `create_window()` method:
+
+```python
+from JCDock import DockingManager, persistable
+
+manager = DockingManager()
+window = manager.create_window(content=widget, title="Title", persist=True)
+```
+
+**Available Public Imports:**
+- `DockingManager` - Central API for all operations
+- `persistable` - Decorator for widgets with layout persistence
+- `get_registry()` - Access to the global widget registry
+
+### Internal Components
+These components are documented for reference but should not be accessed directly:
+- `WidgetFactory` - Internal widget creation (use `DockingManager.create_window()`)
+- `DockContainer` - Internal container implementation (created by `create_window()`)
+- `DockPanel` - Internal widget wrapper (created automatically)
+- Various utility classes (caching, performance monitoring, etc.)
+
+### Migration from Older APIs
+If you're using older JCDock versions, replace deprecated methods:
+- `create_simple_floating_widget()` → `create_window()`
+- `create_floating_widget_from_key()` → `create_window()` with registry
+- `@dockable` → `@persistable`
 
 ***
 ## Additional Documentation

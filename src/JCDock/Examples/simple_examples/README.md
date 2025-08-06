@@ -9,57 +9,67 @@ JCDock follows a **widget-centric architecture** where:
 - **Floating first** - Widgets are created as floating containers, then docked together
 - **Widget-to-widget docking** - Widgets dock to each other, not to empty "dock areas"
 
-## Widget Creation Patterns
+## Universal Widget Creation
 
-JCDock provides two main widget creation methods:
+JCDock uses a single universal `create_window()` method for all widget creation scenarios:
 
-### 1. Simple Widgets (No Persistence)
+### Simple Floating Widgets
 ```python
-# For basic examples - simple but not persistent
-container, panel = manager.create_simple_floating_widget(
-    content_widget,           # Any QWidget
+# Create any widget as a floating window
+window = manager.create_window(
+    content=content_widget,   # Any QWidget
     title="Widget Title",
     x=100, y=100, width=300, height=200
 )
 ```
 
-### 2. Registered Widgets (Persistent)
+### Persistent Widgets (With Layout Restoration)
 ```python
-# For applications with save/load - persistent across sessions
-@dockable("widget_key", "Widget Title")
+# Use @persistable decorator for widgets that restore from saved layouts
+@persistable("widget_key", "Widget Title")
 class MyWidget(QWidget):
-    pass
+    def get_dock_state(self):
+        return {"data": "widget state"}
+    
+    def set_dock_state(self, state):
+        # Restore widget state
+        pass
 
-container = manager.create_floating_widget_from_key("widget_key")
+window = manager.create_window(
+    content=MyWidget(),
+    key="widget_key",  # Must match @persistable key
+    title="Widget Title",
+    persist=True  # Include in layout persistence
+)
 ```
 
 ## Examples
 
 ### 1. `basic_containers.py`
 **Purpose**: Demonstrates the most basic JCDock setup
-- Creating floating widgets using `create_simple_floating_widget()`
+- Creating floating widgets using `create_window()`
 - Basic drag-and-drop docking between widgets
-- No registration system needed
+- Simple widget creation without persistence
 
 **What you'll see**: Two floating widgets that can be docked together by dragging tabs.
 
-**Key Learning**: Understanding the fundamental widget-to-widget docking pattern.
+**Key Learning**: Understanding the fundamental widget-to-widget docking pattern with the universal API.
 
 ### 2. `main_window_with_menu.py`
 **Purpose**: Shows proper main application window setup
-- DockContainer as main window (correct use of manual container creation)
-- Simple floating widgets created with `create_simple_floating_widget()`
+- Main window created with `create_window(is_main_window=True)`
+- Floating widgets created with `create_window()`
 - Programmatic docking using `dock_widget(source, target, position)`
 - Menu bar integration
 
 **What you'll see**: A main application window with menu. Create widgets and dock them programmatically.
 
-**Key Learning**: When to use DockContainer directly (main windows) vs. widget creation methods (content).
+**Key Learning**: Using the universal `create_window()` API for both main windows and content widgets.
 
 ### 3. `icon_demo.py`
 **Purpose**: Comprehensive icon demonstration
-- Simple floating widgets with `create_simple_floating_widget()`
-- Setting icons using `panel.set_icon()`
+- Floating widgets created with `create_window()`
+- Setting icons using widget icon properties
 - Qt standard icons and dynamic icon changes
 - Icon persistence through docking operations
 
@@ -69,14 +79,14 @@ container = manager.create_floating_widget_from_key("widget_key")
 
 ### 4. `save_load_demo.py` (Comprehensive)
 **Purpose**: Complete application workflow with persistence
-- Widget registration using `@dockable` decorator
-- Persistent widget creation with `create_floating_widget_from_key()`
+- Widget registration using `@persistable` decorator
+- Persistent widget creation with `create_window(persist=True)`
 - Layout and state persistence with save/load
 - Complex widget state handlers
 
 **What you'll see**: A complete application with note and counter widgets. Widget content and layout persist across save/load cycles.
 
-**Key Learning**: Full application development pattern with persistence.
+**Key Learning**: Full application development pattern with the unified persistence system.
 
 ## Learning Progression
 
@@ -111,81 +121,95 @@ python save_load_demo.py
 # Simple content widget
 content = QLabel("Hello World")
 
-# Create floating container
-container, panel = manager.create_simple_floating_widget(
-    content, "My Widget", x=100, y=100, width=300, height=200
+# Create floating window using universal API
+window = manager.create_window(
+    content=content,
+    title="My Widget", 
+    x=100, y=100, width=300, height=200
 )
 
-# Set icon on the panel
-panel.set_icon(app.style().standardIcon(app.style().StandardPixmap.SP_ComputerIcon))
-
-# Show the container
-container.show()
+# Window includes icon support and automatic management
+window.show()
 ```
 
 ### Programmatic Docking
 ```python
+# Create two widgets
+widget1_window = manager.create_window(content=QLabel("Widget 1"), title="Widget 1")
+widget2_window = manager.create_window(content=QLabel("Widget 2"), title="Widget 2")
+
 # Dock widget1 to widget2 at center (creates tab group)
-manager.dock_widget(panel1, panel2, "center")
+manager.dock_widget(widget1_window, widget2_window, "center")
 
 # Dock to sides (creates split layout)
-manager.dock_widget(panel1, panel2, "left")   # or "right", "top", "bottom"
+manager.dock_widget(widget1_window, widget2_window, "left")   # or "right", "top", "bottom"
 ```
 
 ### Main Window Setup
 ```python
-main_window = DockContainer(
-    manager=manager,
-    show_title_bar=True,
-    is_main_window=True,
-    window_title="My App",
-    auto_persistent_root=True
+# Create main application window using universal API
+main_window = manager.create_window(
+    title="My Application",
+    is_main_window=True,  # Exits app when closed
+    persist=True,         # Include in layout persistence
+    width=1000,
+    height=600
 )
-manager.register_dock_area(main_window)
-manager.set_main_window(main_window)
+
+# Window automatically registered and ready for docking
 ```
 
 ### Widget Registration (for persistence)
 ```python
-@dockable("my_widget", "My Widget Title")
+@persistable("my_widget", "My Widget Title")
 class MyWidget(QWidget):
     def get_dock_state(self):
         return {"data": "my_state"}
     
     def set_dock_state(self, state):
-        # Restore state
+        # Restore state from saved layout
         pass
 
-# Create registered widget
-container = manager.create_floating_widget_from_key("my_widget")
+# Create persistent widget window
+window = manager.create_window(
+    content=MyWidget(),
+    key="my_widget",     # Must match @persistable key
+    title="My Widget",
+    persist=True         # Enable layout persistence
+)
 ```
 
 ## Architecture Insights
 
 ### What NOT to Do (Common Mistakes)
 ```python
-# DON'T create empty containers manually for content
-container = DockContainer(manager=manager)  # Wrong for content widgets
+# DON'T create DockContainer directly for content widgets
+container = DockContainer(manager=manager)  # Use create_window() instead
 
-# DON'T use internal methods
-widget = manager._create_panel_from_key()  # Internal method
+# DON'T use deprecated method names
+widget = manager.create_simple_floating_widget()  # Method doesn't exist in public API
 
-# DON'T try to "dock into" containers
-container.addWidget(widget)  # Not how JCDock works
+# DON'T try to manually add widgets to containers
+container.addWidget(widget)  # Use create_window() instead
 ```
 
 ### The Correct JCDock Way
 ```python
-# DO create floating widgets first
-container, panel = manager.create_simple_floating_widget(content, "Title")
+# DO use the universal create_window() method
+window = manager.create_window(content=widget, title="My Widget")
 
 # DO dock widgets to each other
-manager.dock_widget(panel1, panel2, "center")
+manager.dock_widget(widget1, widget2, "center")
 
-# DO use registration for persistent widgets
-@dockable("key", "Title")
+# DO use @persistable for persistent widgets
+@persistable("my_widget", "My Widget")
 class MyWidget(QWidget): pass
-container = manager.create_floating_widget_from_key("key")
+
+window = manager.create_window(
+    content=MyWidget(), 
+    key="my_widget", 
+    persist=True
+)
 ```
 
 ## Key Benefits of This Architecture
@@ -207,8 +231,8 @@ After mastering these examples:
 ## Tips for Development
 
 - **Always start floating**: Create widgets as floating first, then dock them
-- **Use simple widgets for prototyping**: `create_simple_floating_widget()` is perfect for testing
-- **Use registered widgets for production**: `@dockable` decorator provides persistence
+- **Use simple widgets for prototyping**: `create_window()` is perfect for testing
+- **Use registered widgets for production**: `@persistable` decorator provides persistence
 - **Let users control layout**: Enable drag-and-drop by default
 - **Test with multiple monitors**: JCDock handles multi-monitor scenarios well
 - **Icons enhance UX**: Users rely on icons to identify widgets in complex layouts

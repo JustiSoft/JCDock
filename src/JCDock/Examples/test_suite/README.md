@@ -73,10 +73,10 @@ python -m test_suite.main
 The refactored test suite maintains all the functionality of the original:
 
 ### Widget Creation
-- **By Type**: Create widgets from registered keys
-- **By Instance**: Make existing widgets dockable
-- **By Factory**: Use factory functions for complex initialization
-- **Ad-hoc State Handlers**: Add persistence to existing widgets
+- **Persistent Widgets**: Create widgets using `@persistable` decorator and `create_window()`
+- **Simple Widgets**: Create non-persistent widgets with `create_window()`
+- **Factory Functions**: Register factory functions via `manager.register_widget_factory()`
+- **State Management**: Use `get_dock_state()` and `set_dock_state()` methods for persistence
 
 ### Testing Framework
 - Comprehensive test suite for all docking operations
@@ -136,12 +136,12 @@ All configuration is centralized in `utils/constants.py`:
 
 ## Migration from Original
 
-The original `dock_test.py` is preserved. The refactored version:
+The refactored test suite demonstrates current JCDock best practices:
 
-1. **Maintains API Compatibility**: All original functionality is preserved
-2. **Improves Performance**: Faster execution and lower memory usage
-3. **Enhances Maintainability**: Much easier to modify and extend
-4. **Adds Documentation**: Comprehensive documentation and examples
+1. **Current API Usage**: Uses `manager.create_window()` and `@persistable` decorator
+2. **Improved Performance**: Optimized for the current architecture
+3. **Enhanced Maintainability**: Clean separation of concerns and modular design
+4. **Comprehensive Documentation**: Clear examples of current API patterns
 
 ## Contributing
 
