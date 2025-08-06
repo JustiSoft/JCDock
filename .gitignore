@@ -39,3 +39,7 @@ repomix-output.xml
 
 # Node.js package lock file
 package-lock.json
+
+# Local directories
+layouts/
+docs/
