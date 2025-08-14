@@ -677,6 +677,41 @@ class DockingManager(QObject):
 
         return None
 
+    def get_persistent_id(self, widget_or_panel) -> str | None:
+        """
+        Get the persistent ID for a widget or panel.
+        
+        This convenience method allows developers to easily retrieve the persistent ID
+        from either a DockPanel or the content widget inside it.
+        
+        Args:
+            widget_or_panel: Either a DockPanel or the content widget inside it
+            
+        Returns:
+            The persistent ID string, or None if not found
+            
+        Example:
+            # Works with either the DockPanel or the content widget
+            id1 = manager.get_persistent_id(dock_panel)
+            id2 = manager.get_persistent_id(my_content_widget)  # Same result
+        """
+        from ..widgets.dock_panel import DockPanel
+        
+        # If it's already a DockPanel, return its persistent_id
+        if isinstance(widget_or_panel, DockPanel):
+            return widget_or_panel.persistent_id
+        
+        # If it's a content widget, check for back-reference first (faster)
+        if hasattr(widget_or_panel, '_dock_panel') and isinstance(widget_or_panel._dock_panel, DockPanel):
+            return widget_or_panel._dock_panel.persistent_id
+        
+        # Fallback: search through all managed widgets to find the parent DockPanel
+        for panel in self.widgets:
+            if hasattr(panel, 'content_widget') and panel.content_widget is widget_or_panel:
+                return panel.persistent_id
+        
+        return None
+
     def get_all_widgets(self) -> list[DockPanel]:
         """
         Returns a flat list of all DockPanel instances currently managed by the system.

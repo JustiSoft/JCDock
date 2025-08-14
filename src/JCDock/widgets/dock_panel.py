@@ -105,6 +105,9 @@ class DockPanel(QWidget):
                 if viewport:
                     viewport.setMouseTracking(True)
         
+        # Add back-reference from content widget to its DockPanel for easy access
+        widget._dock_panel = self
+        
         # Trigger event filter installation on parent container if it exists
         if self.parent_container and hasattr(self.parent_container, '_install_event_filter_recursive'):
             self.parent_container._install_event_filter_recursive(widget)

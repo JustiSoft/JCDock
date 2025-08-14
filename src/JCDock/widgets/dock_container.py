@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QWidget, QSplitter, QVBoxLayout, QTabWidget, QHBox
 from PySide6.QtCore import Qt, QRect, QEvent, QPoint, QRectF, QSize, QTimer, QPointF, QLineF, QObject
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QBrush, QRegion, QPixmap, QPen, QIcon, QPolygonF, \
     QPalette, QDragEnterEvent, QDragMoveEvent, QDragLeaveEvent, QDropEvent, QCursor, QAction
-from PySide6.QtWidgets import QTableWidget, QTreeWidget, QListWidget, QTextEdit, QPlainTextEdit, QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QSlider, QScrollBar
+from PySide6.QtWidgets import QTableWidget, QTreeWidget, QListWidget, QTextEdit, QPlainTextEdit, QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QSlider, QScrollBar, QAbstractItemView, QTableView, QTreeView, QListView
 from typing import Optional, Union
 
 from ..core.docking_state import DockingState
@@ -1241,7 +1241,7 @@ class DockContainer(QWidget):
         """
         self.installEventFilter(self)
         
-        viewport_widget_types = [QTableWidget, QTreeWidget, QListWidget, QTextEdit, QPlainTextEdit]
+        viewport_widget_types = [QTableWidget, QTreeWidget, QListWidget, QTextEdit, QPlainTextEdit, QTableView, QTreeView, QListView]
         
         for widget_type in viewport_widget_types:
             for widget in self.findChildren(widget_type):
