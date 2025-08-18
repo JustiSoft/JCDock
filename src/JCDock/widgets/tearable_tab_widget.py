@@ -168,7 +168,8 @@ class TearableTabWidget(QTabWidget):
         self.dragged_tab_index = tab_index
         self.dragged_widget = widget
         
-        self.setTabEnabled(tab_index, False)
+        # Note: Removed setTabEnabled(tab_index, False) to prevent widget content from being disabled
+        # This ensures the widget remains interactive after being moved to a floating window
         
         self.drag_preview = TabDragPreview(self, tab_index)
         
@@ -274,14 +275,59 @@ class TearableTabWidget(QTabWidget):
             from ..core.docking_manager import MousePositionStrategy
             positioning_strategy = MousePositionStrategy()
             context = {'global_mouse_pos': cursor_pos, 'setup_mouse_dragging': False}
-            self.manager._perform_undock_operation(self.dragged_widget, positioning_strategy, context)
+            newly_floated_window = self.manager._perform_undock_operation(self.dragged_widget, positioning_strategy, context)
+            
+            # Fix: Ensure proper widget activation and event handling after drag operation
+            if newly_floated_window:
+                self._restore_widget_interaction_after_drag(newly_floated_window)
+
+    def _restore_widget_interaction_after_drag(self, newly_floated_window):
+        """
+        Restore proper widget interaction after a drag operation.
+        This fixes the issue where widgets become inactive after being dragged out of tabs.
+        """
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QApplication
+        
+        # Ensure event filters are properly set up in the new container
+        if hasattr(newly_floated_window, 'update_content_event_filters'):
+            newly_floated_window.update_content_event_filters()
+        
+        # Process events to ensure the widget is properly settled in its new container
+        QApplication.processEvents()
+        
+        # Find and enable the dragged widget and its content
+        if self.dragged_widget:
+            # Enable the DockPanel itself
+            self.dragged_widget.setEnabled(True)
+            
+            # Enable the content widget and all its children
+            if hasattr(self.dragged_widget, 'content_widget') and self.dragged_widget.content_widget:
+                content_widget = self.dragged_widget.content_widget
+                content_widget.setEnabled(True)
+                
+                # Recursively enable all child widgets
+                def enable_all_children(widget):
+                    widget.setEnabled(True)
+                    for child in widget.findChildren(QWidget):
+                        child.setEnabled(True)
+                
+                enable_all_children(content_widget)
+                
+                # Set focus to the content widget
+                QTimer.singleShot(10, lambda: content_widget.setFocus())
+        
+        # Ensure the new window is properly activated
+        newly_floated_window.activateWindow()
+        newly_floated_window.raise_()
+        newly_floated_window.update()
+        newly_floated_window.repaint()
 
     def _cleanup_custom_drag(self):
         """
         Clean up after custom drag operation.
         """
-        if self.dragged_tab_index >= 0:
-            self.setTabEnabled(self.dragged_tab_index, True)
+        # Note: Removed setTabEnabled(self.dragged_tab_index, True) since we no longer disable the tab
         
         if self.drag_preview:
             self.drag_preview.hide_preview()
