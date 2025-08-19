@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QSplitter, QTabWidget
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from functools import partial
 
 from ..core.docking_state import DockingState
@@ -22,6 +22,63 @@ class LayoutRenderer:
             manager: Reference to the DockingManager instance
         """
         self.manager = manager
+
+    def _setup_splitter_performance(self, qt_splitter):
+        """Configure splitter for optimal resize performance."""
+        # Keep track of resize state
+        qt_splitter._is_being_resized = False
+        qt_splitter._resize_timer = QTimer()
+        qt_splitter._resize_timer.setSingleShot(True)
+        qt_splitter._resize_timer.setInterval(50)  # 50ms debounce
+
+        def _notify_performance_mode(widget, enter_mode=True):
+            """Recursively notify all widgets about performance mode change."""
+            method_name = 'enterPerformanceMode' if enter_mode else 'exitPerformanceMode'
+
+            # Call on widget if it has the method
+            if hasattr(widget, method_name):
+                getattr(widget, method_name)()
+
+            # For QSplitter, recursively notify all children
+            if isinstance(widget, QSplitter):
+                for i in range(widget.count()):
+                    child_widget = widget.widget(i)
+                    if child_widget:
+                        _notify_performance_mode(child_widget, enter_mode)
+
+            # For QTabWidget, iterate through all tabs
+            elif isinstance(widget, QTabWidget):
+                for i in range(widget.count()):
+                    tab_content = widget.widget(i)
+                    if tab_content:
+                        # Check if it's a DockPanel content container
+                        dockable_widget = tab_content.property("dockable_widget")
+                        if dockable_widget and hasattr(dockable_widget, 'content_widget'):
+                            actual_widget = dockable_widget.content_widget
+                            if actual_widget and hasattr(actual_widget, method_name):
+                                getattr(actual_widget, method_name)()
+
+        def on_splitter_move_started():
+            if not qt_splitter._is_being_resized:
+                qt_splitter._is_being_resized = True
+                for i in range(qt_splitter.count()):
+                    _notify_performance_mode(qt_splitter.widget(i), enter_mode=True)
+
+        def on_splitter_move_ended():
+            qt_splitter._is_being_resized = False
+            for i in range(qt_splitter.count()):
+                _notify_performance_mode(qt_splitter.widget(i), enter_mode=False)
+
+        # Connect the timeout signal once during initialization
+        qt_splitter._resize_timer.timeout.connect(on_splitter_move_ended)
+
+        # Connect to splitter moved signal with debouncing
+        def on_moved(pos, index):
+            on_splitter_move_started()
+            qt_splitter._resize_timer.stop()
+            qt_splitter._resize_timer.start()
+
+        qt_splitter.splitterMoved.connect(on_moved)
 
     def render_layout(self, container: DockContainer, widget_to_activate: DockPanel = None):
         """
@@ -106,6 +163,12 @@ class LayoutRenderer:
             """)
             qt_splitter.setHandleWidth(2)
             qt_splitter.setChildrenCollapsible(False)
+            
+            # Keep live preview with performance optimization
+            qt_splitter.setOpaqueResize(True)
+            
+            # Setup performance optimization for smooth resizing
+            self._setup_splitter_performance(qt_splitter)
             
             # Wire splitterMoved signal with specific splitter and model node using partial
             splitter_handler = partial(self.manager._on_splitter_moved, qt_splitter, node)
